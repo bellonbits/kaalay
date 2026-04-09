@@ -35,7 +35,6 @@ export default function SharePage() {
   const socketRef     = useSocket();
   const broadRef      = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const [mounted, setMounted] = useState(false);
   const [step,    setStep]    = useState<'setup' | 'live'>('setup');
   const [type,    setType]    = useState('general');
   const [dur,     setDur]     = useState(0);
@@ -45,7 +44,6 @@ export default function SharePage() {
   const [copied,  setCopied]  = useState(false);
   const [vis,     setVis]     = useState<'link' | 'public'>('link');
 
-  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     if (!session) return;
@@ -108,7 +106,6 @@ export default function SharePage() {
 
   const selT = TYPES.find(t => t.id === type)!;
 
-  if (!mounted) return <div style={{ height: '100%', background: '#F7F7F7' }} />;
 
   /* ── LIVE VIEW ── */
   if (step === 'live' && session) return (

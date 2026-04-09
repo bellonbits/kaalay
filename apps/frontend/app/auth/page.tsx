@@ -28,15 +28,12 @@ const ROLES = [
 
 export default function AuthPage() {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
   const [name,    setName]    = useState('');
   const [phone,   setPhone]   = useState('');
   const [role,    setRole]    = useState('user');
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
 
-  useEffect(() => { setMounted(true); }, []);
-  if (!mounted) return <div style={{ height: '100%', background: '#F7F7F7' }} />;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

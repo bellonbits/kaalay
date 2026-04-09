@@ -34,13 +34,11 @@ const CAR_OFFSETS = [
 export default function HomePage() {
   const router = useRouter();
   const { position } = useGeolocation(false);
-  const [mounted,  setMounted]  = useState(false);
   const [user,     setUser]     = useState<{ fullName: string; role: string } | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sheetH,   setSheetH]   = useState<'peek' | 'half' | 'full'>('peek');
   const [search,   setSearch]   = useState('');
 
-  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     const u = localStorage.getItem('kaalay_user');
@@ -58,7 +56,6 @@ export default function HomePage() {
     ...sessions.slice(0, 4).map(s => ({ lat: Number(s.latitude), lng: Number(s.longitude), type: 'request' as const, label: s.user?.fullName })),
   ];
 
-  if (!mounted) return <div style={{ height: '100%', background: '#F7F7F7' }} />;
 
   const sheetTranslate = sheetH === 'peek' ? 'calc(100% - 148px)' : sheetH === 'half' ? 'calc(100% - 380px)' : '0px';
 
