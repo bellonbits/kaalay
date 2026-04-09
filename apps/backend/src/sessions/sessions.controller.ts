@@ -14,8 +14,10 @@ export class SessionsController {
   /** POST /sessions — create a new location session */
   @Post()
   create(@Body() dto: CreateSessionDto, @Req() req: any) {
-    // userId from JWT; fallback to body for dev
-    const userId = req.user?.id ?? dto['userId'] ?? 'anonymous';
+    // userId from JWT or body; null if missing/invalid (allows anonymous sessions)
+    const rawId: string | undefined = req.user?.id ?? dto['userId'];
+    const isValidUuid = rawId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawId);
+    const userId = isValidUuid ? rawId : null;
     return this.sessionsService.create(userId, dto);
   }
 

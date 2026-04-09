@@ -32,8 +32,8 @@ export class LocationSession {
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @Column()
-  userId: string;
+  @Column({ nullable: true })
+  userId: string | null;
 
   @Column('decimal', { precision: 10, scale: 7, default: 0 })
   latitude: number;
