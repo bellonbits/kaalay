@@ -3,8 +3,14 @@
 @tailwind utilities;
 
 :root {
-  --green: #A8D83F;
-  --purple: #7B61FF;
+  --yellow: #FFD600;
+  --black:  #1A1A1A;
+  --white:  #FFFFFF;
+  --bg:     #F7F7F7;
+  --card:   #FFFFFF;
+  --border: #EBEBEB;
+  --muted:  #888888;
+  --text:   #1A1A1A;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -12,43 +18,77 @@
 html, body {
   height: 100%;
   overflow: hidden;
-  background: #0F0F0F;
-  color: white;
+  background: var(--bg);
+  color: var(--text);
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Full-screen app shell */
 #__next { height: 100%; }
 
-/* Scrollable sheet content */
-.sheet-scroll::-webkit-scrollbar { display: none; }
-.sheet-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+/* ── Scrollbars hidden ── */
+.no-scroll::-webkit-scrollbar { display: none; }
+.no-scroll { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* Pulse animation for live location */
-@keyframes pulse-ring {
-  0%   { transform: scale(0.8); opacity: 0.8; }
-  100% { transform: scale(2.4); opacity: 0; }
-}
-.pulse-ring {
-  animation: pulse-ring 1.8s ease-out infinite;
-}
+/* ── Shadows ── */
+.shadow-card  { box-shadow: 0 2px 16px rgba(0,0,0,0.08); }
+.shadow-sheet { box-shadow: 0 -4px 24px rgba(0,0,0,0.10); }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-.spin { animation: spin 1s linear infinite; }
-
-/* Bottom sheet slide-up */
+/* ── Animations ── */
 @keyframes slide-up {
-  from { transform: translateY(100%); }
-  to   { transform: translateY(0); }
+  from { transform: translateY(40px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
 }
-.slide-up { animation: slide-up 0.3s ease-out; }
+.slide-up { animation: slide-up 0.32s cubic-bezier(.22,.68,0,1.2) both; }
 
-/* Fade in */
 @keyframes fade-in {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
-.fade-in { animation: fade-in 0.25s ease; }
+.fade-in { animation: fade-in 0.2s ease both; }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spin { animation: spin 0.9s linear infinite; }
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1);   opacity: 1; }
+  50%       { transform: scale(1.4); opacity: 0.6; }
+}
+.pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
+
+@keyframes bounce-in {
+  0%   { transform: scale(0.7); opacity: 0; }
+  60%  { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1); }
+}
+.bounce-in { animation: bounce-in 0.4s cubic-bezier(.34,1.56,.64,1) both; }
+
+/* ── Map container resets ── */
+.map-wrap { position: absolute; inset: 0; }
+.map-wrap > div { height: 100% !important; }
+
+/* ── Button base ── */
+.btn {
+  display: flex; align-items: center; justify-content: center;
+  border: none; cursor: pointer; font-family: inherit;
+  font-weight: 700; transition: opacity 0.15s, transform 0.1s;
+}
+.btn:active { transform: scale(0.97); }
+.btn-black  { background: var(--black); color: var(--white); border-radius: 16px; padding: 16px 24px; font-size: 16px; }
+.btn-yellow { background: var(--yellow); color: var(--black); border-radius: 16px; padding: 16px 24px; font-size: 16px; }
+.btn-ghost  { background: var(--bg); color: var(--black); border: 1.5px solid var(--border); border-radius: 16px; padding: 14px 24px; font-size: 15px; }
+.btn:disabled { opacity: 0.38; pointer-events: none; }
+
+/* ── Input ── */
+.input {
+  width: 100%; background: var(--bg); border: 1.5px solid var(--border);
+  border-radius: 14px; padding: 14px 16px; font-size: 15px; color: var(--text);
+  font-family: inherit; outline: none; transition: border-color 0.15s;
+}
+.input:focus { border-color: var(--black); }
+.input::placeholder { color: var(--muted); }
+
+/* ── Pill tag ── */
+.pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }

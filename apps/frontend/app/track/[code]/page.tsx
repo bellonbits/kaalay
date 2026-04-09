@@ -10,200 +10,202 @@ import type { MarkerData } from '../../../components/MapBase';
 
 const MapBase = dynamic(() => import('../../../components/MapBase'), { ssr: false });
 
-interface LivePosition { lat: number; lng: number; accuracy?: number; timestamp: number }
-interface Session {
-  shareCode: string; requestType: string; message?: string; status: string;
-  user?: { fullName: string; role: string };
-}
+interface LivePos { lat: number; lng: number; accuracy?: number; timestamp: number }
+interface Session { shareCode: string; requestType: string; message?: string; status: string; user?: { fullName: string } }
 
-function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+function dist(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
   const R = 6371;
-  const dLat = (b.lat - a.lat) * Math.PI / 180;
-  const dLng = (b.lng - a.lng) * Math.PI / 180;
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  const dL = (b.lat - a.lat) * Math.PI / 180;
+  const dG = (b.lng - a.lng) * Math.PI / 180;
+  const h = Math.sin(dL / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dG / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
-// Special route for manual code entry
-function EnterCodeView() {
+// ── Enter code view ──────────────────────────────────────────────────────
+function EnterCode() {
   const router = useRouter();
   const [code, setCode] = useState('');
   return (
-    <div className="h-full flex flex-col items-center justify-center bg-[#0F0F0F] px-6 gap-6">
-      <img src="/search.png" alt="" className="w-16 h-16 opacity-30" />
-      <h2 className="text-xl font-bold">Enter Share Code</h2>
-      <input
-        className="w-full bg-[#1A1A1A] border border-[#2A2A2A] rounded-2xl px-5 py-4 text-center text-xl font-bold tracking-widest text-[#A8D83F] outline-none uppercase"
-        placeholder="KAA-XXXX"
-        value={code}
-        onChange={e => setCode(e.target.value.toUpperCase())}
-        maxLength={8}
-      />
-      <button
-        disabled={code.length < 6}
-        onClick={() => router.push(`/track/${code}`)}
-        className="w-full py-4 rounded-2xl bg-[#A8D83F] text-[#0F0F0F] font-bold disabled:opacity-40"
-      >
-        Track Location
-      </button>
+    <div className="h-full flex flex-col bg-bg">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-5 pt-12 pb-6">
+        <button onClick={() => router.back()}
+          className="w-10 h-10 rounded-full bg-surface shadow-card flex items-center justify-center flex-shrink-0">
+          <svg width="16" height="14" viewBox="0 0 16 14" fill="none">
+            <path d="M8 1L1 7L8 13M1 7H15" stroke="#1A1A1A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+        <div>
+          <h1 className="text-xl font-black text-ink">Track Someone</h1>
+          <p className="text-xs text-muted">Enter the share code they sent you</p>
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center px-6 gap-6">
+        {/* Code input */}
+        <div className="w-full bg-surface rounded-3xl p-6 shadow-card border border-border">
+          <p className="text-xs text-muted font-bold uppercase tracking-widest mb-3">Share code</p>
+          <input
+            className="w-full text-center text-3xl font-black tracking-[6px] text-ink bg-bg border-2 border-border rounded-2xl py-4 outline-none uppercase focus:border-ink"
+            placeholder="KAA-XXXX"
+            value={code}
+            onChange={e => setCode(e.target.value.toUpperCase())}
+            maxLength={8}
+          />
+          <p className="text-xs text-muted text-center mt-3">Ask the person sharing to give you their code</p>
+        </div>
+
+        <button
+          disabled={code.length < 6}
+          onClick={() => router.push(`/track/${code}`)}
+          className="btn btn-black w-full"
+        >
+          Track Live Location
+        </button>
+      </div>
     </div>
   );
 }
 
-export default function TrackPage() {
-  const params = useParams();
-  const router = useRouter();
-  const code = (params?.code as string) ?? '';
-
-  if (code === 'enter') return <EnterCodeView />;
-
-  return <LiveTracker code={code} />;
-}
-
+// ── Live tracker ─────────────────────────────────────────────────────────
 function LiveTracker({ code }: { code: string }) {
-  const router = useRouter();
-  const { position: myPos } = useGeolocation(false);
-  const [tracked, setTracked] = useState<LivePosition | null>(null);
+  const router   = useRouter();
+  const { position: me } = useGeolocation(false);
+  const [tracked, setTracked] = useState<LivePos | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [sessionEnded, setSessionEnded] = useState(false);
-  const [helperAccepted, setHelperAccepted] = useState<string | null>(null);
+  const [ended,   setEnded]   = useState(false);
+  const [accepted, setAccepted] = useState<string | null>(null);
   const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('kaalay_user') ?? '{}') : {};
   const isHelper = user.role === 'helper' || user.role === 'driver';
 
-  // Load session metadata
-  useEffect(() => {
-    getSessionByCode(code).then(setSession).catch(() => null);
-  }, [code]);
+  useEffect(() => { getSessionByCode(code).then(setSession).catch(() => null); }, [code]);
 
-  // Live location via Socket.IO
-  const handleLocation = useCallback((data: LivePosition) => {
-    setTracked(data);
-  }, []);
-  const handleStatus = useCallback((data: { status: string }) => {
-    if (data.status === 'ended') setSessionEnded(true);
-  }, []);
-  const handleAccepted = useCallback((data: { helperName: string }) => {
-    setHelperAccepted(data.helperName);
-  }, []);
+  useSessionSocket(
+    code,
+    useCallback((d: LivePos) => setTracked(d), []),
+    useCallback((d: { status: string }) => { if (d.status === 'ended') setEnded(true); }, []),
+    useCallback((d: { helperName: string }) => setAccepted(d.helperName), []),
+  );
 
-  useSessionSocket(code, handleLocation, handleStatus, handleAccepted);
+  const km = me && tracked ? dist(me, tracked) : null;
+  const eta = km ? Math.round((km / 40) * 60) : null; // rough 40km/h
 
-  const dist = myPos && tracked
-    ? haversineKm(myPos, tracked)
-    : null;
-
-  const openGoogleMaps = () => {
-    if (!tracked) return;
-    window.open(`https://www.google.com/maps/dir/?api=1&destination=${tracked.lat},${tracked.lng}`, '_blank');
-  };
-
-  const acceptRequest = () => {
-    const s = getSocket();
-    s.emit('accept-request', { code, helperName: user.fullName ?? 'Helper', helperId: user.id });
-    router.push(`/navigate?lat=${tracked?.lat}&lng=${tracked?.lng}&code=${code}`);
+  const openMaps = () => tracked && window.open(`https://www.google.com/maps/dir/?api=1&destination=${tracked.lat},${tracked.lng}`, '_blank');
+  const accept   = () => {
+    getSocket().emit('accept-request', { code, helperName: user.fullName ?? 'Helper', helperId: user.id });
+    openMaps();
   };
 
   const markers: MarkerData[] = [
-    ...(myPos ? [{ lat: myPos.lat, lng: myPos.lng, type: 'me' as const, accuracy: myPos.accuracy }] : []),
-    ...(tracked ? [{ lat: tracked.lat, lng: tracked.lng, type: 'tracked' as const, label: session?.user?.fullName }] : []),
+    ...(me      ? [{ lat: me.lat,      lng: me.lng,      type: 'me'      as const, accuracy: me.accuracy }]       : []),
+    ...(tracked ? [{ lat: tracked.lat, lng: tracked.lng, type: 'tracked' as const }]                               : []),
   ];
 
-  const center = tracked ?? myPos ?? { lat: -1.29, lng: 36.82 };
-  const typeColor: Record<string, string> = {
-    lost: 'text-red-400', pickup: 'text-[#7B61FF]', meetup: 'text-[#A8D83F]', general: 'text-[#8E8E9A]',
-  };
+  const center = tracked ?? me ?? { lat: -1.29, lng: 36.82 };
+  const typeEmoji: Record<string, string> = { lost: '🆘', pickup: '🚗', meetup: '👥', general: '📍' };
 
   return (
-    <div className="h-full flex flex-col bg-[#0F0F0F]">
+    <div className="h-full flex flex-col bg-bg">
       {/* Map */}
       <div className="relative flex-1">
-        <MapBase
-          center={center}
-          zoom={15}
-          markers={markers}
+        <MapBase center={center} zoom={15} markers={markers}
           routeTo={isHelper && tracked ? tracked : undefined}
-          className="w-full h-full"
-        />
+          className="w-full h-full" />
 
         {/* Back */}
         <button onClick={() => router.back()}
-          className="absolute top-12 left-4 w-10 h-10 rounded-full bg-[#141414]/90 backdrop-blur flex items-center justify-center border border-[#2A2A2A]">
-          <img src="/back-arrow.png" alt="" className="w-5 h-5 opacity-70" />
+          className="absolute top-12 left-4 w-10 h-10 rounded-full bg-surface shadow-card flex items-center justify-center">
+          <svg width="16" height="14" viewBox="0 0 16 14" fill="none">
+            <path d="M8 1L1 7L8 13M1 7H15" stroke="#1A1A1A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
         </button>
 
-        {/* Code pill */}
-        <div className="absolute top-12 left-0 right-0 flex justify-center">
-          <div className="bg-[#141414]/90 backdrop-blur rounded-full px-4 py-2 border border-[#2A2A2A]">
-            <span className="text-sm font-bold tracking-widest text-[#A8D83F]">{code}</span>
-          </div>
-        </div>
-
-        {/* Tracked pulse */}
-        {tracked && (
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
-            <div className="w-8 h-8 rounded-full bg-red-500/20 pulse-ring" />
+        {/* ETA pill — like design reference */}
+        {(km !== null && !ended) && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bounce-in"
+            style={{ background: '#FFD600', borderRadius: '20px', padding: '8px 18px', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 16px rgba(0,0,0,0.15)' }}>
+            <span className="text-sm">{typeEmoji[session?.requestType ?? 'general']}</span>
+            <p className="text-sm font-bold text-ink">
+              To location&nbsp;
+              <span className="font-black">{eta} min</span>
+            </p>
           </div>
         )}
 
-        {sessionEnded && (
-          <div className="absolute inset-0 bg-[#0F0F0F]/80 flex items-center justify-center">
-            <div className="text-center px-8">
-              <img src="/close.png" alt="" className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p className="text-lg font-bold">Session Ended</p>
-              <p className="text-sm text-[#555] mt-1">This location share has stopped</p>
-              <button onClick={() => router.push('/home')} className="mt-4 px-6 py-3 rounded-2xl bg-[#1A1A1A] border border-[#2A2A2A] text-sm font-semibold">
-                Go Home
-              </button>
-            </div>
+        {/* Code pill */}
+        <div className="absolute top-12 left-0 right-0 flex justify-center pointer-events-none">
+          <div className="bg-surface/90 backdrop-blur-sm rounded-full px-4 py-1.5 border border-border shadow-card">
+            <span className="text-xs font-black tracking-widest text-ink">{code}</span>
+          </div>
+        </div>
+
+        {/* Ended overlay */}
+        {ended && (
+          <div className="absolute inset-0 bg-white/90 flex flex-col items-center justify-center gap-4">
+            <span className="text-5xl">📍</span>
+            <p className="text-xl font-black text-ink">Session ended</p>
+            <p className="text-sm text-muted">This location share has stopped</p>
+            <button onClick={() => router.push('/home')} className="btn btn-black px-8 py-3">Go home</button>
           </div>
         )}
       </div>
 
       {/* Info card */}
-      <div className="bg-[#141414] rounded-t-3xl px-5 pt-5 pb-8 slide-up">
-        {helperAccepted && (
-          <div className="mb-4 p-3 rounded-2xl bg-[#A8D83F]/10 border border-[#A8D83F]/30 flex items-center gap-3">
-            <img src="/check.png" alt="" className="w-8 h-8" />
+      <div className="bg-surface shadow-sheet px-5 pt-4 pb-8">
+        {/* Accepted banner */}
+        {accepted && (
+          <div className="mb-4 flex items-center gap-3 bg-green-50 rounded-2xl p-3 border border-green-200">
+            <span className="text-2xl">✅</span>
             <div>
-              <p className="text-sm font-bold text-[#A8D83F]">Help is on the way!</p>
-              <p className="text-xs text-[#8E8E9A]">{helperAccepted} accepted your request</p>
+              <p className="text-sm font-bold text-green-700">Help is on the way</p>
+              <p className="text-xs text-green-600">{accepted} accepted your request</p>
             </div>
           </div>
         )}
 
-        <div className="flex items-start gap-4">
-          <div className="w-12 h-12 rounded-full bg-[#1A1A1A] border border-[#2A2A2A] flex items-center justify-center flex-shrink-0">
-            <img src="/person.png" alt="" className="w-6 h-6 opacity-60" />
+        {/* Start / Finish row — exact design pattern */}
+        <div className="flex items-center gap-4 mb-4 bg-bg rounded-2xl px-4 py-3 border border-border">
+          <div className="flex flex-col items-center gap-1">
+            <div className="w-2 h-2 rounded-full bg-green-500" />
+            <div className="w-px h-4 bg-border" />
+            <div className="w-2.5 h-2.5 rounded-sm bg-ink" />
           </div>
           <div className="flex-1">
-            <p className="font-bold">{session?.user?.fullName ?? 'Anonymous'}</p>
-            <p className={`text-sm font-semibold ${typeColor[session?.requestType ?? 'general']}`}>
-              {session?.requestType ?? 'Live location'}
-            </p>
-            {session?.message && <p className="text-xs text-[#555] mt-1">{session.message}</p>}
+            <p className="text-xs text-muted">My location</p>
+            <div className="h-px bg-border my-1.5" />
+            <p className="text-xs text-muted">{session?.user?.fullName ?? 'Someone'}</p>
           </div>
-          {dist !== null && (
-            <div className="text-right flex-shrink-0">
-              <p className="text-lg font-black text-[#A8D83F]">{dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`}</p>
-              <p className="text-xs text-[#555]">away</p>
+          {km !== null && (
+            <div className="text-right">
+              <p className="text-lg font-black text-ink">{km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`}</p>
+              {eta && <p className="text-xs text-muted">~{eta} min</p>}
             </div>
           )}
         </div>
 
-        <div className="flex gap-3 mt-5">
-          <button onClick={openGoogleMaps}
-            className="flex-1 py-3 rounded-2xl bg-[#1A1A1A] border border-[#2A2A2A] flex items-center justify-center gap-2">
-            <img src="/map.png" alt="" className="w-5 h-5 opacity-60" />
-            <span className="text-sm font-semibold">Navigate</span>
+        {/* Actions */}
+        <div className="flex gap-3">
+          <button onClick={openMaps} className="btn btn-ghost flex-1 gap-2 py-3.5">
+            🗺️ Navigate
           </button>
-          {isHelper && (
-            <button onClick={acceptRequest}
-              className="flex-1 py-3 rounded-2xl bg-[#A8D83F] text-[#0F0F0F] font-bold text-sm">
-              Accept Request
+          {isHelper ? (
+            <button onClick={accept} className="btn btn-black flex-1 py-3.5">
+              Accept request
+            </button>
+          ) : (
+            <button onClick={openMaps} className="btn btn-black flex-1 gap-2 py-3.5">
+              Open Maps
             </button>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+export default function TrackPage() {
+  const params = useParams();
+  const code = (params?.code as string) ?? '';
+  if (code === 'enter') return <EnterCode />;
+  return <LiveTracker code={code} />;
 }
