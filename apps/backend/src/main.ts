@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -17,7 +18,18 @@ async function bootstrap() {
   // DTO validation
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
+  // Swagger docs at /api/docs
+  const config = new DocumentBuilder()
+    .setTitle('Kaalay API')
+    .setDescription('Real-time location sharing and connection platform')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api/docs', app, document);
+
   await app.listen(process.env.PORT ?? 3000);
   console.log(`🚀 Kaalay API running on http://localhost:${process.env.PORT ?? 3000}/api`);
+  console.log(`📚 Swagger docs at http://localhost:${process.env.PORT ?? 3000}/api/docs`);
 }
 bootstrap();
