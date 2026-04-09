@@ -2,6 +2,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import {
+  MenuOutlined, BellOutlined, ShareAltOutlined,
+  AlertOutlined, SearchOutlined, TeamOutlined, CarOutlined,
+  EnvironmentOutlined, RadarChartOutlined,
+} from '@ant-design/icons';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { getPublicSessions } from '../../lib/api';
 import type { MarkerData } from '../../components/MapBase';
@@ -13,14 +18,13 @@ interface Session {
   requestType: string; message?: string; user?: { fullName: string };
 }
 
-const TYPE_META: Record<string, { bg: string; text: string; label: string }> = {
-  lost:    { bg: 'bg-red-100',    text: 'text-red-600',    label: 'Lost' },
-  pickup:  { bg: 'bg-purple-100', text: 'text-purple-600', label: 'Pickup' },
-  meetup:  { bg: 'bg-green-100',  text: 'text-green-600',  label: 'Meetup' },
-  general: { bg: 'bg-gray-100',   text: 'text-gray-600',   label: 'Live' },
+const TYPE_META: Record<string, { bg: string; text: string; label: string; Icon: React.ComponentType<any> }> = {
+  lost:    { bg: '#FEE2E2', text: '#DC2626', label: 'Lost',    Icon: AlertOutlined },
+  pickup:  { bg: '#EDE9FE', text: '#7C3AED', label: 'Pickup',  Icon: CarOutlined },
+  meetup:  { bg: '#DCFCE7', text: '#16A34A', label: 'Meetup',  Icon: TeamOutlined },
+  general: { bg: '#F3F4F6', text: '#6B7280', label: 'Live',    Icon: EnvironmentOutlined },
 };
 
-// Scattered fake car positions for visual richness (offset from user)
 const CAR_OFFSETS = [
   { dlat: 0.012, dlng: -0.018 }, { dlat: -0.009, dlng: 0.022 },
   { dlat: 0.020, dlng: 0.011 },  { dlat: -0.016, dlng: -0.014 },
@@ -28,7 +32,7 @@ const CAR_OFFSETS = [
 ];
 
 export default function HomePage() {
-  const router  = useRouter();
+  const router = useRouter();
   const { position } = useGeolocation(false);
   const [user,     setUser]     = useState<{ fullName: string; role: string } | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -42,109 +46,131 @@ export default function HomePage() {
     getPublicSessions().then(setSessions).catch(() => null);
   }, [router]);
 
-  const center = position ?? { lat: -1.2921, lng: 36.8219 };
-  const isHelper = user?.role === 'helper' || user?.role === 'driver';
+  const center    = position ?? { lat: -1.2921, lng: 36.8219 };
+  const isHelper  = user?.role === 'helper' || user?.role === 'driver';
 
   const markers: MarkerData[] = [
     ...(position ? [{ lat: position.lat, lng: position.lng, type: 'me' as const, accuracy: position.accuracy }] : []),
-    ...CAR_OFFSETS.map(o => ({
-      lat: center.lat + o.dlat, lng: center.lng + o.dlng, type: 'car' as const,
-    })),
-    ...sessions.slice(0, 4).map(s => ({
-      lat: Number(s.latitude), lng: Number(s.longitude), type: 'request' as const, label: s.user?.fullName,
-    })),
+    ...CAR_OFFSETS.map(o => ({ lat: center.lat + o.dlat, lng: center.lng + o.dlng, type: 'car' as const })),
+    ...sessions.slice(0, 4).map(s => ({ lat: Number(s.latitude), lng: Number(s.longitude), type: 'request' as const, label: s.user?.fullName })),
   ];
 
-  const sheetClass = sheetH === 'peek'
-    ? 'translate-y-[calc(100%-148px)]'
-    : sheetH === 'half'
-    ? 'translate-y-[calc(100%-360px)]'
-    : 'translate-y-0';
+  const sheetTranslate = sheetH === 'peek' ? 'calc(100% - 148px)' : sheetH === 'half' ? 'calc(100% - 380px)' : '0px';
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (search.trim()) router.push('/share');
-  };
+  const handleSearch = (e: React.FormEvent) => { e.preventDefault(); if (search.trim()) router.push('/share'); };
 
   const QUICK = [
-    { label: 'Share',   emoji: '📍', href: '/share',    color: 'bg-[#FFD600] text-ink' },
-    { label: 'Help',    emoji: '🆘', href: '/request',  color: 'bg-ink text-white' },
-    { label: 'Track',   emoji: '🔍', href: '/track/enter', color: 'bg-bg border border-border text-ink' },
-    { label: isHelper ? 'Requests' : 'Meet', emoji: isHelper ? '🚗' : '👥',
-      href: isHelper ? '/driver' : '/share', color: 'bg-bg border border-border text-ink' },
+    { label: 'Share',    Icon: ShareAltOutlined, href: '/share',       bg: '#FFD600', color: '#1A1A1A' },
+    { label: 'Help',     Icon: AlertOutlined,    href: '/request',     bg: '#1A1A1A', color: '#FFFFFF' },
+    { label: 'Track',    Icon: RadarChartOutlined, href: '/track/enter', bg: '#F7F7F7', color: '#1A1A1A', border: true },
+    { label: isHelper ? 'Requests' : 'Meet', Icon: isHelper ? CarOutlined : TeamOutlined,
+      href: isHelper ? '/driver' : '/share',  bg: '#F7F7F7', color: '#1A1A1A', border: true },
   ];
 
   return (
-    <div className="h-full relative overflow-hidden bg-bg">
+    <div style={{ height: '100%', position: 'relative', overflow: 'hidden', background: '#F7F7F7' }}>
 
       {/* Full-screen map */}
-      <div className="absolute inset-0">
+      <div style={{ position: 'absolute', inset: 0 }}>
         <MapBase center={center} zoom={14} markers={markers} className="w-full h-full" />
       </div>
 
       {/* ── Top bar ── */}
-      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 pt-12 pb-3 pointer-events-none">
-        <button
-          onClick={() => router.push('/auth')}
-          className="pointer-events-auto w-11 h-11 rounded-full bg-surface shadow-card flex items-center justify-center"
-        >
-          <svg width="18" height="14" viewBox="0 0 18 14" fill="none">
-            <rect width="18" height="2" rx="1" fill="#1A1A1A"/>
-            <rect y="6" width="12" height="2" rx="1" fill="#1A1A1A"/>
-            <rect y="12" width="18" height="2" rx="1" fill="#1A1A1A"/>
-          </svg>
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '48px 16px 12px',
+        pointerEvents: 'none',
+      }}>
+        <button onClick={() => router.push('/auth')} style={{
+          pointerEvents: 'auto',
+          width: 44, height: 44, borderRadius: '50%',
+          background: '#FFFFFF', border: 'none', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 2px 16px rgba(0,0,0,0.10)',
+        }}>
+          <MenuOutlined style={{ fontSize: 16, color: '#1A1A1A' }} />
         </button>
 
-        {/* ETA badge — shown when position known */}
         {position && (
-          <div className="pointer-events-auto flex items-center gap-2 bg-ink text-white px-4 py-2 rounded-full shadow-pin bounce-in">
-            <div className="w-2 h-2 rounded-full bg-[#FFD600] pulse-dot" />
-            <span className="text-xs font-bold">Live · {sessions.length} nearby</span>
+          <div style={{
+            pointerEvents: 'auto',
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: '#1A1A1A', borderRadius: 50,
+            padding: '8px 16px',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.20)',
+            animation: 'bounce-in 0.4s cubic-bezier(.34,1.56,.64,1) both',
+          }}>
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#FFD600', animation: 'pulse-dot 1.6s ease-in-out infinite' }} />
+            <span style={{ color: '#FFFFFF', fontSize: 12, fontWeight: 700 }}>
+              Live · {sessions.length} nearby
+            </span>
           </div>
         )}
 
-        <button
-          onClick={() => router.push(isHelper ? '/driver' : '/share')}
-          className="pointer-events-auto w-11 h-11 rounded-full bg-surface shadow-card flex items-center justify-center text-lg"
-        >
-          🔔
+        <button onClick={() => router.push(isHelper ? '/driver' : '/share')} style={{
+          pointerEvents: 'auto',
+          width: 44, height: 44, borderRadius: '50%',
+          background: '#FFFFFF', border: 'none', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 2px 16px rgba(0,0,0,0.10)',
+        }}>
+          <BellOutlined style={{ fontSize: 17, color: '#1A1A1A' }} />
         </button>
       </div>
 
       {/* ── Bottom sheet ── */}
-      <div
-        className={`absolute bottom-0 left-0 right-0 z-20 bg-surface rounded-t-3xl shadow-sheet transition-transform duration-400 ease-out ${sheetClass}`}
-        style={{ height: '85%' }}
-      >
-        {/* Drag handle */}
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 20,
+        height: '84%',
+        background: '#FFFFFF',
+        borderRadius: '28px 28px 0 0',
+        boxShadow: '0 -4px 32px rgba(0,0,0,0.10)',
+        transform: `translateY(${sheetTranslate})`,
+        transition: 'transform 0.35s cubic-bezier(.22,.68,0,1.1)',
+      }}>
+        {/* Handle */}
         <div
-          className="flex justify-center pt-3 pb-2 cursor-pointer"
+          style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 6px', cursor: 'pointer' }}
           onClick={() => setSheetH(h => h === 'peek' ? 'half' : h === 'half' ? 'full' : 'peek')}
         >
-          <div className="w-9 h-1 rounded-full bg-border" />
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: '#EBEBEB' }} />
         </div>
 
-        <div className="px-5 pb-4">
+        <div style={{ padding: '4px 20px 0' }}>
           {/* Greeting */}
-          <div className="flex items-baseline justify-between mb-4">
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
-              <p className="text-muted text-sm font-medium">Good time to connect</p>
-              <h2 className="text-2xl font-black text-ink leading-none mt-0.5">
+              <p style={{ fontSize: 13, color: '#888', fontWeight: 500, marginBottom: 2 }}>Good time to connect</p>
+              <h2 style={{ fontSize: 26, fontWeight: 900, color: '#1A1A1A', lineHeight: 1 }}>
                 {user?.fullName?.split(' ')[0] ?? 'Hey'} 👋
               </h2>
             </div>
-            <div className="flex items-center gap-1.5 bg-bg border border-border rounded-full px-3 py-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-              <span className="text-xs font-semibold text-ink">Now</span>
-              <span className="text-muted text-xs">↓</span>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: '#F7F7F7', border: '1.5px solid #EBEBEB',
+              borderRadius: 50, padding: '6px 12px',
+            }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22C55E' }} />
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#1A1A1A' }}>Now</span>
+              <span style={{ color: '#888', fontSize: 11 }}>↓</span>
             </div>
           </div>
 
-          {/* Search bar */}
-          <form onSubmit={handleSearch} className="relative mb-5">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted text-sm">🔍</span>
+          {/* Search */}
+          <form onSubmit={handleSearch} style={{ position: 'relative', marginBottom: 20 }}>
+            <SearchOutlined style={{
+              position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)',
+              fontSize: 15, color: '#BBBBBB',
+            }} />
             <input
-              className="input pl-10 text-sm font-medium"
+              style={{
+                width: '100%', background: '#F7F7F7',
+                border: '1.5px solid #EBEBEB', borderRadius: 14,
+                padding: '14px 16px 14px 44px',
+                fontSize: 15, fontWeight: 500, color: '#1A1A1A',
+                fontFamily: 'Inter, sans-serif', outline: 'none',
+              }}
               placeholder="Where are you going?"
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -153,51 +179,67 @@ export default function HomePage() {
           </form>
 
           {/* Quick actions */}
-          <div className="grid grid-cols-4 gap-2 mb-5">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 24 }}>
             {QUICK.map(q => (
-              <button
-                key={q.label}
-                onClick={() => router.push(q.href)}
-                className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl ${q.color}`}
-              >
-                <span className="text-xl">{q.emoji}</span>
-                <span className="text-xs font-bold">{q.label}</span>
+              <button key={q.label} onClick={() => router.push(q.href)} style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                padding: '14px 8px', borderRadius: 18,
+                background: q.bg, color: q.color,
+                border: q.border ? '1.5px solid #EBEBEB' : 'none',
+                cursor: 'pointer',
+              }}>
+                <q.Icon style={{ fontSize: 18 }} />
+                <span style={{ fontSize: 11, fontWeight: 700 }}>{q.label}</span>
               </button>
             ))}
           </div>
 
-          {/* Live nearby */}
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-bold text-ink">Nearby activity</p>
-            <span className="text-xs font-semibold text-muted">{sessions.length} live</span>
+          {/* Nearby */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <p style={{ fontSize: 14, fontWeight: 800, color: '#1A1A1A' }}>Nearby activity</p>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#888' }}>{sessions.length} live</span>
           </div>
 
           {sessions.length === 0 ? (
-            <div className="flex items-center gap-3 bg-bg rounded-2xl p-4 border border-border">
-              <span className="text-2xl">🗺️</span>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              background: '#F7F7F7', border: '1.5px solid #EBEBEB',
+              borderRadius: 16, padding: '14px 16px',
+            }}>
+              <EnvironmentOutlined style={{ fontSize: 22, color: '#BBBBBB' }} />
               <div>
-                <p className="text-sm font-semibold text-ink">All quiet nearby</p>
-                <p className="text-xs text-muted">Be the first to share your location</p>
+                <p style={{ fontSize: 13, fontWeight: 700, color: '#1A1A1A' }}>All quiet nearby</p>
+                <p style={{ fontSize: 12, color: '#888', marginTop: 2 }}>Be the first to share your location</p>
               </div>
             </div>
           ) : (
-            <div className="space-y-2 no-scroll overflow-y-auto" style={{ maxHeight: '200px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 200, overflowY: 'auto' }}>
               {sessions.map(s => {
                 const m = TYPE_META[s.requestType] ?? TYPE_META.general;
                 return (
-                  <button
-                    key={s.id}
-                    onClick={() => router.push(`/track/${s.shareCode}`)}
-                    className="w-full flex items-center gap-3 bg-bg border border-border rounded-2xl px-4 py-3 text-left"
-                  >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${m.bg}`}>
-                      {s.requestType === 'lost' ? '🆘' : s.requestType === 'pickup' ? '🚗' : s.requestType === 'meetup' ? '👥' : '📍'}
+                  <button key={s.id} onClick={() => router.push(`/track/${s.shareCode}`)} style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    background: '#F7F7F7', border: '1.5px solid #EBEBEB',
+                    borderRadius: 16, padding: '12px 14px', cursor: 'pointer', textAlign: 'left',
+                  }}>
+                    <div style={{
+                      width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                      background: m.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <m.Icon style={{ fontSize: 16, color: m.text }} />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-ink truncate">{s.user?.fullName ?? 'Someone'}</p>
-                      <p className="text-xs text-muted truncate">{s.message ?? 'Live location'}</p>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#1A1A1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {s.user?.fullName ?? 'Someone'}
+                      </p>
+                      <p style={{ fontSize: 11, color: '#888', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {s.message ?? 'Live location'}
+                      </p>
                     </div>
-                    <span className={`pill ${m.bg} ${m.text}`}>{m.label}</span>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, padding: '3px 9px',
+                      borderRadius: 20, background: m.bg, color: m.text, flexShrink: 0,
+                    }}>{m.label}</span>
                   </button>
                 );
               })}

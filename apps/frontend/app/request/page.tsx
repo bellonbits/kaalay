@@ -1,6 +1,10 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import {
+  ArrowLeftOutlined, AlertOutlined, CarOutlined, TeamOutlined,
+  CheckOutlined, EnvironmentFilled, SendOutlined,
+} from '@ant-design/icons';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { createSession } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
@@ -8,33 +12,30 @@ import { getSocket } from '../../lib/socket';
 const TYPES = [
   {
     id: 'lost',
-    emoji: '🆘',
+    Icon: AlertOutlined,
     label: "I'm Lost",
     sub: 'Alert nearby helpers to your location',
-    border: 'border-red-200',
-    activeBorder: 'border-red-400',
-    activeBg: 'bg-red-50',
-    pill: 'bg-red-100 text-red-600',
+    iconBg: '#FEE2E2', iconColor: '#DC2626',
+    activeBorder: '#FCA5A5', activeBg: '#FFF5F5',
+    pillBg: '#FEE2E2', pillColor: '#DC2626',
   },
   {
     id: 'pickup',
-    emoji: '🚗',
+    Icon: CarOutlined,
     label: 'Need a Ride',
     sub: 'Request a driver or helper to pick you up',
-    border: 'border-purple-200',
-    activeBorder: 'border-purple-400',
-    activeBg: 'bg-purple-50',
-    pill: 'bg-purple-100 text-purple-600',
+    iconBg: '#EDE9FE', iconColor: '#7C3AED',
+    activeBorder: '#C4B5FD', activeBg: '#FAF5FF',
+    pillBg: '#EDE9FE', pillColor: '#7C3AED',
   },
   {
     id: 'meetup',
-    emoji: '👥',
+    Icon: TeamOutlined,
     label: 'Meet Friends',
     sub: 'Share your location for friends to find you',
-    border: 'border-green-200',
-    activeBorder: 'border-green-400',
-    activeBg: 'bg-green-50',
-    pill: 'bg-green-100 text-green-600',
+    iconBg: '#DCFCE7', iconColor: '#16A34A',
+    activeBorder: '#86EFAC', activeBg: '#F0FDF4',
+    pillBg: '#DCFCE7', pillColor: '#16A34A',
   },
 ];
 
@@ -53,8 +54,7 @@ export default function RequestPage() {
     try {
       const s = await createSession({
         latitude: position.lat, longitude: position.lng, accuracy: position.accuracy,
-        requestType: sel, visibility: 'public',
-        message: msg || undefined, userId: user.id,
+        requestType: sel, visibility: 'public', message: msg || undefined, userId: user.id,
       });
       getSocket().emit('new-request', { code: s.shareCode, type: sel, message: msg, lat: position.lat, lng: position.lng, userName: user.fullName });
       setDone({ code: s.shareCode, type: sel });
@@ -62,69 +62,79 @@ export default function RequestPage() {
       const code = 'KAA-' + Math.random().toString(36).substring(2, 6).toUpperCase();
       getSocket().emit('new-request', { code, type: sel, message: msg, lat: position.lat, lng: position.lng });
       setDone({ code, type: sel });
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
-  /* ── Done view ── */
+  /* ── Done ── */
   if (done) {
     const t = TYPES.find(x => x.id === done.type)!;
     return (
-      <div className="h-full flex flex-col bg-bg">
-        {/* Yellow top banner */}
-        <div style={{ background: '#FFD600' }} className="px-6 pt-14 pb-6">
-          <p className="text-xs font-bold text-ink/50 uppercase tracking-widest mb-1">Request sent</p>
-          <div className="flex items-center gap-3">
-            <span className="text-4xl">{t.emoji}</span>
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
+        {/* Yellow header */}
+        <div style={{ background: '#FFD600', padding: '56px 24px 24px' }}>
+          <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: '2px', color: 'rgba(0,0,0,0.45)', textTransform: 'uppercase', marginBottom: 10 }}>
+            Request sent
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 52, height: 52, borderRadius: 16, background: 'rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <t.Icon style={{ fontSize: 24, color: '#1A1A1A' }} />
+            </div>
             <div>
-              <h2 className="text-2xl font-black text-ink">{t.label}</h2>
-              <p className="text-sm text-ink/60 font-medium">Helpers nearby have been notified</p>
+              <h2 style={{ fontSize: 24, fontWeight: 900, color: '#1A1A1A' }}>{t.label}</h2>
+              <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.55)', fontWeight: 500 }}>Helpers nearby have been notified</p>
             </div>
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col px-5 pt-6 gap-4">
+        <div style={{ flex: 1, padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           {/* Code card */}
-          <div className="bg-surface rounded-3xl p-5 shadow-card border border-border">
-            <div className="flex items-center gap-4">
-              <div className="flex flex-col items-center gap-1">
-                <div className="w-2 h-2 rounded-full bg-green-500" />
-                <div className="w-px h-6 bg-border" />
-                <div className="w-2.5 h-2.5 rounded-sm bg-ink" />
+          <div style={{ background: '#FFFFFF', borderRadius: 22, padding: 20, boxShadow: '0 2px 16px rgba(0,0,0,0.06)', border: '1.5px solid #EBEBEB' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E' }} />
+                <div style={{ width: 1, height: 28, background: '#EBEBEB' }} />
+                <div style={{ width: 8, height: 8, borderRadius: 2, background: '#1A1A1A' }} />
               </div>
-              <div className="flex-1">
-                <p className="text-xs text-muted">Your location</p>
-                <div className="h-px bg-border my-1.5" />
-                <p className="text-xs text-muted">Requesting</p>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 11, color: '#888', marginBottom: 1 }}>Your location</p>
+                <div style={{ height: 1, background: '#EBEBEB', margin: '8px 0' }} />
+                <p style={{ fontSize: 11, color: '#888' }}>Requesting help</p>
               </div>
-              <div className="text-right">
-                <p className="text-2xl font-black tracking-widest text-ink">{done.code}</p>
-                <p className="text-xs text-muted mt-0.5">Share this code</p>
+              <div style={{ textAlign: 'right' }}>
+                <p style={{ fontSize: 26, fontWeight: 900, letterSpacing: '3px', color: '#1A1A1A' }}>{done.code}</p>
+                <p style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Share this code</p>
               </div>
             </div>
           </div>
 
-          {/* Instructions */}
+          {/* Steps */}
           {[
-            { n: '1', text: 'Helpers nearby can see your request on the map' },
-            { n: '2', text: 'Share the code above with someone you trust' },
-            { n: '3', text: 'They can track your live location instantly' },
-          ].map(step => (
-            <div key={step.n} className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-ink text-white text-xs font-black flex items-center justify-center flex-shrink-0 mt-0.5">
-                {step.n}
+            'Helpers nearby can see your request on the map',
+            'Share the code above with someone you trust',
+            'They can track your live location instantly',
+          ].map((text, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#1A1A1A', color: '#FFFFFF', fontSize: 11, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {i + 1}
               </div>
-              <p className="text-sm text-muted leading-snug">{step.text}</p>
+              <p style={{ fontSize: 13, color: '#666', lineHeight: 1.5, paddingTop: 2 }}>{text}</p>
             </div>
           ))}
         </div>
 
-        <div className="px-5 pb-8 flex flex-col gap-3">
-          <button onClick={() => router.push(`/track/${done.code}`)} className="btn btn-black w-full">
+        <div style={{ padding: '0 20px 40px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <button onClick={() => router.push(`/track/${done.code}`)} style={{
+            width: '100%', padding: '16px', background: '#1A1A1A', color: '#FFFFFF',
+            border: 'none', borderRadius: 16, fontSize: 15, fontWeight: 800, cursor: 'pointer',
+            fontFamily: 'Inter, sans-serif',
+          }}>
             View my live session
           </button>
-          <button onClick={() => router.push('/home')} className="btn btn-ghost w-full">
+          <button onClick={() => router.push('/home')} style={{
+            width: '100%', padding: '14px', background: '#F7F7F7', color: '#1A1A1A',
+            border: '1.5px solid #EBEBEB', borderRadius: 16, fontSize: 14, fontWeight: 700, cursor: 'pointer',
+            fontFamily: 'Inter, sans-serif',
+          }}>
             Back to map
           </button>
         </div>
@@ -132,88 +142,123 @@ export default function RequestPage() {
     );
   }
 
-  /* ── Form view ── */
+  /* ── Form ── */
   const selT = TYPES.find(t => t.id === sel);
 
   return (
-    <div className="h-full flex flex-col bg-bg">
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
       {/* Header */}
-      <div className="bg-surface px-5 pt-12 pb-4 border-b border-border">
-        <div className="flex items-center gap-3 mb-1">
-          <button onClick={() => router.back()}
-            className="w-10 h-10 rounded-full bg-bg border border-border flex items-center justify-center flex-shrink-0">
-            <svg width="16" height="14" viewBox="0 0 16 14" fill="none">
-              <path d="M8 1L1 7L8 13M1 7H15" stroke="#1A1A1A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+      <div style={{ background: '#FFFFFF', padding: '48px 20px 16px', borderBottom: '1px solid #EBEBEB', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={() => router.back()} style={{
+            width: 40, height: 40, borderRadius: '50%', background: '#F7F7F7',
+            border: '1.5px solid #EBEBEB', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <ArrowLeftOutlined style={{ fontSize: 15, color: '#1A1A1A' }} />
           </button>
           <div>
-            <h1 className="text-xl font-black text-ink">Request Help</h1>
-            <p className="text-xs text-muted">What do you need?</p>
+            <h1 style={{ fontSize: 20, fontWeight: 900, color: '#1A1A1A' }}>Request Help</h1>
+            <p style={{ fontSize: 12, color: '#888' }}>What do you need?</p>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto no-scroll px-5 py-5">
+      <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
         {/* Type cards */}
-        <div className="space-y-3 mb-6">
-          {TYPES.map(t => (
-            <button key={t.id} onClick={() => setSel(t.id)}
-              className={`w-full flex items-center gap-4 p-5 rounded-3xl border-2 text-left transition-all ${
-                sel === t.id ? `${t.activeBorder} ${t.activeBg}` : `${t.border} bg-surface`
-              }`}>
-              <div className="w-14 h-14 rounded-2xl bg-bg flex items-center justify-center text-3xl flex-shrink-0">
-                {t.emoji}
-              </div>
-              <div className="flex-1">
-                <p className="font-bold text-ink">{t.label}</p>
-                <p className="text-xs text-muted mt-0.5 leading-snug">{t.sub}</p>
-              </div>
-              {sel === t.id && (
-                <div className="w-6 h-6 rounded-full bg-ink text-white text-xs flex items-center justify-center flex-shrink-0">
-                  ✓
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+          {TYPES.map(t => {
+            const active = sel === t.id;
+            return (
+              <button key={t.id} onClick={() => setSel(t.id)} style={{
+                display: 'flex', alignItems: 'center', gap: 14,
+                padding: '18px 16px', borderRadius: 20,
+                background: active ? t.activeBg : '#FFFFFF',
+                border: `2px solid ${active ? t.activeBorder : '#EBEBEB'}`,
+                cursor: 'pointer', textAlign: 'left',
+                transition: 'all 0.15s',
+              }}>
+                <div style={{
+                  width: 52, height: 52, borderRadius: 16, flexShrink: 0,
+                  background: t.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <t.Icon style={{ fontSize: 22, color: t.iconColor }} />
                 </div>
-              )}
-            </button>
-          ))}
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 15, fontWeight: 800, color: '#1A1A1A', marginBottom: 3 }}>{t.label}</p>
+                  <p style={{ fontSize: 12, color: '#888', lineHeight: 1.4 }}>{t.sub}</p>
+                </div>
+                {active && (
+                  <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#1A1A1A', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <CheckOutlined style={{ fontSize: 11, color: '#FFFFFF' }} />
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {/* Message */}
-        <p className="text-xs font-bold text-muted uppercase tracking-widest mb-2">Message (optional)</p>
+        <p style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8 }}>
+          Message (optional)
+        </p>
         <textarea
-          className="input resize-none text-sm mb-4"
+          style={{
+            width: '100%', background: '#FFFFFF', border: '1.5px solid #EBEBEB',
+            borderRadius: 14, padding: '14px 16px', fontSize: 14, color: '#1A1A1A',
+            resize: 'none', outline: 'none', fontFamily: 'Inter, sans-serif',
+            marginBottom: 16, lineHeight: 1.5,
+          }}
           rows={3}
-          placeholder={sel === 'lost' ? "Describe where you are — e.g. 'Near the blue gate on Kenyatta Ave'" : "Any details helpers should know…"}
+          placeholder={sel === 'lost' ? "Where are you? e.g. 'Near the blue gate on Kenyatta Ave'" : "Any details helpers should know…"}
           value={msg}
           onChange={e => setMsg(e.target.value)}
         />
 
         {/* Location status */}
-        <div className={`flex items-center gap-3 rounded-2xl px-4 py-3 mb-2 border ${position ? 'bg-green-50 border-green-200' : 'bg-bg border-border'}`}>
-          <span className="text-lg">{position ? '✅' : '⏳'}</span>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          borderRadius: 14, padding: '12px 14px',
+          background: position ? '#F0FDF4' : '#F7F7F7',
+          border: `1.5px solid ${position ? '#86EFAC' : '#EBEBEB'}`,
+        }}>
+          <EnvironmentFilled style={{ fontSize: 18, color: position ? '#16A34A' : '#BBBBBB' }} />
           <div>
-            <p className="text-sm font-bold text-ink">{position ? 'Location ready' : 'Getting your location…'}</p>
-            {position && <p className="text-xs text-muted">±{Math.round(position.accuracy ?? 0)}m accuracy</p>}
+            <p style={{ fontSize: 13, fontWeight: 700, color: '#1A1A1A' }}>
+              {position ? 'Location ready' : 'Getting your location…'}
+            </p>
+            {position && <p style={{ fontSize: 11, color: '#888' }}>±{Math.round(position.accuracy ?? 0)}m accuracy</p>}
           </div>
         </div>
       </div>
 
-      {/* Bottom actions — like design: two secondary + main */}
-      <div className="bg-surface border-t border-border px-5 pt-3 pb-8">
+      {/* Bottom action bar */}
+      <div style={{ background: '#FFFFFF', borderTop: '1px solid #EBEBEB', padding: '12px 20px 36px', flexShrink: 0 }}>
         {selT && (
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xl">{selT.emoji}</span>
-              <span className="text-sm font-bold text-ink">{selT.label}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: selT.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <selT.Icon style={{ fontSize: 14, color: selT.iconColor }} />
             </div>
-            <span className={`pill ${selT.pill}`}>selected</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#1A1A1A' }}>{selT.label}</span>
+            <span style={{ flex: 1 }} />
+            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: selT.pillBg, color: selT.pillColor }}>
+              selected
+            </span>
           </div>
         )}
         <button
           onClick={submit}
           disabled={!sel || !position || loading}
-          className="btn btn-black w-full"
+          style={{
+            width: '100%', padding: '16px', border: 'none', borderRadius: 16,
+            background: !sel || !position ? '#EBEBEB' : '#1A1A1A',
+            color: !sel || !position ? '#BBBBBB' : '#FFFFFF',
+            fontSize: 15, fontWeight: 800, cursor: !sel || !position ? 'not-allowed' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            fontFamily: 'Inter, sans-serif',
+          }}
         >
-          {loading ? 'Sending request…' : 'Send Request'}
+          <SendOutlined style={{ fontSize: 14 }} />
+          {loading ? 'Sending…' : 'Send Request'}
         </button>
       </div>
     </div>

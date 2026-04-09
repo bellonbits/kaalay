@@ -1,18 +1,26 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import {
+  UserOutlined,
+  PhoneOutlined,
+  CompassOutlined,
+  CarOutlined,
+  ArrowRightOutlined,
+  CheckCircleFilled,
+} from '@ant-design/icons';
 import { createUser } from '../../lib/api';
 
 const ROLES = [
   {
     id: 'user',
-    emoji: '🧭',
+    Icon: CompassOutlined,
     label: 'Standard',
     desc: 'Share location, meet friends, request help',
   },
   {
     id: 'helper',
-    emoji: '🚗',
+    Icon: CarOutlined,
     label: 'Driver / Helper',
     desc: 'Accept requests, assist people nearby',
   },
@@ -44,74 +52,155 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-bg overflow-hidden">
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7', overflow: 'hidden' }}>
 
-      {/* Hero illustration area */}
-      <div className="flex-1 flex flex-col items-center justify-end pb-8 px-6 bg-bg relative overflow-hidden">
-        {/* Abstract map dots */}
-        {[...Array(14)].map((_, i) => (
-          <div key={i} className="absolute rounded-full bg-ink/5"
-            style={{
-              width: `${12 + (i * 7) % 20}px`,
-              height: `${12 + (i * 7) % 20}px`,
-              top: `${10 + (i * 29) % 75}%`,
-              left: `${5 + (i * 37) % 85}%`,
-            }}
-          />
+      {/* ── Hero ── */}
+      <div style={{
+        flex: 1, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        background: '#F7F7F7', position: 'relative', overflow: 'hidden',
+        minHeight: 0,
+      }}>
+        {/* Decorative circles */}
+        {[80, 130, 60, 100, 50, 90].map((s, i) => (
+          <div key={i} style={{
+            position: 'absolute',
+            width: s, height: s, borderRadius: '50%',
+            background: 'rgba(0,0,0,0.045)',
+            top: `${[12, 8, 55, 5, 65, 35][i]}%`,
+            left: `${[5, 68, 75, 38, 15, 82][i]}%`,
+          }} />
         ))}
+
         {/* Wordmark */}
-        <div className="relative z-10 text-center">
-          <div className="text-5xl font-black tracking-tighter text-ink mb-1">
+        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
+          <div style={{
+            fontSize: 52, fontWeight: 900, letterSpacing: '-2px',
+            color: '#1A1A1A', lineHeight: 1, fontFamily: 'Inter, sans-serif',
+          }}>
             kaalay
           </div>
-          <div
-            className="inline-block text-xs font-bold tracking-[3px] uppercase px-3 py-1 rounded-full"
-            style={{ background: '#FFD600', color: '#1A1A1A' }}
-          >
+          <div style={{
+            display: 'inline-block', marginTop: 10,
+            background: '#FFD600', borderRadius: 50,
+            padding: '6px 20px',
+            fontSize: 11, fontWeight: 800, letterSpacing: '3px',
+            color: '#1A1A1A', textTransform: 'uppercase',
+          }}>
             Find · Meet · Move
           </div>
         </div>
       </div>
 
-      {/* Form sheet */}
-      <div className="bg-surface rounded-t-3xl px-6 pt-8 pb-10 shadow-sheet slide-up">
-        <h2 className="text-2xl font-black text-ink mb-1">Get started</h2>
-        <p className="text-sm text-muted mb-6">Tell us who you are and how you'll use Kaalay</p>
+      {/* ── Form card ── */}
+      <div style={{
+        background: '#FFFFFF',
+        borderRadius: '28px 28px 0 0',
+        padding: '32px 24px 48px',
+        boxShadow: '0 -4px 32px rgba(0,0,0,0.08)',
+        flexShrink: 0,
+      }}>
+        <h2 style={{ fontSize: 26, fontWeight: 900, color: '#1A1A1A', marginBottom: 6 }}>
+          Get started
+        </h2>
+        <p style={{ fontSize: 14, color: '#888', marginBottom: 24 }}>
+          Tell us who you are and how you'll use Kaalay
+        </p>
 
         {/* Role selector */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          {ROLES.map(r => (
-            <button
-              key={r.id}
-              type="button"
-              onClick={() => setRole(r.id)}
-              className={`p-4 rounded-2xl border-2 text-left transition-all ${
-                role === r.id ? 'border-ink bg-ink/5' : 'border-border bg-bg'
-              }`}
-            >
-              <div className="text-2xl mb-2">{r.emoji}</div>
-              <div className="text-sm font-bold text-ink">{r.label}</div>
-              <div className="text-xs text-muted mt-0.5 leading-snug">{r.desc}</div>
-            </button>
-          ))}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
+          {ROLES.map(r => {
+            const selected = role === r.id;
+            return (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => setRole(r.id)}
+                style={{
+                  background: selected ? '#1A1A1A' : '#F7F7F7',
+                  border: selected ? '2px solid #1A1A1A' : '2px solid #EBEBEB',
+                  borderRadius: 18,
+                  padding: '18px 16px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  transition: 'all 0.18s ease',
+                }}
+              >
+                {/* Check badge */}
+                {selected && (
+                  <CheckCircleFilled style={{
+                    position: 'absolute', top: 10, right: 10,
+                    fontSize: 16, color: '#FFD600',
+                  }} />
+                )}
+
+                {/* Icon circle */}
+                <div style={{
+                  width: 40, height: 40, borderRadius: 12,
+                  background: selected ? 'rgba(255,214,0,0.15)' : '#FFFFFF',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  marginBottom: 12,
+                  border: selected ? '1.5px solid rgba(255,214,0,0.3)' : '1.5px solid #EBEBEB',
+                }}>
+                  <r.Icon style={{
+                    fontSize: 18,
+                    color: selected ? '#FFD600' : '#888',
+                  }} />
+                </div>
+
+                <div style={{
+                  fontSize: 14, fontWeight: 800,
+                  color: selected ? '#FFFFFF' : '#1A1A1A',
+                  marginBottom: 4,
+                }}>
+                  {r.label}
+                </div>
+                <div style={{
+                  fontSize: 11, lineHeight: 1.4,
+                  color: selected ? 'rgba(255,255,255,0.55)' : '#999',
+                }}>
+                  {r.desc}
+                </div>
+              </button>
+            );
+          })}
         </div>
 
-        <form onSubmit={submit} className="space-y-3">
+        {/* Inputs */}
+        <form onSubmit={submit}>
           {/* Name */}
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted text-lg">👤</span>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            background: '#F7F7F7', border: '1.5px solid #EBEBEB',
+            borderRadius: 14, padding: '14px 16px', marginBottom: 12,
+          }}>
+            <UserOutlined style={{ fontSize: 17, color: '#BBBBBB', flexShrink: 0 }} />
             <input
-              className="input pl-11"
+              style={{
+                flex: 1, background: 'transparent', border: 'none',
+                outline: 'none', fontSize: 15, color: '#1A1A1A',
+                fontFamily: 'Inter, sans-serif',
+              }}
               placeholder="Your full name"
               value={name}
               onChange={e => setName(e.target.value)}
             />
           </div>
+
           {/* Phone */}
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted">📱</span>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            background: '#F7F7F7', border: '1.5px solid #EBEBEB',
+            borderRadius: 14, padding: '14px 16px', marginBottom: error ? 12 : 20,
+          }}>
+            <PhoneOutlined style={{ fontSize: 17, color: '#BBBBBB', flexShrink: 0 }} />
             <input
-              className="input pl-11"
+              style={{
+                flex: 1, background: 'transparent', border: 'none',
+                outline: 'none', fontSize: 15, color: '#1A1A1A',
+                fontFamily: 'Inter, sans-serif',
+              }}
               placeholder="Phone number"
               type="tel"
               value={phone}
@@ -119,11 +208,42 @@ export default function AuthPage() {
             />
           </div>
 
-          {error && <p className="text-red-500 text-sm font-medium">{error}</p>}
+          {/* Error */}
+          {error && (
+            <p style={{ fontSize: 13, color: '#E5383B', fontWeight: 600, marginBottom: 16 }}>
+              {error}
+            </p>
+          )}
 
-          <button type="submit" disabled={loading}
-            className="btn btn-black w-full mt-1">
-            {loading ? 'Please wait…' : 'Continue →'}
+          {/* CTA */}
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              width: '100%', padding: '17px 24px',
+              background: loading ? '#555' : '#1A1A1A',
+              color: '#FFFFFF', border: 'none', borderRadius: 16,
+              fontSize: 16, fontWeight: 800, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              fontFamily: 'Inter, sans-serif',
+              transition: 'background 0.15s',
+            }}
+          >
+            {loading ? (
+              <>
+                <div style={{
+                  width: 18, height: 18, border: '2.5px solid rgba(255,255,255,0.3)',
+                  borderTopColor: '#FFD600', borderRadius: '50%',
+                  animation: 'spin 0.9s linear infinite',
+                }} />
+                Please wait…
+              </>
+            ) : (
+              <>
+                Continue
+                <ArrowRightOutlined style={{ fontSize: 15 }} />
+              </>
+            )}
           </button>
         </form>
       </div>

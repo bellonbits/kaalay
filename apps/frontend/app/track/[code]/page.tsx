@@ -2,6 +2,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import {
+  ArrowLeftOutlined, AlertOutlined, CarOutlined, TeamOutlined,
+  EnvironmentOutlined, CheckCircleFilled, CompassOutlined,
+} from '@ant-design/icons';
 import { useGeolocation } from '../../../hooks/useGeolocation';
 import { useSessionSocket } from '../../../hooks/useSocket';
 import { getSessionByCode } from '../../../lib/api';
@@ -21,44 +25,68 @@ function dist(a: { lat: number; lng: number }, b: { lat: number; lng: number }) 
   return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
+const TYPE_META: Record<string, { Icon: React.ComponentType<any>; iconBg: string; iconColor: string; label: string }> = {
+  lost:    { Icon: AlertOutlined,       iconBg: '#FEE2E2', iconColor: '#DC2626', label: 'Lost' },
+  pickup:  { Icon: CarOutlined,         iconBg: '#EDE9FE', iconColor: '#7C3AED', label: 'Pickup' },
+  meetup:  { Icon: TeamOutlined,        iconBg: '#DCFCE7', iconColor: '#16A34A', label: 'Meetup' },
+  general: { Icon: EnvironmentOutlined, iconBg: '#F3F4F6', iconColor: '#6B7280', label: 'Live' },
+};
+
 // ── Enter code view ──────────────────────────────────────────────────────
 function EnterCode() {
   const router = useRouter();
   const [code, setCode] = useState('');
   return (
-    <div className="h-full flex flex-col bg-bg">
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
       {/* Header */}
-      <div className="flex items-center gap-3 px-5 pt-12 pb-6">
-        <button onClick={() => router.back()}
-          className="w-10 h-10 rounded-full bg-surface shadow-card flex items-center justify-center flex-shrink-0">
-          <svg width="16" height="14" viewBox="0 0 16 14" fill="none">
-            <path d="M8 1L1 7L8 13M1 7H15" stroke="#1A1A1A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-        <div>
-          <h1 className="text-xl font-black text-ink">Track Someone</h1>
-          <p className="text-xs text-muted">Enter the share code they sent you</p>
+      <div style={{ background: '#FFFFFF', padding: '48px 20px 16px', borderBottom: '1px solid #EBEBEB' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={() => router.back()} style={{
+            width: 40, height: 40, borderRadius: '50%', background: '#F7F7F7',
+            border: '1.5px solid #EBEBEB', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <ArrowLeftOutlined style={{ fontSize: 15, color: '#1A1A1A' }} />
+          </button>
+          <div>
+            <h1 style={{ fontSize: 20, fontWeight: 900, color: '#1A1A1A' }}>Track Someone</h1>
+            <p style={{ fontSize: 12, color: '#888' }}>Enter the share code they sent you</p>
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center px-6 gap-6">
-        {/* Code input */}
-        <div className="w-full bg-surface rounded-3xl p-6 shadow-card border border-border">
-          <p className="text-xs text-muted font-bold uppercase tracking-widest mb-3">Share code</p>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 24px', gap: 16 }}>
+        {/* Code input card */}
+        <div style={{ width: '100%', background: '#FFFFFF', borderRadius: 24, padding: 24, boxShadow: '0 2px 16px rgba(0,0,0,0.06)', border: '1.5px solid #EBEBEB' }}>
+          <p style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 12 }}>Share code</p>
           <input
-            className="w-full text-center text-3xl font-black tracking-[6px] text-ink bg-bg border-2 border-border rounded-2xl py-4 outline-none uppercase focus:border-ink"
+            style={{
+              width: '100%', textAlign: 'center', fontSize: 28, fontWeight: 900,
+              letterSpacing: '6px', color: '#1A1A1A', background: '#F7F7F7',
+              border: '2px solid #EBEBEB', borderRadius: 16, padding: '16px',
+              outline: 'none', fontFamily: 'Inter, sans-serif', textTransform: 'uppercase',
+            }}
             placeholder="KAA-XXXX"
             value={code}
             onChange={e => setCode(e.target.value.toUpperCase())}
             maxLength={8}
           />
-          <p className="text-xs text-muted text-center mt-3">Ask the person sharing to give you their code</p>
+          <p style={{ fontSize: 12, color: '#888', textAlign: 'center', marginTop: 10 }}>
+            Ask the person sharing to give you their code
+          </p>
         </div>
 
         <button
           disabled={code.length < 6}
           onClick={() => router.push(`/track/${code}`)}
-          className="btn btn-black w-full"
+          style={{
+            width: '100%', padding: '16px',
+            background: code.length < 6 ? '#EBEBEB' : '#1A1A1A',
+            color: code.length < 6 ? '#BBBBBB' : '#FFFFFF',
+            border: 'none', borderRadius: 16, fontSize: 15, fontWeight: 800,
+            cursor: code.length < 6 ? 'not-allowed' : 'pointer',
+            fontFamily: 'Inter, sans-serif',
+          }}
         >
           Track Live Location
         </button>
@@ -69,11 +97,11 @@ function EnterCode() {
 
 // ── Live tracker ─────────────────────────────────────────────────────────
 function LiveTracker({ code }: { code: string }) {
-  const router   = useRouter();
+  const router = useRouter();
   const { position: me } = useGeolocation(false);
-  const [tracked, setTracked] = useState<LivePos | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [ended,   setEnded]   = useState(false);
+  const [tracked,  setTracked]  = useState<LivePos | null>(null);
+  const [session,  setSession]  = useState<Session | null>(null);
+  const [ended,    setEnded]    = useState(false);
   const [accepted, setAccepted] = useState<string | null>(null);
   const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('kaalay_user') ?? '{}') : {};
   const isHelper = user.role === 'helper' || user.role === 'driver';
@@ -87,8 +115,8 @@ function LiveTracker({ code }: { code: string }) {
     useCallback((d: { helperName: string }) => setAccepted(d.helperName), []),
   );
 
-  const km = me && tracked ? dist(me, tracked) : null;
-  const eta = km ? Math.round((km / 40) * 60) : null; // rough 40km/h
+  const km  = me && tracked ? dist(me, tracked) : null;
+  const eta = km ? Math.round((km / 40) * 60) : null;
 
   const openMaps = () => tracked && window.open(`https://www.google.com/maps/dir/?api=1&destination=${tracked.lat},${tracked.lng}`, '_blank');
   const accept   = () => {
@@ -97,103 +125,163 @@ function LiveTracker({ code }: { code: string }) {
   };
 
   const markers: MarkerData[] = [
-    ...(me      ? [{ lat: me.lat,      lng: me.lng,      type: 'me'      as const, accuracy: me.accuracy }]       : []),
-    ...(tracked ? [{ lat: tracked.lat, lng: tracked.lng, type: 'tracked' as const }]                               : []),
+    ...(me      ? [{ lat: me.lat,      lng: me.lng,      type: 'me'      as const, accuracy: me.accuracy }] : []),
+    ...(tracked ? [{ lat: tracked.lat, lng: tracked.lng, type: 'tracked' as const }]                        : []),
   ];
 
-  const center = tracked ?? me ?? { lat: -1.29, lng: 36.82 };
-  const typeEmoji: Record<string, string> = { lost: '🆘', pickup: '🚗', meetup: '👥', general: '📍' };
+  const center  = tracked ?? me ?? { lat: -1.29, lng: 36.82 };
+  const typeMeta = TYPE_META[session?.requestType ?? 'general'] ?? TYPE_META.general;
 
   return (
-    <div className="h-full flex flex-col bg-bg">
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
       {/* Map */}
-      <div className="relative flex-1">
+      <div style={{ position: 'relative', flex: 1 }}>
         <MapBase center={center} zoom={15} markers={markers}
           routeTo={isHelper && tracked ? tracked : undefined}
           className="w-full h-full" />
 
         {/* Back */}
-        <button onClick={() => router.back()}
-          className="absolute top-12 left-4 w-10 h-10 rounded-full bg-surface shadow-card flex items-center justify-center">
-          <svg width="16" height="14" viewBox="0 0 16 14" fill="none">
-            <path d="M8 1L1 7L8 13M1 7H15" stroke="#1A1A1A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
+        <button onClick={() => router.back()} style={{
+          position: 'absolute', top: 48, left: 16,
+          width: 40, height: 40, borderRadius: '50%',
+          background: '#FFFFFF', border: 'none', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 2px 16px rgba(0,0,0,0.10)',
+        }}>
+          <ArrowLeftOutlined style={{ fontSize: 15, color: '#1A1A1A' }} />
         </button>
 
-        {/* ETA pill — like design reference */}
-        {(km !== null && !ended) && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bounce-in"
-            style={{ background: '#FFD600', borderRadius: '20px', padding: '8px 18px', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 16px rgba(0,0,0,0.15)' }}>
-            <span className="text-sm">{typeEmoji[session?.requestType ?? 'general']}</span>
-            <p className="text-sm font-bold text-ink">
+        {/* Code pill */}
+        <div style={{ position: 'absolute', top: 48, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+          <div style={{
+            background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(8px)',
+            borderRadius: 50, padding: '6px 16px', border: '1px solid #EBEBEB',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.10)',
+          }}>
+            <span style={{ fontSize: 12, fontWeight: 900, letterSpacing: '3px', color: '#1A1A1A' }}>{code}</span>
+          </div>
+        </div>
+
+        {/* ETA pill */}
+        {km !== null && !ended && (
+          <div style={{
+            position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+            background: '#FFD600', borderRadius: 20, padding: '8px 18px',
+            display: 'flex', alignItems: 'center', gap: 8,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+            animation: 'bounce-in 0.4s cubic-bezier(.34,1.56,.64,1) both',
+          }}>
+            <typeMeta.Icon style={{ fontSize: 14, color: '#1A1A1A' }} />
+            <p style={{ fontSize: 13, fontWeight: 700, color: '#1A1A1A' }}>
               To location&nbsp;
-              <span className="font-black">{eta} min</span>
+              <span style={{ fontWeight: 900 }}>{eta} min</span>
             </p>
           </div>
         )}
 
-        {/* Code pill */}
-        <div className="absolute top-12 left-0 right-0 flex justify-center pointer-events-none">
-          <div className="bg-surface/90 backdrop-blur-sm rounded-full px-4 py-1.5 border border-border shadow-card">
-            <span className="text-xs font-black tracking-widest text-ink">{code}</span>
-          </div>
-        </div>
-
-        {/* Ended overlay */}
+        {/* Session ended overlay */}
         {ended && (
-          <div className="absolute inset-0 bg-white/90 flex flex-col items-center justify-center gap-4">
-            <span className="text-5xl">📍</span>
-            <p className="text-xl font-black text-ink">Session ended</p>
-            <p className="text-sm text-muted">This location share has stopped</p>
-            <button onClick={() => router.push('/home')} className="btn btn-black px-8 py-3">Go home</button>
+          <div style={{
+            position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.92)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16,
+          }}>
+            <div style={{ width: 72, height: 72, borderRadius: 24, background: '#F7F7F7', border: '1.5px solid #EBEBEB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <EnvironmentOutlined style={{ fontSize: 32, color: '#BBBBBB' }} />
+            </div>
+            <p style={{ fontSize: 20, fontWeight: 900, color: '#1A1A1A' }}>Session ended</p>
+            <p style={{ fontSize: 13, color: '#888' }}>This location share has stopped</p>
+            <button onClick={() => router.push('/home')} style={{
+              padding: '14px 32px', background: '#1A1A1A', color: '#FFFFFF',
+              border: 'none', borderRadius: 16, fontSize: 14, fontWeight: 800,
+              cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+            }}>
+              Go home
+            </button>
           </div>
         )}
       </div>
 
       {/* Info card */}
-      <div className="bg-surface shadow-sheet px-5 pt-4 pb-8">
+      <div style={{ background: '#FFFFFF', padding: '16px 20px 40px', boxShadow: '0 -4px 32px rgba(0,0,0,0.10)' }}>
         {/* Accepted banner */}
         {accepted && (
-          <div className="mb-4 flex items-center gap-3 bg-green-50 rounded-2xl p-3 border border-green-200">
-            <span className="text-2xl">✅</span>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            background: '#F0FDF4', borderRadius: 16, padding: '12px 14px',
+            border: '1.5px solid #86EFAC', marginBottom: 14,
+          }}>
+            <CheckCircleFilled style={{ fontSize: 22, color: '#16A34A', flexShrink: 0 }} />
             <div>
-              <p className="text-sm font-bold text-green-700">Help is on the way</p>
-              <p className="text-xs text-green-600">{accepted} accepted your request</p>
+              <p style={{ fontSize: 13, fontWeight: 700, color: '#15803D' }}>Help is on the way</p>
+              <p style={{ fontSize: 12, color: '#16A34A' }}>{accepted} accepted your request</p>
             </div>
           </div>
         )}
 
-        {/* Start / Finish row — exact design pattern */}
-        <div className="flex items-center gap-4 mb-4 bg-bg rounded-2xl px-4 py-3 border border-border">
-          <div className="flex flex-col items-center gap-1">
-            <div className="w-2 h-2 rounded-full bg-green-500" />
-            <div className="w-px h-4 bg-border" />
-            <div className="w-2.5 h-2.5 rounded-sm bg-ink" />
+        {/* Route row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#F7F7F7', borderRadius: 16, padding: '14px 16px', border: '1.5px solid #EBEBEB', marginBottom: 14 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E' }} />
+            <div style={{ width: 1, height: 16, background: '#EBEBEB' }} />
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: '#1A1A1A' }} />
           </div>
-          <div className="flex-1">
-            <p className="text-xs text-muted">My location</p>
-            <div className="h-px bg-border my-1.5" />
-            <p className="text-xs text-muted">{session?.user?.fullName ?? 'Someone'}</p>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 12, color: '#888' }}>My location</p>
+            <div style={{ height: 1, background: '#EBEBEB', margin: '6px 0' }} />
+            <p style={{ fontSize: 12, color: '#888' }}>{session?.user?.fullName ?? 'Someone'}</p>
           </div>
           {km !== null && (
-            <div className="text-right">
-              <p className="text-lg font-black text-ink">{km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`}</p>
-              {eta && <p className="text-xs text-muted">~{eta} min</p>}
+            <div style={{ textAlign: 'right' }}>
+              <p style={{ fontSize: 20, fontWeight: 900, color: '#1A1A1A' }}>
+                {km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`}
+              </p>
+              {eta && <p style={{ fontSize: 11, color: '#888' }}>~{eta} min</p>}
             </div>
           )}
         </div>
 
+        {/* Type badge */}
+        {session && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: typeMeta.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <typeMeta.Icon style={{ fontSize: 13, color: typeMeta.iconColor }} />
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#1A1A1A' }}>{typeMeta.label}</span>
+            {session.message && (
+              <span style={{ fontSize: 12, color: '#888', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                · {session.message}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Actions */}
-        <div className="flex gap-3">
-          <button onClick={openMaps} className="btn btn-ghost flex-1 gap-2 py-3.5">
-            🗺️ Navigate
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={openMaps} style={{
+            flex: 1, padding: '14px', background: '#F7F7F7', color: '#1A1A1A',
+            border: '1.5px solid #EBEBEB', borderRadius: 16, fontSize: 13, fontWeight: 700,
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            fontFamily: 'Inter, sans-serif',
+          }}>
+            <CompassOutlined style={{ fontSize: 15 }} />
+            Navigate
           </button>
           {isHelper ? (
-            <button onClick={accept} className="btn btn-black flex-1 py-3.5">
+            <button onClick={accept} style={{
+              flex: 1, padding: '14px', background: '#1A1A1A', color: '#FFFFFF',
+              border: 'none', borderRadius: 16, fontSize: 13, fontWeight: 800,
+              cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+            }}>
               Accept request
             </button>
           ) : (
-            <button onClick={openMaps} className="btn btn-black flex-1 gap-2 py-3.5">
+            <button onClick={openMaps} style={{
+              flex: 1, padding: '14px', background: '#1A1A1A', color: '#FFFFFF',
+              border: 'none', borderRadius: 16, fontSize: 13, fontWeight: 800,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              fontFamily: 'Inter, sans-serif',
+            }}>
+              <CompassOutlined style={{ fontSize: 14 }} />
               Open Maps
             </button>
           )}
