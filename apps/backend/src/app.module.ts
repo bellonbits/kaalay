@@ -10,6 +10,8 @@ import { AuthModule } from './auth/auth.module';
 import { LocationModule } from './location/location.module';
 import { DispatchModule } from './dispatch/dispatch.module';
 import { RedisModule } from './redis/redis.module';
+import { SessionsModule } from './sessions/sessions.module';
+import { GatewayModule } from './gateway/gateway.module';
 
 @Module({
   imports: [
@@ -27,7 +29,7 @@ import { RedisModule } from './redis/redis.module';
         password: configService.get<string>('DATABASE_PASSWORD'),
         database: configService.get<string>('DATABASE_NAME'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: true, // Set to false in production
+        synchronize: true,
       }),
       inject: [ConfigService],
     }),
@@ -38,6 +40,8 @@ import { RedisModule } from './redis/redis.module';
     LocationModule,
     DispatchModule,
     RedisModule,
+    SessionsModule,
+    GatewayModule,
   ],
   controllers: [AppController],
   providers: [AppService],

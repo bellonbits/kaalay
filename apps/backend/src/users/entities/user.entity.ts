@@ -2,9 +2,12 @@ import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateCol
 import { Ride } from '../../rides/entities/ride.entity';
 
 export enum UserRole {
-  RIDER = 'rider',
+  USER = 'user',
+  HELPER = 'helper',   // can accept requests / assist lost people
   DRIVER = 'driver',
   ADMIN = 'admin',
+  // legacy alias
+  RIDER = 'rider',
 }
 
 @Entity('users')
