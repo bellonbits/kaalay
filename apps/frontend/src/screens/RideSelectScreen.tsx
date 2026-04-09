@@ -11,61 +11,15 @@ interface Props {
   onOpenPayment: () => void;
 }
 
-/* ─── Car SVGs (side-profile) ─── */
-const GreenCar = () => (
-  <svg width="96" height="52" viewBox="0 0 96 52" fill="none">
-    {/* Body */}
-    <rect x="6" y="26" width="84" height="20" rx="6" fill="#A8D83F"/>
-    {/* Cabin */}
-    <rect x="20" y="12" width="52" height="18" rx="6" fill="#C4EE60"/>
-    {/* Windows */}
-    <rect x="24" y="15" width="20" height="12" rx="3" fill="#7ECDE4" opacity="0.85"/>
-    <rect x="47" y="15" width="20" height="12" rx="3" fill="#7ECDE4" opacity="0.85"/>
-    {/* Checkerboard stripe */}
-    {[0,1,2,3,4,5,6,7,8,9].map(i => (
-      <rect key={i} x={6 + i * 8} y={33} width={8} height={7} fill={i % 2 === 0 ? '#1A1A2E' : '#A8D83F'}/>
-    ))}
-    {/* Wheels */}
-    <circle cx="22" cy="46" r="8" fill="#1A1A2E"/>
-    <circle cx="22" cy="46" r="4" fill="#555"/>
-    <circle cx="74" cy="46" r="8" fill="#1A1A2E"/>
-    <circle cx="74" cy="46" r="4" fill="#555"/>
-    {/* Headlight */}
-    <rect x="3" y="30" width="5" height="8" rx="2" fill="#FFF3A0"/>
-    {/* Taillight */}
-    <rect x="88" y="30" width="4" height="8" rx="2" fill="#FF4444" opacity="0.8"/>
-  </svg>
+/* ─── Car images ─── */
+const StandardCar = ({ selected }: { selected: boolean }) => (
+  <img src="/onboarding3.png" alt="Standard" style={{ width: '100%', height: '72px', objectFit: 'contain', filter: selected ? 'none' : 'grayscale(60%) brightness(1.1)' }} />
 );
-
-const GreyCar = () => (
-  <svg width="88" height="46" viewBox="0 0 88 46" fill="none">
-    <rect x="4" y="22" width="80" height="18" rx="5" fill="#C8C8D8"/>
-    <rect x="16" y="10" width="50" height="16" rx="5" fill="#E0E0EC"/>
-    <rect x="20" y="13" width="18" height="10" rx="3" fill="#7ECDE4" opacity="0.7"/>
-    <rect x="42" y="13" width="18" height="10" rx="3" fill="#7ECDE4" opacity="0.7"/>
-    <circle cx="20" cy="40" r="7" fill="#555"/>
-    <circle cx="20" cy="40" r="3.5" fill="#888"/>
-    <circle cx="68" cy="40" r="7" fill="#555"/>
-    <circle cx="68" cy="40" r="3.5" fill="#888"/>
-    <rect x="2" y="26" width="4" height="7" rx="2" fill="#FFF3A0"/>
-    <rect x="82" y="26" width="4" height="7" rx="2" fill="#FF4444" opacity="0.7"/>
-  </svg>
+const EcoCar = ({ selected }: { selected: boolean }) => (
+  <img src="/signup-car.png" alt="Eco" style={{ width: '100%', height: '72px', objectFit: 'cover', borderRadius: '10px', filter: selected ? 'none' : 'grayscale(80%) brightness(1.1)' }} />
 );
-
-const DarkCar = () => (
-  <svg width="92" height="48" viewBox="0 0 92 48" fill="none">
-    <rect x="4" y="24" width="84" height="18" rx="6" fill="#5A5A6E"/>
-    <rect x="18" y="12" width="52" height="16" rx="5" fill="#7070888"/>
-    <rect x="18" y="12" width="52" height="16" rx="5" fill="#6E6E80"/>
-    <rect x="22" y="15" width="20" height="10" rx="3" fill="#7ECDE4" opacity="0.6"/>
-    <rect x="46" y="15" width="20" height="10" rx="3" fill="#7ECDE4" opacity="0.6"/>
-    <circle cx="22" cy="42" r="7" fill="#2A2A3E"/>
-    <circle cx="22" cy="42" r="3.5" fill="#555"/>
-    <circle cx="70" cy="42" r="7" fill="#2A2A3E"/>
-    <circle cx="70" cy="42" r="3.5" fill="#555"/>
-    <rect x="2" y="28" width="4" height="7" rx="2" fill="#FFF3A0"/>
-    <rect x="86" y="28" width="4" height="7" rx="2" fill="#FF4444" opacity="0.7"/>
-  </svg>
+const BusinessCar = ({ selected }: { selected: boolean }) => (
+  <img src="/onboarding1.png" alt="Business" style={{ width: '100%', height: '72px', objectFit: 'cover', borderRadius: '10px', filter: selected ? 'none' : 'grayscale(80%) brightness(1.1)' }} />
 );
 
 const EcoBadge = () => (
@@ -81,9 +35,9 @@ const EcoBadge = () => (
 );
 
 const RIDE_TYPES = [
-  { id: 'standard', label: 'Standard', minutes: 7, price: '£5.50', Car: GreenCar, eco: false },
-  { id: 'eco', label: 'Eco', minutes: 8, price: '£6.50', Car: GreyCar, eco: true },
-  { id: 'business', label: 'Business', minutes: 10, price: '£9.00', Car: DarkCar, eco: false },
+  { id: 'standard', label: 'Standard', minutes: 7, price: '£5.50', CarImg: StandardCar, eco: false },
+  { id: 'eco', label: 'Eco', minutes: 8, price: '£6.50', CarImg: EcoCar, eco: true },
+  { id: 'business', label: 'Business', minutes: 10, price: '£9.00', CarImg: BusinessCar, eco: false },
 ];
 
 const RideSelectScreen: React.FC<Props> = ({ pickup, destination, onBook, onBack, onOpenPayment }) => {
@@ -156,8 +110,8 @@ const RideSelectScreen: React.FC<Props> = ({ pickup, destination, onBook, onBack
                 }}
               >
                 {rt.eco && <EcoBadge />}
-                <div style={{ marginBottom: '8px', display: 'flex', justifyContent: 'flex-start' }}>
-                  <rt.Car />
+                <div style={{ marginBottom: '8px' }}>
+                  <rt.CarImg selected={isSelected} />
                 </div>
                 <div style={{ fontSize: '15px', fontWeight: '700', color: isSelected ? 'white' : '#1A1A2E', marginBottom: '2px' }}>
                   {rt.label}

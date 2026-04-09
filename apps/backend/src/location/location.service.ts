@@ -14,7 +14,7 @@ export class LocationService {
   private readonly baseUrl = 'https://api.what3words.com/v3';
 
   constructor(private configService: ConfigService) {
-    this.w3wApiKey = this.configService.get<string>('W3W_API_KEY');
+    this.w3wApiKey = this.configService.get<string>('W3W_API_KEY') ?? '';
   }
 
   async convertToCoordinates(words: string): Promise<LocationData> {

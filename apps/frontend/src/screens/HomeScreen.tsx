@@ -41,16 +41,27 @@ const HomeScreen: React.FC<Props> = ({ onSelectDestination }) => {
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <MapView center={center} zoom={13} />
 
-      {/* Top bar */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '52px 20px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <button style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'white', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {/* Top bar — car wheel hero image as background */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '120px', overflow: 'hidden' }}>
+        <img
+          src="/signup-car.png"
+          alt=""
+          style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', opacity: 0.55 }}
+        />
+        {/* Dark overlay */}
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(26,26,46,0.7) 0%, rgba(26,26,46,0) 100%)' }} />
+      </div>
+
+      {/* Top bar content */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '52px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 5 }}>
+        <button style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="18" height="14" viewBox="0 0 18 14" fill="none">
-            <rect width="18" height="2" rx="1" fill="#1C1C2E"/>
-            <rect y="6" width="12" height="2" rx="1" fill="#1C1C2E"/>
-            <rect y="12" width="18" height="2" rx="1" fill="#1C1C2E"/>
+            <rect width="18" height="2" rx="1" fill="white"/>
+            <rect y="6" width="12" height="2" rx="1" fill="white"/>
+            <rect y="12" width="18" height="2" rx="1" fill="white"/>
           </svg>
         </button>
-        <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#3A3060', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
+        <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <UserOutlined style={{ fontSize: '20px', color: 'white' }} />
         </div>
       </div>
@@ -61,7 +72,7 @@ const HomeScreen: React.FC<Props> = ({ onSelectDestination }) => {
 
         {/* Search */}
         <form onSubmit={handleSearch} style={{ position: 'relative', marginBottom: '24px' }}>
-          <SearchOutlined style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px', color: '#8E8E9A' }} />
+          <SearchOutlined style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px', color: '#8E8E9A', zIndex: 1 }} />
           <input
             className="input-field"
             style={{ paddingLeft: '44px', background: '#F4F4F8', border: 'none', borderRadius: '50px', fontSize: '16px', fontWeight: '500' }}
@@ -83,7 +94,7 @@ const HomeScreen: React.FC<Props> = ({ onSelectDestination }) => {
                 <loc.Icon style={{ fontSize: '22px', color: '#A8D83F' }} />
               </div>
               <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-dark)' }}>{loc.label}</span>
-              <span style={{ fontSize: '12px', color: 'var(--text-gray)' }}>{loc.minutes} minutes</span>
+              <span style={{ fontSize: '12px', color: 'var(--text-gray)' }}>{loc.minutes} min</span>
             </button>
           ))}
         </div>

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import MapView from '../components/MapView';
 
 interface Location { lat: number; lng: number; label: string }
@@ -10,39 +10,14 @@ interface Props {
   onCancel: () => void;
 }
 
-/** Animated search icon — grey circle, spinning green arc, magnifying glass */
-const SearchingIcon: React.FC = () => (
-  <div style={{ position: 'relative', width: '88px', height: '88px' }}>
-    {/* Outer grey ring */}
-    <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: '#F0F0F6' }} />
-    {/* Spinning green arc */}
-    <svg
-      style={{ position: 'absolute', inset: 0, animation: 'spin 1.4s linear infinite' }}
-      width="88" height="88" viewBox="0 0 88 88"
-    >
-      <circle
-        cx="44" cy="44" r="40"
-        fill="none"
-        stroke="#A8D83F"
-        strokeWidth="4"
-        strokeLinecap="round"
-        strokeDasharray="60 190"
-      />
-    </svg>
-    {/* Magnifying glass */}
-    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-        <circle cx="17" cy="17" r="10" stroke="#1A1A2E" strokeWidth="3"/>
-        <path d="M25 25L34 34" stroke="#1A1A2E" strokeWidth="3.5" strokeLinecap="round"/>
-      </svg>
-    </div>
-    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-  </div>
-);
-
 const FindingDriverScreen: React.FC<Props> = ({ pickup, destination, onDriverFound, onCancel }) => {
+  const [searching, setSearching] = useState(true);
+
   useEffect(() => {
-    const timer = setTimeout(onDriverFound, 5000);
+    const timer = setTimeout(() => {
+      setSearching(false);
+      setTimeout(onDriverFound, 1200);
+    }, 4000);
     return () => clearTimeout(timer);
   }, [onDriverFound]);
 
@@ -77,7 +52,7 @@ const FindingDriverScreen: React.FC<Props> = ({ pickup, destination, onDriverFou
             </svg>
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '14px', fontWeight: '700', color: '#1A1A2E' }}>{pickup.label || 'St Thomas, 19'}</div>
+            <div style={{ fontSize: '14px', fontWeight: '700', color: '#1A1A2E' }}>{pickup.label}</div>
             <div style={{ fontSize: '12px', color: '#8E8E9A' }}>London City</div>
           </div>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -89,38 +64,50 @@ const FindingDriverScreen: React.FC<Props> = ({ pickup, destination, onDriverFou
       {/* WHITE CARD — bottom 55% */}
       <div style={{ flex: 1, background: 'white', borderRadius: '24px 24px 0 0', marginTop: '-20px', padding: '28px 24px 32px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
 
-        {/* Searching animation */}
-        <SearchingIcon />
-
-        <h2 style={{ fontSize: '20px', fontWeight: '800', color: '#1A1A2E', marginTop: '20px', marginBottom: '6px', textAlign: 'center' }}>
-          Looking for a driver...
-        </h2>
-        <p style={{ fontSize: '14px', color: '#8E8E9A', marginBottom: '28px', textAlign: 'center' }}>
-          It may take some times
-        </p>
+        {searching ? (
+          /* Searching state — drivers network image */
+          <>
+            <div style={{ position: 'relative', width: '120px', height: '120px', marginBottom: '16px' }}>
+              <img src="/onboarding2.png" alt="Searching" style={{ width: '120px', height: '120px', objectFit: 'contain' }} />
+              {/* Spinning ring overlay */}
+              <svg style={{ position: 'absolute', inset: '-8px', width: '136px', height: '136px', animation: 'spin 2s linear infinite' }} viewBox="0 0 136 136">
+                <circle cx="68" cy="68" r="64" fill="none" stroke="#A8D83F" strokeWidth="3" strokeLinecap="round" strokeDasharray="80 320"/>
+              </svg>
+            </div>
+            <h2 style={{ fontSize: '20px', fontWeight: '800', color: '#1A1A2E', marginBottom: '6px', textAlign: 'center' }}>
+              Looking for a driver...
+            </h2>
+            <p style={{ fontSize: '14px', color: '#8E8E9A', marginBottom: '28px', textAlign: 'center' }}>
+              It may take some times
+            </p>
+          </>
+        ) : (
+          /* No driver / transition state */
+          <>
+            <img src="/no-result.png" alt="No driver" style={{ width: '110px', height: '110px', objectFit: 'contain', marginBottom: '16px' }} />
+            <h2 style={{ fontSize: '20px', fontWeight: '800', color: '#1A1A2E', marginBottom: '6px', textAlign: 'center' }}>
+              Driver found!
+            </h2>
+            <p style={{ fontSize: '14px', color: '#8E8E9A', marginBottom: '28px', textAlign: 'center' }}>
+              Connecting you now...
+            </p>
+          </>
+        )}
 
         {/* Route addresses */}
-        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0' }}>
-          {/* Destination */}
+        <div style={{ width: '100%' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px', paddingBottom: '14px', borderBottom: '1px solid #F4F4F8' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#7B61FF', border: '2px solid #7B61FF', flexShrink: 0, boxShadow: '0 0 0 3px rgba(123,97,255,0.15)' }} />
-            <span style={{ fontSize: '14px', color: '#8E8E9A' }}>
-              {destination.label || 'London Bridge Hospital (Entrance B)'}
-            </span>
+            <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#7B61FF', flexShrink: 0, boxShadow: '0 0 0 3px rgba(123,97,255,0.15)' }} />
+            <span style={{ fontSize: '14px', color: '#8E8E9A' }}>{destination.label}</span>
           </div>
-          {/* Pickup */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px', paddingTop: '14px' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#A8D83F', border: '2px solid #A8D83F', flexShrink: 0, boxShadow: '0 0 0 3px rgba(168,216,63,0.2)' }} />
-            <span style={{ fontSize: '14px', color: '#8E8E9A' }}>
-              {pickup.label || 'St Thomas, 19'}
-            </span>
+            <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#A8D83F', flexShrink: 0, boxShadow: '0 0 0 3px rgba(168,216,63,0.2)' }} />
+            <span style={{ fontSize: '14px', color: '#8E8E9A' }}>{pickup.label}</span>
           </div>
         </div>
 
-        {/* Spacer */}
         <div style={{ flex: 1 }} />
 
-        {/* Cancel — plain text */}
         <button
           onClick={onCancel}
           style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#1A1A2E', cursor: 'pointer', padding: '8px 24px' }}
@@ -128,6 +115,8 @@ const FindingDriverScreen: React.FC<Props> = ({ pickup, destination, onDriverFou
           Cancel
         </button>
       </div>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 };

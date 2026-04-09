@@ -31,7 +31,7 @@ export class DispatchService {
 
     // 2. Filter for available drivers in Database
     // nearby is an array of [id, distance, [lng, lat]]
-    for (const [driverId] of nearby) {
+    for (const [driverId] of nearby as [string, ...unknown[]][]) {
       const driver = await this.driverRepository.findOne({
         where: { id: driverId as string, status: DriverStatus.ONLINE },
       });

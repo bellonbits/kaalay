@@ -19,16 +19,16 @@ export class RidesController {
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.ridesService.findOne(+id);
+    return this.ridesService.findOne(id);
   }
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateRideDto: UpdateRideDto) {
-    return this.ridesService.update(+id, updateRideDto);
+    return this.ridesService.update(id, updateRideDto);
   }
 
   @Delete(':id')
   remove(@Param('id') id: string) {
-    return this.ridesService.remove(+id);
+    return this.ridesService.remove(id);
   }
 }
