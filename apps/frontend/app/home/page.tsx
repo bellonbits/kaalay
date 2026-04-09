@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import {
   MenuOutlined, BellOutlined, ShareAltOutlined,
   AlertOutlined, SearchOutlined, TeamOutlined, CarOutlined,
-  EnvironmentOutlined, RadarChartOutlined,
+  EnvironmentOutlined, RadarChartOutlined, UserOutlined,
 } from '@ant-design/icons';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { getPublicSessions } from '../../lib/api';
@@ -142,8 +142,11 @@ export default function HomePage() {
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
               <p style={{ fontSize: 13, color: '#888', fontWeight: 500, marginBottom: 2 }}>Good time to connect</p>
-              <h2 style={{ fontSize: 26, fontWeight: 900, color: '#1A1A1A', lineHeight: 1 }}>
-                {user?.fullName?.split(' ')[0] ?? 'Hey'} 👋
+              <h2 style={{ fontSize: 26, fontWeight: 900, color: '#1A1A1A', lineHeight: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                {user?.fullName?.split(' ')[0] ?? 'Hey'}
+                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: 10, background: '#FFD600' }}>
+                  <UserOutlined style={{ fontSize: 15, color: '#1A1A1A' }} />
+                </span>
               </h2>
             </div>
             <div style={{
