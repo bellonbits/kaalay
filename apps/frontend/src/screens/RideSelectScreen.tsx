@@ -8,45 +8,50 @@ interface Props {
   destination: Location;
   onBook: (rideType: string) => void;
   onBack: () => void;
-  onOpenPayment: () => void;
 }
 
-/* ─── Car images ─── */
-const StandardCar = ({ selected }: { selected: boolean }) => (
-  <img src="/onboarding3.png" alt="Standard" style={{ width: '100%', height: '72px', objectFit: 'contain', filter: selected ? 'none' : 'grayscale(60%) brightness(1.1)' }} />
-);
-const EcoCar = ({ selected }: { selected: boolean }) => (
-  <img src="/signup-car.png" alt="Eco" style={{ width: '100%', height: '72px', objectFit: 'cover', borderRadius: '10px', filter: selected ? 'none' : 'grayscale(80%) brightness(1.1)' }} />
-);
-const BusinessCar = ({ selected }: { selected: boolean }) => (
-  <img src="/onboarding1.png" alt="Business" style={{ width: '100%', height: '72px', objectFit: 'cover', borderRadius: '10px', filter: selected ? 'none' : 'grayscale(80%) brightness(1.1)' }} />
-);
-
-const EcoBadge = () => (
-  <div style={{
-    position: 'absolute', top: '10px', right: '10px',
-    width: '22px', height: '22px', borderRadius: '50%',
-    background: '#A8D83F', display: 'flex', alignItems: 'center', justifyContent: 'center',
-  }}>
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-      <path d="M2 10C2 10 3 6 6 5C9 4 10 2 10 2C10 2 9 7 6 8C3 9 2 10 2 10Z" fill="white" stroke="white" strokeWidth="0.5"/>
-    </svg>
-  </div>
-);
-
 const RIDE_TYPES = [
-  { id: 'standard', label: 'Standard', minutes: 7, price: '£5.50', CarImg: StandardCar, eco: false },
-  { id: 'eco', label: 'Eco', minutes: 8, price: '£6.50', CarImg: EcoCar, eco: true },
-  { id: 'business', label: 'Business', minutes: 10, price: '£9.00', CarImg: BusinessCar, eco: false },
+  {
+    id: 'standard',
+    label: 'Standard',
+    seats: 4,
+    minutes: 7,
+    price: '£5.50',
+    originalPrice: null as string | null,
+    tag: null as string | null,
+    image: '/onboarding3.png',
+  },
+  {
+    id: 'eco',
+    label: 'Eco',
+    seats: 4,
+    minutes: 8,
+    price: '£6.50',
+    originalPrice: '£7.65',
+    tag: 'Eco',
+    image: '/signup-car.png',
+  },
+  {
+    id: 'business',
+    label: 'Business',
+    seats: 4,
+    minutes: 10,
+    price: '£9.00',
+    originalPrice: null,
+    tag: 'Faster',
+    image: '/onboarding1.png',
+  },
 ];
 
-const RideSelectScreen: React.FC<Props> = ({ pickup, destination, onBook, onBack, onOpenPayment }) => {
+const RideSelectScreen: React.FC<Props> = ({ pickup, destination, onBook, onBack }) => {
   const [selected, setSelected] = useState('standard');
+  const selectedRide = RIDE_TYPES.find(r => r.id === selected)!;
 
   return (
-    <div style={{ width: '100%', height: '100%', background: '#F5F5F8', display: 'flex', flexDirection: 'column' }}>
-      {/* MAP AREA — top 52% */}
-      <div style={{ position: 'relative', flex: '0 0 52%' }}>
+    <div style={{ width: '100%', height: '100%', background: '#0F0F0F', display: 'flex', flexDirection: 'column' }}>
+
+      {/* MAP — top 48% */}
+      <div style={{ position: 'relative', flex: '0 0 48%' }}>
         <MapView
           center={{ lat: (pickup.lat + destination.lat) / 2, lng: (pickup.lng + destination.lng) / 2 }}
           zoom={13}
@@ -58,31 +63,50 @@ const RideSelectScreen: React.FC<Props> = ({ pickup, destination, onBook, onBack
         {/* Back button */}
         <button
           onClick={onBack}
-          style={{ position: 'absolute', top: '16px', left: '16px', width: '40px', height: '40px', borderRadius: '50%', background: 'white', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.18)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}
+          style={{ position: 'absolute', top: '16px', left: '16px', width: '40px', height: '40px', borderRadius: '50%', background: 'white', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}
         >
           <img src="/back-arrow.png" alt="back" style={{ width: '20px', height: '20px', objectFit: 'contain' }} />
         </button>
 
-        {/* Address pill on map */}
-        <div style={{ position: 'absolute', top: '16px', left: '64px', right: '16px', background: 'white', borderRadius: '14px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 2px 12px rgba(0,0,0,0.12)', zIndex: 10 }}>
-          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#F0F8E8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <img src="/pin.png" alt="pin" style={{ width: '16px', height: '16px', objectFit: 'contain', filter: 'invert(72%) sepia(60%) saturate(400%) hue-rotate(44deg) brightness(105%)' }} />
-          </div>
+        {/* Destination pill */}
+        <div style={{ position: 'absolute', top: '16px', left: '64px', right: '16px', background: 'white', borderRadius: '12px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 2px 12px rgba(0,0,0,0.18)', zIndex: 10 }}>
+          <img src="/pin.png" alt="" style={{ width: '16px', height: '16px', objectFit: 'contain', filter: 'invert(72%) sepia(60%) saturate(400%) hue-rotate(44deg) brightness(105%)', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: '14px', fontWeight: '700', color: '#1A1A2E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {destination.label || 'St Thomas, 19'}
+              {destination.label}
             </div>
-            <div style={{ fontSize: '12px', color: '#8E8E9A' }}>London City</div>
           </div>
-          <img src="/arrow-down.png" alt="" style={{ width: '16px', height: '16px', objectFit: 'contain', opacity: 0.4, transform: 'rotate(-90deg)' }} />
+          <img src="/arrow-down.png" alt="" style={{ width: '14px', height: '14px', objectFit: 'contain', opacity: 0.35, transform: 'rotate(-90deg)', flexShrink: 0 }} />
         </div>
       </div>
 
-      {/* WHITE CARD — bottom 48% */}
-      <div style={{ flex: 1, background: 'white', borderRadius: '24px 24px 0 0', marginTop: '-20px', padding: '20px 20px 0', display: 'flex', flexDirection: 'column', gap: '14px', overflow: 'hidden' }}>
+      {/* DARK BOTTOM SHEET */}
+      <div style={{
+        flex: 1,
+        background: '#141414',
+        borderRadius: '20px 20px 0 0',
+        marginTop: '-16px',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}>
+        {/* Drag handle */}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
+          <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: '#333' }} />
+        </div>
 
-        {/* Ride type cards — horizontal scroll */}
-        <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '4px', scrollbarWidth: 'none' }}>
+        {/* Promo banner */}
+        <div style={{ margin: '12px 16px 4px', background: 'rgba(168,216,63,0.1)', borderRadius: '10px', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#A8D83F', flexShrink: 0 }} />
+          <span style={{ fontSize: '13px', fontWeight: '600', color: '#A8D83F' }}>15% promotion applied</span>
+          <svg style={{ marginLeft: 'auto', flexShrink: 0 }} width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="7" stroke="#A8D83F" strokeWidth="1.2"/>
+            <path d="M8 5V8.5M8 10.5V11" stroke="#A8D83F" strokeWidth="1.4" strokeLinecap="round"/>
+          </svg>
+        </div>
+
+        {/* Ride list */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: '8px', scrollbarWidth: 'none' }}>
           {RIDE_TYPES.map(rt => {
             const isSelected = selected === rt.id;
             return (
@@ -90,67 +114,94 @@ const RideSelectScreen: React.FC<Props> = ({ pickup, destination, onBook, onBack
                 key={rt.id}
                 onClick={() => setSelected(rt.id)}
                 style={{
-                  flex: '0 0 120px',
-                  padding: '14px 12px 12px',
-                  borderRadius: '18px',
-                  border: 'none',
-                  background: isSelected ? '#7B61FF' : '#F4F4F8',
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '14px',
+                  padding: '14px',
+                  borderRadius: '14px',
+                  border: isSelected ? '1.5px solid rgba(255,255,255,0.8)' : '1.5px solid transparent',
+                  background: isSelected ? '#222' : '#1A1A1A',
                   cursor: 'pointer',
                   textAlign: 'left',
-                  position: 'relative',
-                  transition: 'all 0.2s',
-                  overflow: 'hidden',
+                  transition: 'all 0.18s',
                 }}
               >
-                {rt.eco && <EcoBadge />}
-                <div style={{ marginBottom: '8px' }}>
-                  <rt.CarImg selected={isSelected} />
+                {/* Car image on dark platform */}
+                <div style={{ width: '72px', height: '48px', borderRadius: '10px', background: '#0A0A0A', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+                  <img src={rt.image} alt={rt.label} style={{ width: '68px', height: '44px', objectFit: 'contain' }} />
                 </div>
-                <div style={{ fontSize: '15px', fontWeight: '700', color: isSelected ? 'white' : '#1A1A2E', marginBottom: '2px' }}>
-                  {rt.label}
+
+                {/* Info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
+                    <span style={{ fontSize: '15px', fontWeight: '700', color: 'white' }}>{rt.label}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                      <img src="/person.png" alt="" style={{ width: '12px', height: '12px', objectFit: 'contain', filter: 'brightness(3) opacity(0.5)' }} />
+                      <span style={{ fontSize: '12px', color: '#666' }}>{rt.seats}</span>
+                    </div>
+                    {rt.tag && (
+                      <div style={{
+                        background: rt.tag === 'Eco' ? 'rgba(168,216,63,0.15)' : 'rgba(100,160,255,0.15)',
+                        borderRadius: '6px',
+                        padding: '2px 7px',
+                        display: 'flex', alignItems: 'center', gap: '4px',
+                      }}>
+                        {rt.tag === 'Faster' && (
+                          <svg width="9" height="12" viewBox="0 0 9 12" fill="none">
+                            <path d="M5 1L1 7H4.5L4 11L8 5H4.5L5 1Z" fill="#6AA0FF" strokeLinejoin="round"/>
+                          </svg>
+                        )}
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: rt.tag === 'Eco' ? '#A8D83F' : '#6AA0FF' }}>{rt.tag}</span>
+                      </div>
+                    )}
+                  </div>
+                  <span style={{ fontSize: '12px', color: '#555' }}>{rt.minutes} min away</span>
                 </div>
-                <div style={{ fontSize: '12px', color: isSelected ? 'rgba(255,255,255,0.7)' : '#8E8E9A', marginBottom: '4px' }}>
-                  {rt.minutes} min
-                </div>
-                <div style={{ fontSize: '16px', fontWeight: '800', color: isSelected ? '#FFD93D' : '#7B61FF' }}>
-                  {rt.price}
+
+                {/* Price */}
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
+                    {rt.originalPrice && (
+                      <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#A8D83F', flexShrink: 0 }} />
+                    )}
+                    <span style={{ fontSize: '15px', fontWeight: '700', color: 'white' }}>{rt.price}</span>
+                  </div>
+                  {rt.originalPrice && (
+                    <span style={{ fontSize: '12px', color: '#444', textDecoration: 'line-through' }}>{rt.originalPrice}</span>
+                  )}
                 </div>
               </button>
             );
           })}
         </div>
 
-        {/* Payment method */}
-        <button
-          onClick={onOpenPayment}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'transparent', border: '1.5px solid #F0F0F6', borderRadius: '14px', padding: '12px 16px', cursor: 'pointer' }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ background: '#1A1A2E', borderRadius: '6px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <img src="/dollar.png" alt="" style={{ width: '14px', height: '14px', objectFit: 'contain', filter: 'brightness(10)' }} />
-              <span style={{ color: 'white', fontSize: '10px', fontWeight: '700' }}>Pay</span>
-            </div>
-            <span style={{ fontSize: '14px', color: '#1A1A2E', fontWeight: '500', letterSpacing: '1px' }}>•••• 4383</span>
-          </div>
-          <img src="/arrow-down.png" alt="" style={{ width: '16px', height: '16px', objectFit: 'contain', opacity: 0.3, transform: 'rotate(-90deg)' }} />
-        </button>
-
-        {/* Book + Schedule */}
-        <div style={{ display: 'flex', gap: '10px', paddingBottom: '32px' }}>
+        {/* Bottom actions */}
+        <div style={{ padding: '12px 16px 36px', display: 'flex', gap: '10px', borderTop: '1px solid #1E1E1E' }}>
           <button
-            className="btn-green"
-            style={{ flex: 1, fontSize: '17px', fontWeight: '700' }}
             onClick={() => onBook(selected)}
+            style={{
+              flex: 1,
+              height: '54px',
+              borderRadius: '14px',
+              background: 'white',
+              border: 'none',
+              fontSize: '16px',
+              fontWeight: '700',
+              color: '#0F0F0F',
+              cursor: 'pointer',
+              transition: 'opacity 0.15s',
+            }}
           >
-            Book Taxi
+            Choose {selectedRide.label}
           </button>
           <button style={{
-            width: '54px', height: '54px', borderRadius: '16px', background: '#F4F4F8',
+            width: '54px', height: '54px', borderRadius: '14px', background: '#1E1E1E',
             border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
           }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="9.5" stroke="#8E8E9A" strokeWidth="1.8"/>
-              <path d="M12 7.5V12L15 15" stroke="#8E8E9A" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="9.5" stroke="#555" strokeWidth="1.8"/>
+              <path d="M12 7.5V12L15 15" stroke="#555" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
         </div>

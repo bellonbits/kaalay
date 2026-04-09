@@ -6,8 +6,10 @@ import FindingDriverScreen from './screens/FindingDriverScreen';
 import DriverFoundScreen from './screens/DriverFoundScreen';
 import PaymentScreen from './screens/PaymentScreen';
 import RatingScreen from './screens/RatingScreen';
+import LoaderScreen from './screens/LoaderScreen';
 
 type Screen =
+  | 'loader'
   | 'onboarding'
   | 'home'
   | 'ride-select'
@@ -22,13 +24,32 @@ interface Location {
   label: string;
 }
 
+// Screens that show a brief loader before transition
+const LOADER_BEFORE: Partial<Record<Screen, number>> = {
+  'finding-driver': 600,
+  'driver-found': 400,
+  'rating': 400,
+};
+
 const App: React.FC = () => {
   const [screen, setScreen] = useState<Screen>('onboarding');
   const [pickup, setPickup] = useState<Location>({ lat: 51.5074, lng: -0.1278, label: 'Current Location' });
   const [destination, setDestination] = useState<Location>({ lat: 51.51, lng: -0.105, label: 'Destination' });
   const [prevScreen, setPrevScreen] = useState<Screen>('home');
+  const [loading, setLoading] = useState(false);
 
-  const go = (s: Screen) => setScreen(s);
+  const go = (next: Screen) => {
+    const delay = LOADER_BEFORE[next];
+    if (delay) {
+      setLoading(true);
+      setTimeout(() => {
+        setLoading(false);
+        setScreen(next);
+      }, delay);
+    } else {
+      setScreen(next);
+    }
+  };
 
   const handleSelectDestination = (p: Location, d: Location) => {
     setPickup(p);
@@ -44,6 +65,12 @@ const App: React.FC = () => {
     setPrevScreen(screen);
     go('payment');
   };
+
+  if (loading) return (
+    <div className="app-shell">
+      <LoaderScreen />
+    </div>
+  );
 
   return (
     <div className="app-shell">
@@ -64,7 +91,6 @@ const App: React.FC = () => {
           destination={destination}
           onBook={handleBook}
           onBack={() => go('home')}
-          onOpenPayment={handleOpenPayment}
         />
       )}
 
