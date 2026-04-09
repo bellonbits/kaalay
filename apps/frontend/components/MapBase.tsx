@@ -3,6 +3,7 @@ import { GoogleMap, useJsApiLoader, Circle, Polyline } from '@react-google-maps/
 import { useRef, useCallback, useEffect } from 'react';
 
 const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? '';
+const LIBRARIES: ('geometry' | 'places')[] = ['geometry'];
 
 // Crisp, minimal light map — matches design reference
 const LIGHT_STYLE: google.maps.MapTypeStyle[] = [
@@ -45,7 +46,7 @@ const ME_PATH = 'M 0,-11 L 7,7 L 0,2 L -7,7 Z';
 const CAR_PATH = 'M -5,-10 Q -5,-13 0,-13 Q 5,-13 5,-10 L 6,4 Q 6,7 3,7 L -3,7 Q -6,7 -6,4 Z M -7,-2 L -9,3 L -7,3 Z M 7,-2 L 9,3 L 7,3 Z';
 
 export default function MapBase({ center, zoom = 15, markers = [], routeTo, className }: Props) {
-  const { isLoaded } = useJsApiLoader({ googleMapsApiKey: MAPS_KEY, libraries: ['geometry'] });
+  const { isLoaded } = useJsApiLoader({ googleMapsApiKey: MAPS_KEY, libraries: LIBRARIES });
   const mapRef    = useRef<google.maps.Map | null>(null);
   const markerArr = useRef<google.maps.Marker[]>([]);
   const routeRdr  = useRef<google.maps.DirectionsRenderer | null>(null);

@@ -103,8 +103,13 @@ function LiveTracker({ code }: { code: string }) {
   const [session,  setSession]  = useState<Session | null>(null);
   const [ended,    setEnded]    = useState(false);
   const [accepted, setAccepted] = useState<string | null>(null);
-  const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('kaalay_user') ?? '{}') : {};
+  const [user,     setUser]     = useState<{ fullName?: string; id?: string; role?: string }>({});
   const isHelper = user.role === 'helper' || user.role === 'driver';
+
+  useEffect(() => {
+    const stored = localStorage.getItem('kaalay_user');
+    if (stored) setUser(JSON.parse(stored));
+  }, []);
 
   useEffect(() => { getSessionByCode(code).then(setSession).catch(() => null); }, [code]);
 
