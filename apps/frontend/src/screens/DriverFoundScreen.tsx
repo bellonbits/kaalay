@@ -1,5 +1,4 @@
 import React, { useEffect } from 'react';
-import { PhoneOutlined, StarFilled } from '@ant-design/icons';
 import MapView from '../components/MapView';
 
 interface Location { lat: number; lng: number; label: string }
@@ -33,16 +32,14 @@ const DriverFoundScreen: React.FC<Props> = ({ pickup, destination, onArrived, on
           onClick={onCancel}
           style={{ position: 'absolute', top: '16px', left: '16px', width: '40px', height: '40px', borderRadius: '50%', background: 'white', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.18)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}
         >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path d="M11 3L5 9L11 15" stroke="#1A1A2E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
+          <img src="/back-arrow.png" alt="back" style={{ width: '20px', height: '20px', objectFit: 'contain' }} />
         </button>
       </div>
 
       {/* WHITE CARD — bottom 58% */}
       <div style={{ flex: 1, background: 'white', borderRadius: '24px 24px 0 0', marginTop: '-20px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-        {/* onboarding1.png — driver card image (Jane Cooper style) */}
+        {/* Driver card image */}
         <div style={{ padding: '20px 20px 0' }}>
           <img
             src="/onboarding1.png"
@@ -74,7 +71,7 @@ const DriverFoundScreen: React.FC<Props> = ({ pickup, destination, onArrived, on
             <div>
               <div style={{ fontSize: '16px', fontWeight: '700', color: '#1A1A2E' }}>Brad Smith</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                <StarFilled style={{ fontSize: '13px', color: '#FFB800' }} />
+                <img src="/star.png" alt="star" style={{ width: '14px', height: '14px', objectFit: 'contain', filter: 'invert(76%) sepia(80%) saturate(600%) hue-rotate(2deg) brightness(105%)' }} />
                 <span style={{ fontSize: '13px', fontWeight: '600', color: '#1A1A2E' }}>5.0</span>
               </div>
             </div>
@@ -82,16 +79,15 @@ const DriverFoundScreen: React.FC<Props> = ({ pickup, destination, onArrived, on
 
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: '10px' }}>
-            {/* Message button — uses message.png as visual cue */}
             <button
-              style={{ width: '48px', height: '48px', borderRadius: '14px', background: '#F0F8E8', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
+              style={{ width: '48px', height: '48px', borderRadius: '14px', background: '#F0F8E8', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
-              <img src="/message.png" alt="Chat" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
+              <img src="/chat.png" alt="Chat" style={{ width: '26px', height: '26px', objectFit: 'contain' }} />
             </button>
             <button
               style={{ width: '48px', height: '48px', borderRadius: '14px', background: '#A8D83F', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
-              <PhoneOutlined style={{ fontSize: '20px', color: '#1A1A2E' }} />
+              <img src="/out.png" alt="Call" style={{ width: '26px', height: '26px', objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
             </button>
           </div>
         </div>

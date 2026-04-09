@@ -85,9 +85,7 @@ const OnboardingScreen: React.FC<Props> = ({ onDone }) => {
             onClick={handleNext}
             style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#A8D83F', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(168,216,63,0.4)', transition: 'transform 0.1s' }}
           >
-            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-              <path d="M4 11H18M18 11L11 4M18 11L11 18" stroke="#1A1A2E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+            <img src="/arrow-down.png" alt="next" style={{ width: '22px', height: '22px', objectFit: 'contain', transform: 'rotate(-90deg)', filter: 'brightness(0)' }} />
           </button>
         </div>
       </div>

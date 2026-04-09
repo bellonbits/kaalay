@@ -60,18 +60,13 @@ const RideSelectScreen: React.FC<Props> = ({ pickup, destination, onBook, onBack
           onClick={onBack}
           style={{ position: 'absolute', top: '16px', left: '16px', width: '40px', height: '40px', borderRadius: '50%', background: 'white', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.18)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}
         >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path d="M11 3L5 9L11 15" stroke="#1A1A2E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
+          <img src="/back-arrow.png" alt="back" style={{ width: '20px', height: '20px', objectFit: 'contain' }} />
         </button>
 
         {/* Address pill on map */}
         <div style={{ position: 'absolute', top: '16px', left: '64px', right: '16px', background: 'white', borderRadius: '14px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 2px 12px rgba(0,0,0,0.12)', zIndex: 10 }}>
           <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#F0F8E8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <circle cx="7" cy="6" r="2.5" stroke="#A8D83F" strokeWidth="1.8"/>
-              <path d="M7 1C4.24 1 2 3.24 2 6C2 9.5 7 13 7 13C7 13 12 9.5 12 6C12 3.24 9.76 1 7 1Z" stroke="#A8D83F" strokeWidth="1.8"/>
-            </svg>
+            <img src="/pin.png" alt="pin" style={{ width: '16px', height: '16px', objectFit: 'contain', filter: 'invert(72%) sepia(60%) saturate(400%) hue-rotate(44deg) brightness(105%)' }} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: '14px', fontWeight: '700', color: '#1A1A2E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -79,9 +74,7 @@ const RideSelectScreen: React.FC<Props> = ({ pickup, destination, onBook, onBack
             </div>
             <div style={{ fontSize: '12px', color: '#8E8E9A' }}>London City</div>
           </div>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M6 4L10 8L6 12" stroke="#8E8E9A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
+          <img src="/arrow-down.png" alt="" style={{ width: '16px', height: '16px', objectFit: 'contain', opacity: 0.4, transform: 'rotate(-90deg)' }} />
         </div>
       </div>
 
@@ -133,18 +126,13 @@ const RideSelectScreen: React.FC<Props> = ({ pickup, destination, onBook, onBack
           style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'transparent', border: '1.5px solid #F0F0F6', borderRadius: '14px', padding: '12px 16px', cursor: 'pointer' }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            {/* Apple Pay pill */}
             <div style={{ background: '#1A1A2E', borderRadius: '6px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="white">
-                <path d="M7 1C3.69 1 1 3.69 1 7C1 10.31 3.69 13 7 13C10.31 13 13 10.31 13 7C13 3.69 10.31 1 7 1ZM6 9.5L3.5 7L4.21 6.29L6 8.08L9.79 4.29L10.5 5L6 9.5Z"/>
-              </svg>
+              <img src="/dollar.png" alt="" style={{ width: '14px', height: '14px', objectFit: 'contain', filter: 'brightness(10)' }} />
               <span style={{ color: 'white', fontSize: '10px', fontWeight: '700' }}>Pay</span>
             </div>
             <span style={{ fontSize: '14px', color: '#1A1A2E', fontWeight: '500', letterSpacing: '1px' }}>•••• 4383</span>
           </div>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M6 4L10 8L6 12" stroke="#C0C0CC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
+          <img src="/arrow-down.png" alt="" style={{ width: '16px', height: '16px', objectFit: 'contain', opacity: 0.3, transform: 'rotate(-90deg)' }} />
         </button>
 
         {/* Book + Schedule */}

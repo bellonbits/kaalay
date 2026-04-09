@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { UserOutlined, CreditCardOutlined, CalendarOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 
 interface Props {
   onConfirm: () => void;
@@ -23,11 +22,9 @@ const PaymentScreen: React.FC<Props> = ({ onConfirm, onBack }) => {
     return digits;
   };
 
-  const fieldRow = (icon: React.ReactNode, content: React.ReactNode) => (
+  const fieldRow = (iconSrc: string, iconFilter: string, content: React.ReactNode) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#F8F8FC', borderRadius: '14px', padding: '14px 16px', marginBottom: '14px' }}>
-      <div style={{ fontSize: '18px', color: '#8E8E9A', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-        {icon}
-      </div>
+      <img src={iconSrc} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain', flexShrink: 0, opacity: 0.5, filter: iconFilter }} />
       {content}
     </div>
   );
@@ -38,10 +35,10 @@ const PaymentScreen: React.FC<Props> = ({ onConfirm, onBack }) => {
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
           <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}>
-            <ArrowLeftOutlined style={{ fontSize: '20px', color: '#1C1C2E' }} />
+            <img src="/back-arrow.png" alt="back" style={{ width: '22px', height: '22px', objectFit: 'contain' }} />
           </button>
           <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: '#F0EEFF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <CreditCardOutlined style={{ fontSize: '22px', color: '#7B61FF' }} />
+            <img src="/dollar.png" alt="payment" style={{ width: '26px', height: '26px', objectFit: 'contain', filter: 'invert(44%) sepia(98%) saturate(2000%) hue-rotate(228deg) brightness(100%)' }} />
           </div>
           <div style={{ width: '28px' }} />
         </div>
@@ -53,7 +50,7 @@ const PaymentScreen: React.FC<Props> = ({ onConfirm, onBack }) => {
 
         {/* Name */}
         {fieldRow(
-          <UserOutlined />,
+          '/profile.png', 'none',
           <input
             className="input-field"
             style={{ background: 'transparent', border: 'none', padding: 0, flex: 1 }}
@@ -65,7 +62,7 @@ const PaymentScreen: React.FC<Props> = ({ onConfirm, onBack }) => {
 
         {/* Card number */}
         {fieldRow(
-          <CreditCardOutlined />,
+          '/dollar.png', 'none',
           <input
             className="input-field"
             style={{ background: 'transparent', border: 'none', padding: 0, flex: 1 }}
@@ -79,7 +76,7 @@ const PaymentScreen: React.FC<Props> = ({ onConfirm, onBack }) => {
         {/* Expiry + CVV */}
         <div style={{ display: 'flex', gap: '12px', marginBottom: '28px' }}>
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '12px', background: '#F8F8FC', borderRadius: '14px', padding: '14px 16px' }}>
-            <CalendarOutlined style={{ fontSize: '18px', color: '#8E8E9A', flexShrink: 0 }} />
+            <img src="/target.png" alt="" style={{ width: '20px', height: '20px', objectFit: 'contain', flexShrink: 0, opacity: 0.5 }} />
             <input
               className="input-field"
               style={{ background: 'transparent', border: 'none', padding: 0, flex: 1 }}
@@ -90,6 +87,7 @@ const PaymentScreen: React.FC<Props> = ({ onConfirm, onBack }) => {
             />
           </div>
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '12px', background: '#F8F8FC', borderRadius: '14px', padding: '14px 16px' }}>
+            <img src="/lock.png" alt="" style={{ width: '20px', height: '20px', objectFit: 'contain', flexShrink: 0, opacity: 0.5 }} />
             <input
               className="input-field"
               style={{ background: 'transparent', border: 'none', padding: 0, flex: 1 }}

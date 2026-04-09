@@ -13,42 +13,33 @@ interface Props {
   eta?: string;
 }
 
-/** Green glowing destination dot — matches design */
+/** Green destination pin */
 const GlowPin: React.FC<{ lat: number; lng: number }> = () => (
-  <div style={{ transform: 'translate(-50%, -50%)', position: 'relative', width: '52px', height: '52px' }}>
-    {/* Outer glow rings */}
-    <div style={{ position: 'absolute', inset: '-12px', borderRadius: '50%', background: 'rgba(168,216,63,0.12)' }} />
-    <div style={{ position: 'absolute', inset: '-4px', borderRadius: '50%', background: 'rgba(168,216,63,0.22)' }} />
-    {/* White ring */}
-    <div style={{ position: 'absolute', inset: '0', borderRadius: '50%', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
-      {/* Inner black dot */}
-      <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#1A1A2E' }} />
-    </div>
+  <div style={{ transform: 'translate(-50%, -100%)', position: 'relative' }}>
+    {/* Glow ring */}
+    <div style={{ position: 'absolute', inset: '-8px', borderRadius: '50%', background: 'rgba(168,216,63,0.18)', top: 'auto', bottom: '4px', left: '-8px', right: '-8px', height: '20px' }} />
+    <img src="/selected-marker.png" alt="" style={{ width: '36px', height: '36px', objectFit: 'contain', filter: 'drop-shadow(0 3px 6px rgba(168,216,63,0.5))' }} />
   </div>
 );
 
-/** Solid black origin/pickup dot */
+/** Origin/pickup pin */
 const OriginDot: React.FC<{ lat: number; lng: number }> = () => (
-  <div style={{ transform: 'translate(-50%, -50%)', width: '18px', height: '18px', borderRadius: '50%', background: '#1A1A2E', border: '3px solid white', boxShadow: '0 2px 6px rgba(0,0,0,0.25)' }} />
+  <div style={{ transform: 'translate(-50%, -100%)' }}>
+    <img src="/marker.png" alt="" style={{ width: '30px', height: '30px', objectFit: 'contain', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.25))' }} />
+  </div>
 );
 
-/** Top-down car marker */
+/** Driver car marker */
 const CarMarker: React.FC<{ lat: number; lng: number }> = () => (
   <div style={{ transform: 'translate(-50%, -50%)', filter: 'drop-shadow(0 3px 6px rgba(0,0,0,0.3))' }}>
     <svg width="40" height="52" viewBox="0 0 40 52" fill="none">
-      {/* Car body top-down */}
       <rect x="4" y="10" width="32" height="34" rx="8" fill="#8E8E9E"/>
-      {/* Windshield front */}
       <rect x="8" y="12" width="24" height="10" rx="4" fill="#C0D8E8" opacity="0.7"/>
-      {/* Windshield rear */}
       <rect x="8" y="30" width="24" height="10" rx="4" fill="#C0D8E8" opacity="0.5"/>
-      {/* Left wheels */}
       <rect x="0" y="14" width="6" height="10" rx="3" fill="#3A3A4A"/>
       <rect x="0" y="28" width="6" height="10" rx="3" fill="#3A3A4A"/>
-      {/* Right wheels */}
       <rect x="34" y="14" width="6" height="10" rx="3" fill="#3A3A4A"/>
       <rect x="34" y="28" width="6" height="10" rx="3" fill="#3A3A4A"/>
-      {/* Center line */}
       <rect x="19" y="22" width="2" height="10" rx="1" fill="rgba(255,255,255,0.3)"/>
     </svg>
   </div>

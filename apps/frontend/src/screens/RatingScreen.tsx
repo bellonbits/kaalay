@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { StarFilled, StarOutlined } from '@ant-design/icons';
 
 interface Props {
   onDone: () => void;
@@ -49,12 +48,25 @@ const RatingScreen: React.FC<Props> = ({ onDone }) => {
             <div style={{ fontSize: '16px', fontWeight: '700', color: '#1A1A2E' }}>Brad Smith</div>
             <div style={{ fontSize: '13px', color: '#7B61FF', fontWeight: '600' }}>Driver</div>
           </div>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            {[1, 2, 3, 4, 5].map(s =>
-              s <= stars
-                ? <StarFilled key={s} onClick={() => setStars(s)} style={{ fontSize: '22px', color: '#FFB800', cursor: 'pointer' }} />
-                : <StarOutlined key={s} onClick={() => setStars(s)} style={{ fontSize: '22px', color: '#E0E0E6', cursor: 'pointer' }} />
-            )}
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {[1, 2, 3, 4, 5].map(s => (
+              <img
+                key={s}
+                src="/star.png"
+                alt="star"
+                onClick={() => setStars(s)}
+                style={{
+                  width: '26px',
+                  height: '26px',
+                  objectFit: 'contain',
+                  cursor: 'pointer',
+                  filter: s <= stars
+                    ? 'invert(76%) sepia(80%) saturate(600%) hue-rotate(2deg) brightness(105%)'
+                    : 'grayscale(100%) brightness(1.6)',
+                  transition: 'filter 0.15s',
+                }}
+              />
+            ))}
           </div>
         </div>
 
@@ -69,7 +81,10 @@ const RatingScreen: React.FC<Props> = ({ onDone }) => {
         {/* Tip */}
         <div style={{ marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <span style={{ fontSize: '15px', fontWeight: '600', color: '#1A1A2E' }}>Tip the driver</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <img src="/dollar.png" alt="" style={{ width: '16px', height: '16px', objectFit: 'contain', opacity: 0.6 }} />
+              <span style={{ fontSize: '15px', fontWeight: '600', color: '#1A1A2E' }}>Tip the driver</span>
+            </div>
             <span style={{ fontSize: '13px', color: '#8E8E9A' }}>Trip cost £{tripCost.toFixed(2)}</span>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -86,7 +101,7 @@ const RatingScreen: React.FC<Props> = ({ onDone }) => {
         </div>
 
         <button className="btn-green" onClick={onDone}>
-          Submit & Done
+          Submit &amp; Done
         </button>
       </div>
     </div>
