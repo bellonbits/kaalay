@@ -20,7 +20,7 @@ export class SessionsService {
     private sessionRepo: Repository<LocationSession>,
   ) {}
 
-  async create(userId: string, dto: CreateSessionDto): Promise<LocationSession> {
+  async create(userId: string | null, dto: CreateSessionDto): Promise<LocationSession> {
     let shareCode: string;
     let attempts = 0;
     do {
