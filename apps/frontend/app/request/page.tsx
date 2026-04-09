@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeftOutlined, AlertOutlined, CarOutlined, TeamOutlined,
@@ -42,10 +42,14 @@ const TYPES = [
 export default function RequestPage() {
   const router = useRouter();
   const { position } = useGeolocation(false);
+  const [mounted, setMounted] = useState(false);
   const [sel,     setSel]     = useState('');
   const [msg,     setMsg]     = useState('');
   const [loading, setLoading] = useState(false);
   const [done,    setDone]    = useState<{ code: string; type: string } | null>(null);
+
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return <div style={{ height: '100%', background: '#F7F7F7' }} />;
 
   const submit = async () => {
     if (!sel || !position) return;

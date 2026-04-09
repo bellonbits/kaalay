@@ -33,10 +33,17 @@ export default function DriverPage() {
   const router = useRouter();
   const { position } = useGeolocation(true);
   const socketRef = useSocket();
+  const [mounted, setMounted] = useState(false);
   const [reqs,   setReqs]   = useState<Req[]>([]);
   const [online, setOnline] = useState(false);
   const [tab,    setTab]    = useState<'map' | 'list'>('map');
-  const [user]  = useState(() => typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('kaalay_user') ?? '{}') : {});
+  const [user,   setUser]   = useState<{ fullName?: string; id?: string }>({});
+
+  useEffect(() => {
+    setMounted(true);
+    const stored = localStorage.getItem('kaalay_user');
+    if (stored) setUser(JSON.parse(stored));
+  }, []);
 
   useEffect(() => {
     getPublicSessions().then((ss: any[]) =>
@@ -56,6 +63,8 @@ export default function DriverPage() {
     if (!position || !online || !socketRef.current) return;
     socketRef.current.emit('driver:update_location', { driverId: user.id, lat: position.lat, lng: position.lng });
   }, [position, online]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!mounted) return <div style={{ height: '100%', background: '#F7F7F7' }} />;
 
   const center = position ?? { lat: -1.2921, lng: 36.8219 };
   const sorted = [...reqs].sort((a, b) => position ? distKm(position, a) - distKm(position, b) : 0);
