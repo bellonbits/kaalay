@@ -1,0 +1,166 @@
+:root {
+  --purple: #7C6DB4;
+  --purple-dark: #6558A0;
+  --green: #A8D83F;
+  --green-dark: #8FBB2A;
+  --white: #FFFFFF;
+  --bg: #F4F4F8;
+  --text-dark: #1C1C2E;
+  --text-gray: #8E8E9A;
+  --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.10);
+  --radius: 20px;
+  --radius-sm: 12px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background: var(--purple);
+  color: var(--text-dark);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+#root {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: var(--purple);
+}
+
+.app-shell {
+  width: 100%;
+  max-width: 390px;
+  height: 100vh;
+  max-height: 844px;
+  position: relative;
+  overflow: hidden;
+  background: var(--purple);
+}
+
+@media (max-width: 390px) {
+  .app-shell {
+    max-height: 100vh;
+    border-radius: 0;
+  }
+}
+
+/* Cards */
+.card {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+  padding: 20px;
+}
+
+/* Buttons */
+.btn-green {
+  background: var(--green);
+  color: var(--text-dark);
+  border: none;
+  border-radius: 50px;
+  font-weight: 700;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 16px 24px;
+  width: 100%;
+  transition: background 0.2s;
+}
+
+.btn-green:active {
+  background: var(--green-dark);
+}
+
+.btn-circle {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: var(--green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(168, 216, 63, 0.4);
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1.5px solid #E0E0E6;
+  border-radius: 50px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-dark);
+  cursor: pointer;
+  padding: 14px 24px;
+  width: 100%;
+}
+
+/* Input */
+.input-field {
+  width: 100%;
+  border: 1.5px solid #E8E8EE;
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  font-size: 15px;
+  color: var(--text-dark);
+  background: #FAFAFA;
+  outline: none;
+  font-family: inherit;
+}
+
+.input-field:focus {
+  border-color: var(--purple);
+}
+
+/* Map fullscreen */
+.map-full {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Bottom sheet */
+.bottom-sheet {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--white);
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 24px 20px 36px;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.08);
+}
+
+.bottom-sheet-handle {
+  width: 36px;
+  height: 4px;
+  background: #E0E0E6;
+  border-radius: 2px;
+  margin: 0 auto 20px;
+}
+
+/* Stars */
+.stars {
+  display: flex;
+  gap: 4px;
+}
+
+.star {
+  font-size: 22px;
+  cursor: pointer;
+  color: #FFB800;
+}
+
+.star.empty {
+  color: #E0E0E6;
+}
