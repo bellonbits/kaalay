@@ -225,7 +225,7 @@ stateDiagram-v2
 | ORM | TypeORM |
 | Database | PostgreSQL 15 |
 | Cache / GEO | Redis 7 (GEOADD / GEORADIUS) |
-| Infra | Docker Compose |
+| Infra | Podman Compose |
 
 ---
 
@@ -233,7 +233,7 @@ stateDiagram-v2
 
 ```
 kaalay/
-├── docker-compose.yml          # PostgreSQL + Redis + Adminer
+├── docker-compose.yml          # PostgreSQL + Redis + Adminer (Podman Compose)
 ├── apps/
 │   ├── backend/                # NestJS API
 │   │   └── src/
@@ -257,9 +257,9 @@ kaalay/
 ## How to Run
 
 ### 1. Start Infrastructure (PostgreSQL & Redis)
-You need Docker installed. Run the following command from the root `kaalay` folder:
+You need [Podman](https://podman.io/docs/installation) and [podman-compose](https://github.com/containers/podman-compose) installed. Run the following command from the root `kaalay` folder:
 ```bash
-docker-compose up -d
+podman-compose up -d
 ```
 
 ### 2. Configure Environment Variables
