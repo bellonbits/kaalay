@@ -34,6 +34,9 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
 
+  useEffect(() => {
+    if (localStorage.getItem('kaalay_user')) router.replace('/home');
+  }, [router]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
