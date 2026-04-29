@@ -71,7 +71,7 @@ export default function HomePage() {
     { label: 'Help',     Icon: AlertOutlined,    href: '/request',     bg: '#1A1A1A', color: '#FFFFFF' },
     { label: 'Track',    Icon: RadarChartOutlined, href: '/track/enter', bg: '#F7F7F7', color: '#1A1A1A', border: true },
     { label: isHelper ? 'Requests' : 'Meet', Icon: isHelper ? CarOutlined : TeamOutlined,
-      href: isHelper ? '/driver' : '/share',  bg: '#F7F7F7', color: '#1A1A1A', border: true },
+      href: isHelper ? '/driver' : '/meet',   bg: '#F7F7F7', color: '#1A1A1A', border: true },
   ];
 
   return (

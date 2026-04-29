@@ -8,6 +8,17 @@ import { Logger } from '@nestjs/common';
 import { SessionsService } from '../sessions/sessions.service';
 import { SessionStatus } from '../sessions/entities/location-session.entity';
 
+export interface GroupMember {
+  memberId: string;
+  name: string;
+  lat: number;
+  lng: number;
+  accuracy?: number;
+  heading?: number;
+  lastSeen: number;
+  socketId: string;
+}
+
 export interface LocationPayload {
   code: string;
   lat: number;
@@ -35,6 +46,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   server: Server;
 
   private readonly logger = new Logger(LocationGateway.name);
+  private readonly rooms = new Map<string, Map<string, GroupMember>>();
 
   constructor(private readonly sessionsService: SessionsService) {}
 
@@ -44,6 +56,14 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
+    this.rooms.forEach((members, code) => {
+      members.forEach((member, memberId) => {
+        if (member.socketId === client.id) {
+          members.delete(memberId);
+          this.server.to(code).emit('member-left', { memberId });
+        }
+      });
+    });
   }
 
   // ── Viewer joins a session room to receive updates ──────────────────────
@@ -116,5 +136,57 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       helperId: payload.helperId,
       timestamp: Date.now(),
     });
+  }
+
+  // ── Group session: join room and register member ──────────────────────────
+  @SubscribeMessage('join-group')
+  handleJoinGroup(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { code: string; memberId: string; name: string; lat: number; lng: number; accuracy?: number; heading?: number },
+  ) {
+    const { code, memberId, name, lat, lng, accuracy, heading } = payload;
+    client.join(code);
+    if (!this.rooms.has(code)) this.rooms.set(code, new Map());
+    const member: GroupMember = { memberId, name, lat, lng, accuracy, heading, lastSeen: Date.now(), socketId: client.id };
+    this.rooms.get(code)!.set(memberId, member);
+    client.emit('member-list', Array.from(this.rooms.get(code)!.values()));
+    client.to(code).emit('member-joined', member);
+    this.logger.log(`${name} joined group ${code}`);
+  }
+
+  // ── Group session: push location update tagged with memberId ─────────────
+  @SubscribeMessage('group-location')
+  handleGroupLocation(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { code: string; memberId: string; lat: number; lng: number; accuracy?: number; heading?: number },
+  ) {
+    const { code, memberId } = payload;
+    const room = this.rooms.get(code);
+    if (room?.has(memberId)) {
+      const existing = room.get(memberId)!;
+      room.set(memberId, { ...existing, ...payload, lastSeen: Date.now() });
+    }
+    client.to(code).emit('member-location', { ...payload, timestamp: Date.now() });
+  }
+
+  // ── Group session: member leaves ─────────────────────────────────────────
+  @SubscribeMessage('leave-group')
+  handleLeaveGroup(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { code: string; memberId: string },
+  ) {
+    const { code, memberId } = payload;
+    client.leave(code);
+    this.rooms.get(code)?.delete(memberId);
+    this.server.to(code).emit('member-left', { memberId });
+  }
+
+  // ── Group session: set meeting point destination ──────────────────────────
+  @SubscribeMessage('set-destination')
+  handleSetDestination(
+    @ConnectedSocket() _client: Socket,
+    @MessageBody() payload: { code: string; lat: number; lng: number; label?: string },
+  ) {
+    this.server.to(payload.code).emit('destination', payload);
   }
 }
