@@ -54,6 +54,8 @@ export default function MeetPage() {
   const [copied,   setCopied]   = useState(false);
   const [starting, setStarting] = useState(false);
   const [sheetH,   setSheetH]   = useState<'peek' | 'half' | 'full'>('half');
+  const [arrivals, setArrivals] = useState<{ name: string; timestamp: number }[]>([]);
+  const [arrived,  setArrived]  = useState(false);
 
   const membersRef = useRef(new Map<string, GroupMember>());
   const myId       = useRef('');
@@ -111,11 +113,17 @@ export default function MeetPage() {
       convertTo3wa(d.lat, d.lng).then(r => setDestination({ ...d, w3w: r.what3words })).catch(() => setDestination(d));
     };
 
+    const onMemberArrived = (d: { name: string; timestamp: number }) => {
+      // Show toast or update list
+      setArrivals(prev => [d, ...prev].slice(0, 3));
+    };
+
     s.on('member-list',    onMemberList);
     s.on('member-joined',  onMemberJoined);
     s.on('member-left',    onMemberLeft);
     s.on('member-location', onMemberLocation);
     s.on('destination',    onDestination);
+    s.on('member-arrived',  onMemberArrived);
 
     return () => {
       joinedRef.current = false;
@@ -125,6 +133,7 @@ export default function MeetPage() {
       s.off('member-left',    onMemberLeft);
       s.off('member-location', onMemberLocation);
       s.off('destination',    onDestination);
+      s.off('member-arrived',  onMemberArrived);
     };
   }, [step, activeCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -381,7 +390,7 @@ export default function MeetPage() {
           )}
 
           {/* Action buttons */}
-          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+          <div style={{ display: 'flex', gap: 10, marginTop: 20, marginBottom: 12 }}>
             <button onClick={() => setShowDestSheet(true)} style={{
               flex: 1, padding: '14px', background: '#F7F7F7', color: '#1A1A1A',
               border: '1.5px solid #EBEBEB', borderRadius: 16, fontSize: 13, fontWeight: 700,
@@ -391,15 +400,49 @@ export default function MeetPage() {
               <EnvironmentOutlined style={{ fontSize: 14 }} />
               {destination ? 'Change Pin' : 'Set Meeting Point'}
             </button>
-            <button onClick={leave} style={{
-              flex: 1, padding: '14px', background: '#FFF5F5', color: '#DC2626',
-              border: '1.5px solid #FCA5A5', borderRadius: 16, fontSize: 13, fontWeight: 700,
-              cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-            }}>
-              Leave
+            <button 
+              onClick={() => {
+                socketRef.current?.emit('arrived', { code: activeCode, name });
+                setArrived(true);
+              }} 
+              disabled={arrived}
+              style={{
+                flex: 1, padding: '14px', 
+                background: arrived ? '#F0FDF4' : '#1A1A1A', 
+                color: arrived ? '#16A34A' : '#FFFFFF',
+                border: arrived ? '1.5px solid #86EFAC' : 'none', 
+                borderRadius: 16, fontSize: 13, fontWeight: 800,
+                cursor: arrived ? 'default' : 'pointer',
+                fontFamily: 'Inter, sans-serif',
+              }}
+            >
+              {arrived ? 'Arrived!' : "I've arrived"}
             </button>
           </div>
+
+          <button onClick={leave} style={{
+            width: '100%', padding: '14px', background: '#FFF5F5', color: '#DC2626',
+            border: '1.5px solid #FCA5A5', borderRadius: 16, fontSize: 13, fontWeight: 700,
+            cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+          }}>
+            Leave Group
+          </button>
         </div>
+      </div>
+
+      {/* Arrival notifications */}
+      <div style={{ position: 'absolute', top: 100, left: 16, right: 16, zIndex: 40, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {arrivals.map((a, i) => (
+          <div key={`${a.name}-${a.timestamp}`} style={{
+            background: '#F0FDF4', borderRadius: 16, padding: '10px 16px',
+            border: '1.5px solid #86EFAC', boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+            display: 'flex', alignItems: 'center', gap: 10,
+            animation: 'slide-in-right 0.4s cubic-bezier(.34,1.56,.64,1) both',
+          }}>
+            <EnvironmentOutlined style={{ fontSize: 18, color: '#16A34A' }} />
+            <p style={{ fontSize: 13, fontWeight: 700, color: '#15803D' }}>{a.name} has arrived!</p>
+          </div>
+        ))}
       </div>
 
       {/* Destination sheet overlay */}

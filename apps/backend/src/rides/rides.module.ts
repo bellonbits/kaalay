@@ -5,16 +5,16 @@ import { RidesController } from './rides.controller';
 import { RidesGateway } from './rides.gateway';
 import { Ride } from './entities/ride.entity';
 import { User } from '../users/entities/user.entity';
+import { Driver } from '../drivers/entities/driver.entity';
 import { LocationModule } from '../location/location.module';
-import { DispatchModule } from '../dispatch/dispatch.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Ride, User]),
+    TypeOrmModule.forFeature([Ride, User, Driver]),
     LocationModule,
-    DispatchModule,
   ],
   controllers: [RidesController],
   providers: [RidesService, RidesGateway],
+  exports: [RidesService],
 })
 export class RidesModule {}

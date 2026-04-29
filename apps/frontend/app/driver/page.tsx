@@ -38,6 +38,9 @@ export default function DriverPage() {
   const [tab,    setTab]    = useState<'map' | 'list'>('map');
   const [user,   setUser]   = useState<{ fullName?: string; id?: string }>({});
 
+  const [incomingRide, setIncomingRide] = useState<any>(null);
+  const [activeRide,   setActiveRide]   = useState<any>(null);
+
   useEffect(() => {
     const stored = localStorage.getItem('kaalay_user');
     if (stored) setUser(JSON.parse(stored));
@@ -53,27 +56,106 @@ export default function DriverPage() {
 
   useEffect(() => {
     const s = socketRef.current; if (!s || !online) return;
-    s.emit('watch-requests'); s.on('request', onReq);
-    return () => { s.off('request', onReq); };
-  }, [online, onReq]); // eslint-disable-line react-hooks/exhaustive-deps
+    s.emit('driver:online', { driverId: user.id });
+    s.emit('watch-requests');
+    s.on('request', onReq);
+    
+    const onNewRide = (ride: any) => {
+      setIncomingRide(ride);
+    };
+    const onRideTaken = ({ rideId }: { rideId: string }) => {
+      if (incomingRide?.rideId === rideId) setIncomingRide(null);
+    };
+
+    s.on('ride:new', onNewRide);
+    s.on('ride:taken', onRideTaken);
+
+    return () => {
+      s.emit('driver:offline', { driverId: user.id });
+      s.off('request', onReq);
+      s.off('ride:new', onNewRide);
+      s.off('ride:taken', onRideTaken);
+    };
+  }, [online, onReq, user.id, incomingRide?.rideId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!position || !online || !socketRef.current) return;
     socketRef.current.emit('driver:update_location', { driverId: user.id, lat: position.lat, lng: position.lng });
-  }, [position, online]); // eslint-disable-line react-hooks/exhaustive-deps
+    
+    if (activeRide) {
+      socketRef.current.emit('ride:driver_location', { rideId: activeRide.rideId, lat: position.lat, lng: position.lng, heading: position.heading });
+    }
+  }, [position, online, activeRide, user.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const acceptRide = () => {
+    if (!incomingRide || !socketRef.current) return;
+    socketRef.current.emit('ride:accept', {
+      rideId: incomingRide.rideId,
+      driverId: user.id,
+      driverName: user.fullName || 'Driver',
+      vehicleModel: 'Toyota Vitz',
+      vehicleColor: 'White',
+      licensePlate: 'KAA 123X',
+    });
+    setActiveRide(incomingRide);
+    setIncomingRide(null);
+    setTab('map');
+  };
 
   const center = position ?? { lat: -1.2921, lng: 36.8219 };
   const sorted = [...reqs].sort((a, b) => position ? distKm(position, a) - distKm(position, b) : 0);
   const markers: MarkerData[] = [
     ...(position ? [{ lat: position.lat, lng: position.lng, type: 'me' as const, accuracy: position.accuracy }] : []),
     ...reqs.map(r => ({ lat: r.lat, lng: r.lng, type: 'request' as const, label: r.userName })),
+    ...(activeRide ? [{ lat: activeRide.pickupLat, lng: activeRide.pickupLng, type: 'request' as const, label: 'Pickup' }] : []),
   ];
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7', position: 'relative', overflow: 'hidden' }}>
+      
+      {incomingRide && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.6)',
+          display: 'flex', alignItems: 'flex-end', padding: '16px'
+        }}>
+          <div style={{
+            width: '100%', background: '#FFFFFF', borderRadius: 28, padding: 24,
+            boxShadow: '0 -8px 40px rgba(0,0,0,0.2)', animation: 'ride-slide-up 0.4s ease-out'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ background: '#FFD600', padding: '6px 12px', borderRadius: 50, fontWeight: 900, fontSize: 13 }}>NEW RIDE REQUEST</div>
+              <div style={{ fontSize: 20, fontWeight: 900 }}>KES {incomingRide.fare}</div>
+            </div>
+            
+            <h2 style={{ fontSize: 24, fontWeight: 900, color: '#1A1A1A', marginBottom: 8 }}>{incomingRide.riderName}</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#888', fontSize: 14, marginBottom: 20 }}>
+              <EnvironmentOutlined />
+              <span>{Math.round(distKm(position ?? {lat:0,lng:0}, {lat: incomingRide.pickupLat, lng: incomingRide.pickupLng}))}km away</span>
+            </div>
 
-      {/* Header */}
+            <div style={{ background: '#F7F7F7', borderRadius: 16, padding: 16, marginBottom: 24, border: '1.5px solid #EBEBEB' }}>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingTop: 4 }}>
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22C55E' }} />
+                  <div style={{ width: 1, height: 16, background: '#DDD' }} />
+                  <div style={{ width: 6, height: 6, borderRadius: 1, background: '#1A1A1A' }} />
+                </div>
+                <div style={{ flex: 1, fontSize: 13, fontWeight: 700 }}>
+                  <p>///{incomingRide.pickupW3W}</p>
+                  <div style={{ height: 1, background: '#DDD', margin: '8px 0' }} />
+                  <p>///{incomingRide.destW3W}</p>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button onClick={() => setIncomingRide(null)} style={{ flex: 1, padding: '16px', borderRadius: 16, background: '#F7F7F7', border: 'none', fontWeight: 700, cursor: 'pointer' }}>Decline</button>
+              <button onClick={acceptRide} style={{ flex: 2, padding: '16px', borderRadius: 16, background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontWeight: 800, cursor: 'pointer', fontSize: 16 }}>Accept Ride</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ background: '#FFFFFF', padding: '48px 20px 12px', borderBottom: '1px solid #EBEBEB', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -81,12 +163,11 @@ export default function DriverPage() {
               <ArrowLeftOutlined style={{ fontSize: 15, color: '#1A1A1A' }} />
             </button>
             <div>
-              <h1 style={{ fontSize: 20, fontWeight: 900, color: '#1A1A1A' }}>Helper Dashboard</h1>
+              <h1 style={{ fontSize: 20, fontWeight: 900, color: '#1A1A1A' }}>Driver Dashboard</h1>
               <p style={{ fontSize: 12, color: '#888' }}>{user.fullName ?? 'Driver'}</p>
             </div>
           </div>
 
-          {/* Online toggle */}
           <button onClick={() => setOnline(o => !o)} style={{
             display: 'flex', alignItems: 'center', gap: 8,
             padding: '9px 16px', borderRadius: 50,
@@ -98,160 +179,79 @@ export default function DriverPage() {
             <span style={{ fontSize: 13, fontWeight: 800, color: online ? '#16A34A' : '#888' }}>
               {online ? 'Online' : 'Go online'}
             </span>
-            <div style={{ width: 7, height: 7, borderRadius: '50%', background: online ? '#22C55E' : '#DDD', ...(online ? { animation: 'pulse-dot 1.6s ease-in-out infinite' } : {}) }} />
           </button>
         </div>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 6, background: '#F7F7F7', border: '1.5px solid #EBEBEB', borderRadius: 14, padding: 4 }}>
-          {([
-            { id: 'map',  Icon: GlobalOutlined,        label: 'Map view' },
-            { id: 'list', Icon: UnorderedListOutlined, label: `Requests (${sorted.length})` },
-          ] as const).map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{
-              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              padding: '9px', borderRadius: 10, border: 'none', cursor: 'pointer',
-              background: tab === t.id ? '#1A1A1A' : 'transparent',
-              color: tab === t.id ? '#FFFFFF' : '#888',
-              fontSize: 13, fontWeight: 700, fontFamily: 'Inter, sans-serif',
-              transition: 'all 0.15s',
-            }}>
-              <t.Icon style={{ fontSize: 13 }} />
-              {t.label}
-            </button>
-          ))}
-        </div>
+        {!activeRide && (
+          <div style={{ display: 'flex', gap: 6, background: '#F7F7F7', border: '1.5px solid #EBEBEB', borderRadius: 14, padding: 4 }}>
+            {([
+              { id: 'map',  Icon: GlobalOutlined,        label: 'Map' },
+              { id: 'list', Icon: UnorderedListOutlined, label: `Jobs (${sorted.length})` },
+            ] as const).map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)} style={{
+                flex: 1, padding: '9px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                background: tab === t.id ? '#1A1A1A' : 'transparent',
+                color: tab === t.id ? '#FFFFFF' : '#888',
+                fontSize: 13, fontWeight: 700,
+              }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* ── Map tab ── */}
-      {tab === 'map' && (
-        <div style={{ flex: 1, position: 'relative' }}>
-          <MapBase center={center} zoom={13} markers={markers} className="w-full h-full" />
-
-          {!online && (
-            <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(6px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '0 32px', textAlign: 'center' }}>
-              <div style={{ width: 64, height: 64, borderRadius: 20, background: '#F7F7F7', border: '2px solid #EBEBEB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <CarOutlined style={{ fontSize: 28, color: '#BBBBBB' }} />
+      <div style={{ flex: 1, position: 'relative' }}>
+        {tab === 'map' && <MapBase center={center} zoom={14} markers={markers} 
+          routeTo={activeRide ? { lat: activeRide.pickupLat, lng: activeRide.pickupLng } : undefined}
+          className="w-full h-full" />}
+        
+        {activeRide && (
+          <div style={{ position: 'absolute', bottom: 20, left: 16, right: 16, background: '#FFFFFF', borderRadius: 22, padding: 18, boxShadow: '0 8px 32px rgba(0,0,0,0.12)', border: '1.5px solid #EBEBEB' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#F7F7F7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900 }}>{activeRide.riderName[0]}</div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 11, color: '#888', fontWeight: 800, textTransform: 'uppercase' }}>Current Job</p>
+                <h3 style={{ fontSize: 16, fontWeight: 900, color: '#1A1A1A' }}>{activeRide.riderName}</h3>
               </div>
-              <p style={{ fontSize: 20, fontWeight: 900, color: '#1A1A1A' }}>Go online to see requests</p>
-              <p style={{ fontSize: 14, color: '#888', lineHeight: 1.5 }}>People nearby need help — tap Go online to start receiving requests</p>
-              <button onClick={() => setOnline(true)} style={{ padding: '15px 32px', background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 16, fontSize: 15, fontWeight: 800, cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>
-                Go Online Now
-              </button>
-            </div>
-          )}
-
-          {online && (
-            <div style={{ position: 'absolute', top: 12, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-              <div style={{ background: '#FFD600', borderRadius: 50, padding: '8px 18px', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)' }}>
-                <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#1A1A1A', animation: 'pulse-dot 1.6s ease-in-out infinite' }} />
-                <span style={{ fontSize: 13, fontWeight: 800, color: '#1A1A1A' }}>{sorted.length} request{sorted.length !== 1 ? 's' : ''} nearby</span>
+              <div style={{ textAlign: 'right' }}>
+                <p style={{ fontSize: 18, fontWeight: 900 }}>KES {activeRide.fare}</p>
+                <p style={{ fontSize: 11, color: '#22C55E', fontWeight: 800 }}>ACTIVE</p>
               </div>
             </div>
-          )}
-
-          {/* Mini cards */}
-          {online && sorted.slice(0, 2).map(r => {
-            const m = TYPE_META[r.type] ?? TYPE_META.general;
-            const d = position ? distKm(position, r) : null;
-            return (
-              <button key={r.code} onClick={() => router.push(`/track/${r.code}`)}
-                style={{
-                  position: 'absolute', bottom: sorted.length > 1 ? (sorted.indexOf(r) === 0 ? 88 : 20) : 20,
-                  left: 16, right: 16,
-                  background: '#FFFFFF', borderRadius: 18, padding: '12px 14px',
-                  boxShadow: '0 2px 16px rgba(0,0,0,0.10)', border: '1.5px solid #EBEBEB',
-                  display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', textAlign: 'left',
-                }}>
-                <div style={{ width: 40, height: 40, borderRadius: 12, background: m.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <m.Icon style={{ fontSize: 18, color: m.iconColor }} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: '#1A1A1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.userName ?? 'Anonymous'}</p>
-                  <p style={{ fontSize: 11, color: '#888' }}>{m.label}</p>
-                </div>
-                {d !== null && <p style={{ fontSize: 14, fontWeight: 900, color: '#1A1A1A', flexShrink: 0 }}>{d < 1 ? `${Math.round(d * 1000)}m` : `${d.toFixed(1)}km`}</p>}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── List tab ── */}
-      {tab === 'list' && (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-          {!online ? (
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, textAlign: 'center', padding: '0 32px' }}>
-              <PoweroffOutlined style={{ fontSize: 40, color: '#BBBBBB' }} />
-              <p style={{ fontSize: 20, fontWeight: 900, color: '#1A1A1A' }}>You're offline</p>
-              <p style={{ fontSize: 14, color: '#888' }}>Go online to see and accept nearby requests</p>
-              <button onClick={() => setOnline(true)} style={{ padding: '14px 32px', background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 14, fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>Go Online</button>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button style={{ flex: 1, padding: '12px', borderRadius: 12, background: '#F7F7F7', color: '#1A1A1A', border: '1.5px solid #EBEBEB', fontWeight: 700 }}>Contact</button>
+              <button onClick={() => setActiveRide(null)} style={{ flex: 1, padding: '12px', borderRadius: 12, background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontWeight: 700 }}>Complete</button>
             </div>
-          ) : sorted.length === 0 ? (
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-              <EnvironmentOutlined style={{ fontSize: 36, color: '#BBBBBB' }} />
-              <p style={{ fontSize: 16, fontWeight: 700, color: '#1A1A1A' }}>No requests yet</p>
-              <p style={{ fontSize: 13, color: '#888' }}>Requests appear here in real time</p>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {sorted.map(r => {
-                const m = TYPE_META[r.type] ?? TYPE_META.general;
-                const d = position ? distKm(position, r) : null;
-                const eta = d ? Math.round((d / 40) * 60) : null;
-                return (
-                  <div key={r.code} style={{ background: '#FFFFFF', borderRadius: 22, border: '1.5px solid #EBEBEB', overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
-                    {/* Yellow ETA bar */}
-                    <div style={{ background: '#FFD600', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <m.Icon style={{ fontSize: 15, color: '#1A1A1A' }} />
-                      <p style={{ fontSize: 13, fontWeight: 800, color: '#1A1A1A', flex: 1 }}>
-                        To this location&nbsp;<span style={{ fontWeight: 900 }}>{eta} min</span>
-                      </p>
-                      {d !== null && <p style={{ fontSize: 12, fontWeight: 700, color: 'rgba(0,0,0,0.5)' }}>{d < 1 ? `${Math.round(d * 1000)}m` : `${d.toFixed(1)}km`}</p>}
-                    </div>
+          </div>
+        )}
 
-                    <div style={{ padding: 16 }}>
-                      {/* Route row */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#F7F7F7', borderRadius: 12, padding: '12px 14px', marginBottom: 12, border: '1px solid #EBEBEB' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                          <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#22C55E' }} />
-                          <div style={{ width: 1, height: 14, background: '#DDD' }} />
-                          <div style={{ width: 7, height: 7, borderRadius: 2, background: '#1A1A1A' }} />
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <p style={{ fontSize: 11, color: '#888' }}>My location</p>
-                          <div style={{ height: 1, background: '#EBEBEB', margin: '6px 0' }} />
-                          <p style={{ fontSize: 12, fontWeight: 700, color: '#1A1A1A' }}>{r.userName ?? 'Anonymous'}</p>
-                        </div>
-                      </div>
-
-                      {r.message && (
-                        <p style={{ fontSize: 12, color: '#666', background: '#F9F9F9', border: '1px solid #EBEBEB', borderRadius: 10, padding: '8px 12px', marginBottom: 12, fontStyle: 'italic' }}>
-                          "{r.message}"
-                        </p>
-                      )}
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 20, background: m.pillBg, color: m.pillColor }}>
-                          {m.label}
-                        </span>
-                        <div style={{ flex: 1 }} />
-                        <button onClick={() => router.push(`/track/${r.code}`)} style={{
-                          padding: '10px 20px', background: '#1A1A1A', color: '#FFFFFF',
-                          border: 'none', borderRadius: 12, fontSize: 13, fontWeight: 800,
-                          cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-                        }}>
-                          View &amp; Accept
-                        </button>
-                      </div>
-                    </div>
+        {tab === 'list' && !activeRide && (
+          <div style={{ position: 'absolute', inset: 0, background: '#F7F7F7', overflowY: 'auto', padding: 16 }}>
+            {sorted.map(r => (
+              <div key={r.code} style={{ background: '#FFFFFF', borderRadius: 18, padding: 16, marginBottom: 12, border: '1.5px solid #EBEBEB' }}>
+                <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: '#F7F7F7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <EnvironmentOutlined style={{ fontSize: 18 }} />
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
+                  <div>
+                    <h4 style={{ fontWeight: 800 }}>{r.userName || 'Anonymous'}</h4>
+                    <p style={{ fontSize: 12, color: '#888' }}>{Math.round(distKm(position ?? {lat:0,lng:0}, r)*10)/10}km away</p>
+                  </div>
+                </div>
+                <button onClick={() => router.push(`/track/${r.code}`)} style={{ width: '100%', padding: '10px', borderRadius: 10, background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontWeight: 700 }}>View Details</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <style jsx global>{`
+        @keyframes ride-slide-up {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }

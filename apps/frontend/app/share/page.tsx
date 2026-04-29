@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
 import {
   ArrowLeftOutlined, EnvironmentOutlined, TeamOutlined, CarOutlined,
   AlertOutlined, LockOutlined, GlobalOutlined, CopyOutlined, CheckOutlined,
-  StopOutlined, ClockCircleOutlined, ShareAltOutlined,
+  StopOutlined, ClockCircleOutlined, ShareAltOutlined, CheckCircleFilled,
 } from '@ant-design/icons';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useSocket } from '../../hooks/useSocket';
@@ -47,6 +47,10 @@ export default function SharePage() {
   const [msgCopied, setMsgCopied] = useState(false);
 
 
+  const [viewerCount, setViewerCount] = useState(0);
+  const [viewers,     setViewers]     = useState<Record<string, { lat: number; lng: number; name: string; timestamp: number }>>({});
+  const [arrivals,    setArrivals]    = useState<{ name: string; timestamp: number }[]>([]);
+
   useEffect(() => {
     if (!session) return;
     const url = `${window.location.origin}/track/${session.shareCode}`;
@@ -63,19 +67,40 @@ export default function SharePage() {
     if (step !== 'live' || !session || !position) return;
     const s = socketRef.current;
     if (!s) return;
+    
     s.emit('join', session.shareCode);
     s.emit('new-request', {
       code: session.shareCode, type, message: msg,
       lat: position.lat, lng: position.lng,
       userName: JSON.parse(localStorage.getItem('kaalay_user') ?? '{}').fullName,
     });
+
+    const onViewerCount = (d: { count: number }) => setViewerCount(d.count);
+    const onViewerLoc   = (d: { viewerId: string; lat: number; lng: number; name: string; timestamp: number }) => {
+      setViewers(prev => ({ ...prev, [d.viewerId]: d }));
+    };
+    const onArrived     = (d: { name: string; timestamp: number }) => {
+      setArrivals(prev => [d, ...prev].slice(0, 5));
+      // Could add a toast here
+    };
+
+    s.on('viewer-count',    onViewerCount);
+    s.on('viewer-location', onViewerLoc);
+    s.on('member-arrived',  onArrived);
+
     broadRef.current = setInterval(() => {
       socketRef.current?.emit('push-location', {
         code: session.shareCode, lat: position.lat, lng: position.lng,
         accuracy: position.accuracy, heading: position.heading, timestamp: Date.now(),
       });
     }, 3000);
-    return () => { if (broadRef.current) clearInterval(broadRef.current); };
+
+    return () => {
+      if (broadRef.current) clearInterval(broadRef.current);
+      s.off('viewer-count',    onViewerCount);
+      s.off('viewer-location', onViewerLoc);
+      s.off('member-arrived',  onArrived);
+    };
   }, [step, session, position]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const start = async () => {
@@ -121,9 +146,10 @@ export default function SharePage() {
     setTimeout(() => setMsgCopied(false), 2000);
   };
 
-  const markers: MarkerData[] = position
-    ? [{ lat: position.lat, lng: position.lng, type: 'me', accuracy: position.accuracy }]
-    : [];
+  const markers: MarkerData[] = [
+    ...(position ? [{ lat: position.lat, lng: position.lng, type: 'me' as const, accuracy: position.accuracy }] : []),
+    ...Object.values(viewers).map(v => ({ lat: v.lat, lng: v.lng, type: 'tracked' as const, label: v.name })),
+  ];
 
   const selT = TYPES.find(t => t.id === type)!;
 
@@ -133,6 +159,36 @@ export default function SharePage() {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
       <div style={{ position: 'relative', flex: 1 }}>
         <MapBase center={position ?? { lat: -1.29, lng: 36.82 }} zoom={15} markers={markers} className="w-full h-full" />
+
+        {/* Viewer count pill */}
+        <div style={{ position: 'absolute', top: 48, right: 16, zIndex: 20 }}>
+          <div style={{
+            background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(8px)',
+            borderRadius: 50, padding: '8px 16px', border: '1.5px solid #EBEBEB',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.10)', display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <TeamOutlined style={{ fontSize: 14, color: viewerCount > 0 ? '#16A34A' : '#888' }} />
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#1A1A1A' }}>
+              {viewerCount} {viewerCount === 1 ? 'viewer' : 'viewers'}
+            </span>
+          </div>
+        </div>
+
+        {/* Arrival notifications */}
+        <div style={{ position: 'absolute', top: 100, left: 16, right: 16, zIndex: 20, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {arrivals.map((a, i) => (
+            <div key={`${a.name}-${a.timestamp}`} style={{
+              background: '#F0FDF4', borderRadius: 16, padding: '10px 16px',
+              border: '1.5px solid #86EFAC', boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+              display: 'flex', alignItems: 'center', gap: 10,
+              animation: 'slide-in-right 0.4s cubic-bezier(.34,1.56,.64,1) both',
+              opacity: Math.max(0, 1 - (Date.now() - a.timestamp) / 10000), // Fade out after 10s
+            }}>
+              <CheckCircleFilled style={{ fontSize: 18, color: '#16A34A' }} />
+              <p style={{ fontSize: 13, fontWeight: 700, color: '#15803D' }}>{a.name} has arrived!</p>
+            </div>
+          ))}
+        </div>
 
         {/* Yellow banner */}
         <div style={{

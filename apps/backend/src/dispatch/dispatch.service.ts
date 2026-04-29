@@ -29,20 +29,41 @@ export class DispatchService {
       return null;
     }
 
-    // 2. Filter for available drivers in Database
-    // nearby is an array of [id, distance, [lng, lat]]
-    for (const [driverId] of nearby as [string, ...unknown[]][]) {
+    const scoredDrivers: { id: string; score: number }[] = [];
+
+    // 2. Fetch driver data and calculate scores
+    for (const item of nearby as any[]) {
+      const [driverId, distanceStr] = item;
+      const distance = parseFloat(distanceStr);
+
       const driver = await this.driverRepository.findOne({
-        where: { id: driverId as string, status: DriverStatus.ONLINE },
+        where: { id: driverId, status: DriverStatus.ONLINE },
       });
 
       if (driver) {
-        this.logger.log(`Found available driver: ${driver.id}`);
-        return driver.id; // Return the first (closest) available driver
+        // Scoring formula:
+        // distScore: 1 / (distance + 0.5) -- higher is better (closer)
+        // ratingScore: rating / 5 -- higher is better
+        // acceptanceScore: acceptanceRate -- higher is better (0-1)
+        
+        const distScore = 1 / (distance + 0.5);
+        const ratingScore = driver.rating / 5;
+        const acceptanceScore = driver.acceptanceRate;
+
+        // Weights: 40% Distance, 40% Rating, 20% Acceptance
+        const totalScore = (distScore * 0.4) + (ratingScore * 0.4) + (acceptanceScore * 0.2);
+        
+        scoredDrivers.push({ id: driverId, score: totalScore });
       }
     }
 
-    return null;
+    if (scoredDrivers.length === 0) return null;
+
+    // 3. Sort by score descending and return the best
+    scoredDrivers.sort((a, b) => b.score - a.score);
+    
+    this.logger.log(`Best driver found: ${scoredDrivers[0].id} with score ${scoredDrivers[0].score.toFixed(3)}`);
+    return scoredDrivers[0].id;
   }
 
   async assignDriver(rideId: string, driverId: string) {

@@ -66,12 +66,16 @@ export default function HomePage() {
 
   const handleSearch = (e: React.FormEvent) => { e.preventDefault(); setShowNavSheet(true); };
 
-  const QUICK = [
-    { label: 'Share',    Icon: ShareAltOutlined, href: '/share',       bg: '#FFD600', color: '#1A1A1A' },
-    { label: 'Help',     Icon: AlertOutlined,    href: '/request',     bg: '#1A1A1A', color: '#FFFFFF' },
-    { label: 'Track',    Icon: RadarChartOutlined, href: '/track/enter', bg: '#F7F7F7', color: '#1A1A1A', border: true },
-    { label: isHelper ? 'Requests' : 'Meet', Icon: isHelper ? CarOutlined : TeamOutlined,
-      href: isHelper ? '/driver' : '/meet',   bg: '#F7F7F7', color: '#1A1A1A', border: true },
+  const QUICK = isHelper ? [
+    { label: 'Share',    Icon: ShareAltOutlined,   href: '/share',    bg: '#FFD600', color: '#1A1A1A' },
+    { label: 'Help',     Icon: AlertOutlined,       href: '/request',  bg: '#1A1A1A', color: '#FFFFFF' },
+    { label: 'Track',    Icon: RadarChartOutlined,  href: '/track/enter', bg: '#F7F7F7', color: '#1A1A1A', border: true },
+    { label: 'Jobs',     Icon: CarOutlined,         href: '/driver',   bg: '#F7F7F7', color: '#1A1A1A', border: true },
+  ] : [
+    { label: 'Share',    Icon: ShareAltOutlined,   href: '/share',    bg: '#FFD600', color: '#1A1A1A' },
+    { label: 'Help',     Icon: AlertOutlined,       href: '/request',  bg: '#1A1A1A', color: '#FFFFFF' },
+    { label: 'Ride',     Icon: CarOutlined,         href: '/ride',     bg: '#F7F7F7', color: '#1A1A1A', border: true },
+    { label: 'Meet',     Icon: TeamOutlined,        href: '/meet',     bg: '#F7F7F7', color: '#1A1A1A', border: true },
   ];
 
   return (

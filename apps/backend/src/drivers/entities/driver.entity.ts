@@ -36,6 +36,9 @@ export class Driver {
   @Column({ type: 'float', default: 0 })
   rating: number;
 
+  @Column({ type: 'float', default: 1.0 })
+  acceptanceRate: number;
+
   @OneToMany(() => Ride, (ride) => ride.driver)
   rides: Ride[];
 

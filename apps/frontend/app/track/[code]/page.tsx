@@ -4,13 +4,14 @@ import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
   ArrowLeftOutlined, AlertOutlined, CarOutlined, TeamOutlined,
-  EnvironmentOutlined, CheckCircleFilled, CompassOutlined,
+  EnvironmentOutlined, CheckCircleFilled, CompassOutlined, GlobalOutlined,
 } from '@ant-design/icons';
 import { useGeolocation } from '../../../hooks/useGeolocation';
 import { useSessionSocket } from '../../../hooks/useSocket';
 import { getSessionByCode, convertTo3wa } from '../../../lib/api';
 import { getSocket } from '../../../lib/socket';
 import type { MarkerData } from '../../../components/MapBase';
+import LowDataView from '../../../components/LowDataView';
 
 const MapBase = dynamic(() => import('../../../components/MapBase'), { ssr: false });
 
@@ -114,7 +115,12 @@ function LiveTracker({ code }: { code: string }) {
   const [accepted, setAccepted] = useState<string | null>(null);
   const [user,     setUser]     = useState<{ fullName?: string; id?: string; role?: string }>({});
   const [w3w,      setW3w]      = useState<string | null>(null);
+  const [lowData,  setLowData]  = useState(false);
   const isHelper = user.role === 'helper' || user.role === 'driver';
+
+  const [sharingBack, setSharingBack] = useState(false);
+  const [arrived,    setArrived]    = useState(false);
+  const [viewerCount, setViewerCount] = useState(0);
 
   useEffect(() => {
     const stored = localStorage.getItem('kaalay_user');
@@ -128,11 +134,28 @@ function LiveTracker({ code }: { code: string }) {
     convertTo3wa(tracked.lat, tracked.lng).then(d => setW3w(d.what3words)).catch(() => null);
   }, [tracked?.lat, tracked?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Broadcast own location back to owner if sharingBack is on
+  useEffect(() => {
+    if (!sharingBack || !me || !code) return;
+    const s = getSocket();
+    const interval = setInterval(() => {
+      s.emit('viewer-location', {
+        code, viewerId: user.id || 'anon', name: user.fullName || 'Someone',
+        lat: me.lat, lng: me.lng, accuracy: me.accuracy
+      });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [sharingBack, me, code, user.id, user.fullName]);
+
   useSessionSocket(
     code,
     useCallback((d: LivePos) => setTracked(d), []),
     useCallback((d: { status: string }) => { if (d.status === 'ended') setEnded(true); }, []),
     useCallback((d: { helperName: string }) => setAccepted(d.helperName), []),
+    useCallback((d: { count: number }) => setViewerCount(d.count), []),
+    useCallback((d: { name: string }) => {
+      // In a tracking view, we usually don't care if *others* arrived
+    }, []),
   );
 
   const km  = me && tracked ? dist(me, tracked) : null;
@@ -142,6 +165,11 @@ function LiveTracker({ code }: { code: string }) {
   const accept   = () => {
     getSocket().emit('accept-request', { code, helperName: user.fullName ?? 'Helper', helperId: user.id });
     openMaps();
+  };
+
+  const signalArrival = () => {
+    getSocket().emit('arrived', { code, name: user.fullName || 'Someone' });
+    setArrived(true);
   };
 
   const markers: MarkerData[] = [
@@ -154,15 +182,32 @@ function LiveTracker({ code }: { code: string }) {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
-      {/* Map */}
+      {/* Map or Low Data View */}
       <div style={{ position: 'relative', flex: 1 }}>
-        <MapBase center={center} zoom={15} markers={markers}
-          routeTo={isHelper && tracked ? tracked : undefined}
-          className="w-full h-full" />
+        {lowData && tracked ? (
+          <LowDataView me={me ?? undefined} target={tracked} w3w={w3w ?? undefined} />
+        ) : (
+          <MapBase center={center} zoom={15} markers={markers}
+            routeTo={isHelper && tracked ? tracked : undefined}
+            className="w-full h-full" />
+        )}
+
+        {/* Low Data Toggle */}
+        <button onClick={() => setLowData(!lowData)} style={{
+          position: 'absolute', top: 48, right: 16, zIndex: 20,
+          background: lowData ? '#1A1A1A' : '#FFFFFF', color: lowData ? '#FFFFFF' : '#1A1A1A',
+          padding: '8px 12px', borderRadius: 50, border: 'none',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.15)', cursor: 'pointer',
+          fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6,
+          fontFamily: 'Inter, sans-serif',
+        }}>
+          <GlobalOutlined style={{ fontSize: 13 }} />
+          {lowData ? 'Map View' : 'Low Data'}
+        </button>
 
         {/* Back */}
         <button onClick={() => router.back()} style={{
-          position: 'absolute', top: 48, left: 16,
+          position: 'absolute', top: 48, left: 16, zIndex: 20,
           width: 40, height: 40, borderRadius: '50%',
           background: '#FFFFFF', border: 'none', cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -318,7 +363,7 @@ function LiveTracker({ code }: { code: string }) {
         )}
 
         {/* Actions */}
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
           <button onClick={openMaps} style={{
             flex: 1, padding: '14px', background: '#F7F7F7', color: '#1A1A1A',
             border: '1.5px solid #EBEBEB', borderRadius: 16, fontSize: 13, fontWeight: 700,
@@ -337,17 +382,34 @@ function LiveTracker({ code }: { code: string }) {
               Accept request
             </button>
           ) : (
-            <button onClick={openMaps} style={{
-              flex: 1, padding: '14px', background: '#1A1A1A', color: '#FFFFFF',
-              border: 'none', borderRadius: 16, fontSize: 13, fontWeight: 800,
-              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            <button onClick={signalArrival} disabled={arrived} style={{
+              flex: 1, padding: '14px', background: arrived ? '#F0FDF4' : '#1A1A1A', color: arrived ? '#16A34A' : '#FFFFFF',
+              border: arrived ? '1.5px solid #86EFAC' : 'none', borderRadius: 16, fontSize: 13, fontWeight: 800,
+              cursor: arrived ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               fontFamily: 'Inter, sans-serif',
             }}>
-              <CompassOutlined style={{ fontSize: 14 }} />
-              Open Maps
+              {arrived ? <CheckCircleFilled style={{ fontSize: 14 }} /> : <TeamOutlined style={{ fontSize: 14 }} />}
+              {arrived ? 'Arrived!' : "I've arrived"}
             </button>
           )}
         </div>
+
+        {/* Coordination toggle */}
+        {!isHelper && (
+          <button 
+            onClick={() => setSharingBack(!sharingBack)}
+            style={{
+              width: '100%', padding: '12px', background: sharingBack ? '#1A1A1A' : '#F7F7F7',
+              color: sharingBack ? '#FFFFFF' : '#888', border: '1.5px solid #EBEBEB',
+              borderRadius: 12, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              fontFamily: 'Inter, sans-serif', transition: 'all 0.2s',
+            }}
+          >
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: sharingBack ? '#22C55E' : '#CCC' }} />
+            {sharingBack ? 'Sharing my location back' : 'Share my location back'}
+          </button>
+        )}
       </div>
     </div>
   );
