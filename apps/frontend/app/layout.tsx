@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
+import ClientShell from './ClientShell';
 import './globals.css';
 
 const inter = Inter({
@@ -26,7 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={inter.variable}>
       <body suppressHydrationWarning style={{ height: '100dvh', overflow: 'hidden', background: '#F7F7F7', fontFamily: 'var(--font-inter), Inter, sans-serif' }}>
-        {children}
+        <ClientShell>{children}</ClientShell>
       </body>
     </html>
   );
