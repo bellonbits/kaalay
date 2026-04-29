@@ -21,6 +21,32 @@ export class LocationController {
     return this.locationService.convertTo3wa(lat, lng);
   }
 
+  @Get('distance')
+  async getDistance(
+    @Query('originLat') originLat: number,
+    @Query('originLng') originLng: number,
+    @Query('destLat') destLat: number,
+    @Query('destLng') destLng: number,
+  ) {
+    if (originLat === undefined || destLat === undefined) {
+      throw new BadRequestException('All coordinates are required');
+    }
+    return this.locationService.getDistanceAndDuration(originLat, originLng, destLat, destLng);
+  }
+
+  @Get('grid-section')
+  async getGridSection(
+    @Query('swLat') swLat: number,
+    @Query('swLng') swLng: number,
+    @Query('neLat') neLat: number,
+    @Query('neLng') neLng: number,
+  ) {
+    if (swLat === undefined || swLng === undefined || neLat === undefined || neLng === undefined) {
+      throw new BadRequestException('Bounding box coordinates are required');
+    }
+    return this.locationService.getGridSection(swLat, swLng, neLat, neLng);
+  }
+
   @Get('validate')
   validate(@Query('words') words: string) {
     return {

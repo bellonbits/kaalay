@@ -1,9 +1,10 @@
 'use client';
 import { GoogleMap, useJsApiLoader, Circle, Polyline } from '@react-google-maps/api';
 import { useRef, useCallback, useEffect } from 'react';
+import { getGridSection } from '../lib/api';
 
 const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? '';
-const LIBRARIES: ('geometry' | 'places')[] = ['geometry'];
+const LIBRARIES: ('geometry' | 'places')[] = ['geometry', 'places'];
 
 // Crisp, minimal light map — matches design reference
 const LIGHT_STYLE: google.maps.MapTypeStyle[] = [
@@ -50,8 +51,43 @@ export default function MapBase({ center, zoom = 15, markers = [], routeTo, clas
   const mapRef    = useRef<google.maps.Map | null>(null);
   const markerArr = useRef<google.maps.Marker[]>([]);
   const routeRdr  = useRef<google.maps.DirectionsRenderer | null>(null);
+  const gridFeatures = useRef<google.maps.Data.Feature[]>([]);
 
-  const onLoad = useCallback((m: google.maps.Map) => { mapRef.current = m; }, []);
+  const onLoad = useCallback((m: google.maps.Map) => { 
+    mapRef.current = m; 
+
+    // Setup Grid listener
+    m.addListener("bounds_changed", async () => {
+      const loadFeatures = (m.getZoom() || 0) > 17;
+
+      m.data.setStyle({
+        visible: loadFeatures,
+        strokeColor: "#777",
+        strokeWeight: 0.5,
+      });
+
+      if (!loadFeatures) return;
+
+      const bounds = m.getBounds();
+      if (!bounds) return;
+
+      const ne = bounds.getNorthEast();
+      const sw = bounds.getSouthWest();
+
+      try {
+        const geoJson = await getGridSection(sw.lat(), sw.lng(), ne.lat(), ne.lng());
+        
+        // Remove old grid
+        gridFeatures.current.forEach(f => m.data.remove(f));
+        
+        // Render new grid
+        gridFeatures.current = m.data.addGeoJson(geoJson);
+      } catch (err) {
+        // Silent catch for grid load failure
+      }
+    });
+
+  }, []);
 
   // Render markers
   useEffect(() => {
@@ -141,7 +177,9 @@ export default function MapBase({ center, zoom = 15, markers = [], routeTo, clas
       destination: routeTo,
       travelMode: google.maps.TravelMode.DRIVING,
     }, (r, s) => {
-      if (s === 'OK' && r) routeRdr.current!.setDirections(r);
+      if (s === 'OK' && r) {
+        routeRdr.current!.setDirections(r);
+      }
     });
   }, [routeTo, isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 

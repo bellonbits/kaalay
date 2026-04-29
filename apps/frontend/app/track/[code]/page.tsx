@@ -8,7 +8,7 @@ import {
 } from '@ant-design/icons';
 import { useGeolocation } from '../../../hooks/useGeolocation';
 import { useSessionSocket } from '../../../hooks/useSocket';
-import { getSessionByCode } from '../../../lib/api';
+import { getSessionByCode, convertTo3wa } from '../../../lib/api';
 import { getSocket } from '../../../lib/socket';
 import type { MarkerData } from '../../../components/MapBase';
 
@@ -16,6 +16,15 @@ const MapBase = dynamic(() => import('../../../components/MapBase'), { ssr: fals
 
 interface LivePos { lat: number; lng: number; accuracy?: number; timestamp: number }
 interface Session { shareCode: string; requestType: string; message?: string; status: string; user?: { fullName: string } }
+
+function bearing(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
+  const φ1 = from.lat * Math.PI / 180;
+  const φ2 = to.lat  * Math.PI / 180;
+  const Δλ = (to.lng - from.lng) * Math.PI / 180;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+}
 
 function dist(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
   const R = 6371;
@@ -104,6 +113,7 @@ function LiveTracker({ code }: { code: string }) {
   const [ended,    setEnded]    = useState(false);
   const [accepted, setAccepted] = useState<string | null>(null);
   const [user,     setUser]     = useState<{ fullName?: string; id?: string; role?: string }>({});
+  const [w3w,      setW3w]      = useState<string | null>(null);
   const isHelper = user.role === 'helper' || user.role === 'driver';
 
   useEffect(() => {
@@ -112,6 +122,11 @@ function LiveTracker({ code }: { code: string }) {
   }, []);
 
   useEffect(() => { getSessionByCode(code).then(setSession).catch(() => null); }, [code]);
+
+  useEffect(() => {
+    if (!tracked) return;
+    convertTo3wa(tracked.lat, tracked.lng).then(d => setW3w(d.what3words)).catch(() => null);
+  }, [tracked?.lat, tracked?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useSessionSocket(
     code,
@@ -219,6 +234,48 @@ function LiveTracker({ code }: { code: string }) {
             <div>
               <p style={{ fontSize: 13, fontWeight: 700, color: '#15803D' }}>Help is on the way</p>
               <p style={{ fontSize: 12, color: '#16A34A' }}>{accepted} accepted your request</p>
+            </div>
+          </div>
+        )}
+
+        {/* w3w + compass card */}
+        {tracked && (
+          <div style={{
+            background: '#1A1A1A', borderRadius: 20, padding: '14px 16px',
+            marginBottom: 14, display: 'flex', alignItems: 'center', gap: 14,
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 4 }}>Precise location</p>
+              {w3w ? (
+                <p style={{ fontSize: 15, fontWeight: 900, color: '#FFD600', letterSpacing: '-0.3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  ///{w3w}
+                </p>
+              ) : (
+                <div style={{ height: 18, width: 140, background: '#333', borderRadius: 6, animation: 'pulse 1.5s ease-in-out infinite' }} />
+              )}
+              {km !== null && (
+                <p style={{ fontSize: 11, color: '#666', marginTop: 3 }}>
+                  {km < 1 ? `${Math.round(km * 1000)} m away` : `${km.toFixed(1)} km away`}
+                </p>
+              )}
+            </div>
+            {/* Compass */}
+            <div style={{
+              width: 52, height: 52, borderRadius: '50%',
+              border: '1.5px solid #333', flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              position: 'relative', background: '#111',
+            }}>
+              <span style={{ position: 'absolute', top: 3, fontSize: 8, fontWeight: 700, color: '#555', letterSpacing: 0 }}>N</span>
+              <div style={{
+                width: 0, height: 0,
+                borderLeft: '5px solid transparent',
+                borderRight: '5px solid transparent',
+                borderBottom: '18px solid #FFD600',
+                transform: `rotate(${me && tracked ? bearing(me, tracked) : 0}deg)`,
+                transformOrigin: '50% 75%',
+                transition: 'transform 0.5s ease',
+              }} />
             </div>
           </div>
         )}

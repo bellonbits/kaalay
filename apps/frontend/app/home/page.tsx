@@ -8,8 +8,9 @@ import {
   EnvironmentOutlined, RadarChartOutlined, UserOutlined,
 } from '@ant-design/icons';
 import { useGeolocation } from '../../hooks/useGeolocation';
-import { getPublicSessions } from '../../lib/api';
+import { getPublicSessions, getDistanceAndDuration } from '../../lib/api';
 import type { MarkerData } from '../../components/MapBase';
+import NavigationSheet, { LocationPoint } from '../../components/NavigationSheet';
 
 const MapBase = dynamic(() => import('../../components/MapBase'), { ssr: false });
 
@@ -38,7 +39,11 @@ export default function HomePage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sheetH,   setSheetH]   = useState<'peek' | 'half' | 'full'>('peek');
   const [search,   setSearch]   = useState('');
-
+  
+  // Navigation state
+  const [showNavSheet, setShowNavSheet] = useState(false);
+  const [routeDest, setRouteDest] = useState<LocationPoint | null>(null);
+  const [routeInfo, setRouteInfo] = useState<{ distance: string; duration: string } | null>(null);
 
   useEffect(() => {
     const u = localStorage.getItem('kaalay_user');
@@ -54,12 +59,12 @@ export default function HomePage() {
     ...(position ? [{ lat: position.lat, lng: position.lng, type: 'me' as const, accuracy: position.accuracy }] : []),
     ...CAR_OFFSETS.map(o => ({ lat: center.lat + o.dlat, lng: center.lng + o.dlng, type: 'car' as const })),
     ...sessions.slice(0, 4).map(s => ({ lat: Number(s.latitude), lng: Number(s.longitude), type: 'request' as const, label: s.user?.fullName })),
+    ...(routeDest ? [{ lat: routeDest.lat, lng: routeDest.lng, type: 'request' as const, label: routeDest.label }] : []),
   ];
-
 
   const sheetTranslate = sheetH === 'peek' ? 'calc(100% - 148px)' : sheetH === 'half' ? 'calc(100% - 380px)' : '0px';
 
-  const handleSearch = (e: React.FormEvent) => { e.preventDefault(); if (search.trim()) router.push('/share'); };
+  const handleSearch = (e: React.FormEvent) => { e.preventDefault(); setShowNavSheet(true); };
 
   const QUICK = [
     { label: 'Share',    Icon: ShareAltOutlined, href: '/share',       bg: '#FFD600', color: '#1A1A1A' },
@@ -74,7 +79,13 @@ export default function HomePage() {
 
       {/* Full-screen map */}
       <div style={{ position: 'absolute', inset: 0 }}>
-        <MapBase center={center} zoom={14} markers={markers} className="w-full h-full" />
+        <MapBase 
+          center={center} 
+          zoom={routeDest ? 14 : 14} 
+          markers={markers} 
+          routeTo={routeDest ? { lat: routeDest.lat, lng: routeDest.lng } : undefined}
+          className="w-full h-full" 
+        />
       </div>
 
       {/* ── Top bar ── */}
@@ -94,7 +105,23 @@ export default function HomePage() {
           <MenuOutlined style={{ fontSize: 16, color: '#1A1A1A' }} />
         </button>
 
-        {position && (
+        {routeInfo && routeDest ? (
+          <div style={{
+            pointerEvents: 'auto',
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            background: '#1A1A1A', borderRadius: 16,
+            padding: '8px 16px',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.20)',
+            animation: 'bounce-in 0.4s cubic-bezier(.34,1.56,.64,1) both',
+          }}>
+            <span style={{ color: '#FFFFFF', fontSize: 13, fontWeight: 800 }}>
+              {routeInfo.duration} <span style={{ color: '#FFD600', marginLeft: 4 }}>({routeInfo.distance})</span>
+            </span>
+            <span style={{ color: '#AAAAAA', fontSize: 11, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
+              to {routeDest.label}
+            </span>
+          </div>
+        ) : position ? (
           <div style={{
             pointerEvents: 'auto',
             display: 'flex', alignItems: 'center', gap: 8,
@@ -108,7 +135,7 @@ export default function HomePage() {
               Live · {sessions.length} nearby
             </span>
           </div>
-        )}
+        ) : null}
 
         <button onClick={() => router.push(isHelper ? '/driver' : '/share')} style={{
           pointerEvents: 'auto',
@@ -179,7 +206,7 @@ export default function HomePage() {
               placeholder="Where are you going?"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              onFocus={() => setSheetH('half')}
+              onFocus={() => setShowNavSheet(true)}
             />
           </form>
 
@@ -252,6 +279,25 @@ export default function HomePage() {
           )}
         </div>
       </div>
+
+      {/* Navigation Sheet Overlay */}
+      {showNavSheet && (
+        <NavigationSheet
+          currentLocation={position ? { lat: position.lat, lng: position.lng } : undefined}
+          onClose={() => setShowNavSheet(false)}
+          onRouteSubmit={async (start, dest) => {
+            setRouteDest(dest);
+            setShowNavSheet(false);
+            // Fetch route info from the backend via Google API
+            try {
+              const info = await getDistanceAndDuration(start.lat, start.lng, dest.lat, dest.lng);
+              setRouteInfo({ distance: info.distance, duration: info.duration });
+            } catch (err) {
+              console.error("Backend distance fetch failed", err);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

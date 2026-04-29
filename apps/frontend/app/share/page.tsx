@@ -10,7 +10,7 @@ import {
 } from '@ant-design/icons';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useSocket } from '../../hooks/useSocket';
-import { createSession, updateSessionStatus } from '../../lib/api';
+import { createSession, updateSessionStatus, convertTo3wa } from '../../lib/api';
 import type { MarkerData } from '../../components/MapBase';
 
 const MapBase = dynamic(() => import('../../components/MapBase'), { ssr: false });
@@ -43,6 +43,8 @@ export default function SharePage() {
   const [qr,      setQr]      = useState('');
   const [copied,  setCopied]  = useState(false);
   const [vis,     setVis]     = useState<'link' | 'public'>('link');
+  const [w3w,     setW3w]     = useState<string | null>(null);
+  const [msgCopied, setMsgCopied] = useState(false);
 
 
   useEffect(() => {
@@ -50,6 +52,12 @@ export default function SharePage() {
     const url = `${window.location.origin}/track/${session.shareCode}`;
     QRCode.toDataURL(url, { width: 180, margin: 1 }).then(setQr).catch(() => null);
   }, [session]);
+
+  // Fetch what3words address for current position when live
+  useEffect(() => {
+    if (step !== 'live' || !position) return;
+    convertTo3wa(position.lat, position.lng).then(d => setW3w(d.what3words)).catch(() => null);
+  }, [step, position?.lat, position?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (step !== 'live' || !session || !position) return;
@@ -98,6 +106,19 @@ export default function SharePage() {
     navigator.clipboard.writeText(session!.shareCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const shareUrl   = () => `${window.location.origin}/track/${session!.shareCode}`;
+  const shareText  = () => {
+    const w = w3w ? `///${w3w}` : session!.shareCode;
+    return `Find me at ${w}\n\nTrack my live location:\n${shareUrl()}\n\nSent via Kaalay`;
+  };
+  const shareWhatsApp = () => window.open(`https://wa.me/?text=${encodeURIComponent(shareText())}`, '_blank');
+  const shareSMS      = () => window.open(`sms:?body=${encodeURIComponent(shareText())}`, '_blank');
+  const copyMessage   = () => {
+    navigator.clipboard.writeText(shareText());
+    setMsgCopied(true);
+    setTimeout(() => setMsgCopied(false), 2000);
   };
 
   const markers: MarkerData[] = position
@@ -170,6 +191,47 @@ export default function SharePage() {
               <img src={qr} alt="QR" style={{ width: '100%', height: '100%' }} />
             </div>
           )}
+        </div>
+
+        {/* what3words address */}
+        {w3w && (
+          <div style={{ background: '#1A1A1A', borderRadius: 16, padding: '14px 16px', marginBottom: 12 }}>
+            <p style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.45)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 6 }}>
+              Your exact location
+            </p>
+            <p style={{ fontSize: 20, fontWeight: 900, color: '#FFD600', letterSpacing: '1px', marginBottom: 2 }}>
+              ///{w3w}
+            </p>
+            <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>powered by what3words</p>
+          </div>
+        )}
+
+        {/* Share buttons */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
+          <button onClick={shareWhatsApp} style={{
+            padding: '12px 6px', background: '#25D366', color: '#FFFFFF',
+            border: 'none', borderRadius: 14, fontSize: 12, fontWeight: 800,
+            cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+          }}>
+            WhatsApp
+          </button>
+          <button onClick={shareSMS} style={{
+            padding: '12px 6px', background: '#007AFF', color: '#FFFFFF',
+            border: 'none', borderRadius: 14, fontSize: 12, fontWeight: 800,
+            cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+          }}>
+            SMS
+          </button>
+          <button onClick={copyMessage} style={{
+            padding: '12px 6px',
+            background: msgCopied ? '#F0FDF4' : '#F7F7F7',
+            color: msgCopied ? '#16A34A' : '#1A1A1A',
+            border: `1.5px solid ${msgCopied ? '#86EFAC' : '#EBEBEB'}`,
+            borderRadius: 14, fontSize: 12, fontWeight: 800,
+            cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+          }}>
+            {msgCopied ? 'Copied!' : 'Copy msg'}
+          </button>
         </div>
 
         <button onClick={stop} style={{

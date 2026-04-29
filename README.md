@@ -251,3 +251,52 @@ kaalay/
 │           ├── hooks/          # useGPS
 │           └── api/            # Axios client
 ```
+
+---
+
+## How to Run
+
+### 1. Start Infrastructure (PostgreSQL & Redis)
+You need Docker installed. Run the following command from the root `kaalay` folder:
+```bash
+docker-compose up -d
+```
+
+### 2. Configure Environment Variables
+Inside `apps/backend/.env`, ensure you have your API keys set:
+```env
+W3W_API_KEY=YOUR_WHAT3WORDS_API_KEY
+GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
+```
+
+### 3. Start the Backend API
+In a new terminal:
+```bash
+cd apps/backend
+npm install
+npm run start:dev
+```
+The NestJS server will start on `http://localhost:3000`.
+
+### 4. Start the Frontend (Web)
+In a new terminal:
+```bash
+cd apps/frontend
+npm install
+npm run dev
+```
+The Vite development server will start. Open the provided `localhost` link to use the web application.
+
+### 5. Run the Mobile App (Capacitor)
+If you want to run the project as a native mobile app on a simulator or physical device:
+```bash
+cd apps/frontend
+npm run build
+npx cap sync
+
+# To open in Android Studio:
+npx cap open android
+
+# To open in Xcode (macOS only):
+npx cap open ios
+```

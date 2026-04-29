@@ -28,6 +28,23 @@ export const getPublicSessions = () =>
 export const updateSessionStatus = (code: string, status: string) =>
   api.patch(`/sessions/${code}/status`, { status }).then(r => r.data);
 
+// ── Location (what3words) ─────────────────────────────────────────────────
+export const convertTo3wa = (lat: number, lng: number) =>
+  api.get(`/location/convert-to-3wa?lat=${lat}&lng=${lng}`).then(r => r.data as { what3words: string; latitude: number; longitude: number });
+
+export const convertToCoordinates = (words: string) =>
+  api.get(`/location/convert-to-coordinates?words=${encodeURIComponent(words)}`).then(r => r.data);
+
+export const getDistanceAndDuration = (oLat: number, oLng: number, dLat: number, dLng: number) =>
+  api.get(`/location/distance`, {
+    params: { originLat: oLat, originLng: oLng, destLat: dLat, destLng: dLng }
+  }).then(r => r.data);
+
+export const getGridSection = (swLat: number, swLng: number, neLat: number, neLng: number) =>
+  api.get(`/location/grid-section`, {
+    params: { swLat, swLng, neLat, neLng }
+  }).then(r => r.data);
+
 // ── Users ─────────────────────────────────────────────────────────────────
 export const createUser = (data: { fullName: string; phoneNumber: string; role?: string }) =>
   api.post('/users', data).then(r => r.data);
