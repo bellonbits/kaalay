@@ -13,6 +13,7 @@ import { RedisModule } from './redis/redis.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { PlacesModule } from './places/places.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { PlacesModule } from './places/places.module';
     SessionsModule,
     GatewayModule,
     PlacesModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

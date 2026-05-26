@@ -5,11 +5,11 @@ import dynamic from 'next/dynamic';
 import {
   ArrowLeftOutlined, AlertOutlined, CarOutlined, TeamOutlined,
   EnvironmentOutlined, UnorderedListOutlined, GlobalOutlined,
-  PoweroffOutlined,
+  PoweroffOutlined, WalletOutlined, DollarOutlined, HistoryOutlined
 } from '@ant-design/icons';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useSocket } from '../../hooks/useSocket';
-import { getPublicSessions } from '../../lib/api';
+import { getPublicSessions, getDriverWallet, getDriverMe } from '../../lib/api';
 import type { MarkerData } from '../../components/MapBase';
 
 const MapBase = dynamic(() => import('../../components/MapBase'), { ssr: false });
@@ -35,11 +35,13 @@ export default function DriverPage() {
   const socketRef = useSocket();
   const [reqs,   setReqs]   = useState<Req[]>([]);
   const [online, setOnline] = useState(false);
-  const [tab,    setTab]    = useState<'map' | 'list'>('map');
+  const [tab,    setTab]    = useState<'map' | 'list' | 'wallet'>('map');
   const [user,   setUser]   = useState<{ fullName?: string; id?: string }>({});
+  const [wallet, setWallet] = useState<{ totalGross: number, walletBalance: number, commissionPaid: number } | null>(null);
 
   const [incomingRide, setIncomingRide] = useState<any>(null);
   const [activeRide,   setActiveRide]   = useState<any>(null);
+  const [driverProfile, setDriverProfile] = useState<{ vehicleModel?: string; vehicleColor?: string; licensePlate?: string } | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('kaalay_user');
@@ -50,6 +52,9 @@ export default function DriverPage() {
     getPublicSessions().then((ss: any[]) =>
       setReqs(ss.map(s => ({ code: s.shareCode, type: s.requestType, message: s.message, lat: Number(s.latitude), lng: Number(s.longitude), userName: s.user?.fullName, timestamp: new Date(s.createdAt).getTime() })))
     ).catch(() => null);
+
+    getDriverWallet().then(w => { if(w.success) setWallet(w.data) }).catch(() => null);
+    getDriverMe().then(d => { if(d.success && d.data) setDriverProfile(d.data) }).catch(() => null);
   }, []);
 
   const onReq = useCallback((r: Req) => setReqs(p => p.some(x => x.code === r.code) ? p : [r, ...p]), []);
@@ -68,12 +73,14 @@ export default function DriverPage() {
     };
 
     s.on('ride:new', onNewRide);
+    s.on('job_offer', onNewRide);
     s.on('ride:taken', onRideTaken);
 
     return () => {
       s.emit('driver:offline', { driverId: user.id });
       s.off('request', onReq);
       s.off('ride:new', onNewRide);
+      s.off('job_offer', onNewRide);
       s.off('ride:taken', onRideTaken);
     };
   }, [online, onReq, user.id, incomingRide?.rideId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -90,12 +97,12 @@ export default function DriverPage() {
   const acceptRide = () => {
     if (!incomingRide || !socketRef.current) return;
     socketRef.current.emit('ride:accept', {
-      rideId: incomingRide.rideId,
+      rideId: incomingRide.rideId || incomingRide.id,
       driverId: user.id,
       driverName: user.fullName || 'Driver',
-      vehicleModel: 'Toyota Vitz',
-      vehicleColor: 'White',
-      licensePlate: 'KAA 123X',
+      vehicleModel: driverProfile?.vehicleModel || 'Vehicle',
+      vehicleColor: driverProfile?.vehicleColor || '',
+      licensePlate: driverProfile?.licensePlate || '',
     });
     setActiveRide(incomingRide);
     setIncomingRide(null);
@@ -127,10 +134,10 @@ export default function DriverPage() {
               <div style={{ fontSize: 20, fontWeight: 900 }}>KES {incomingRide.fare}</div>
             </div>
             
-            <h2 style={{ fontSize: 24, fontWeight: 900, color: '#1A1A1A', marginBottom: 8 }}>{incomingRide.riderName}</h2>
+            <h2 style={{ fontSize: 24, fontWeight: 900, color: '#1A1A1A', marginBottom: 8 }}>{incomingRide.riderName || 'Passenger'}</h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#888', fontSize: 14, marginBottom: 20 }}>
               <EnvironmentOutlined />
-              <span>{Math.round(distKm(position ?? {lat:0,lng:0}, {lat: incomingRide.pickupLat, lng: incomingRide.pickupLng}))}km away</span>
+              <span>{incomingRide.distanceKm || Math.round(distKm(position ?? {lat:0,lng:0}, {lat: incomingRide.pickupLat, lng: incomingRide.pickupLng}))}km away</span>
             </div>
 
             <div style={{ background: '#F7F7F7', borderRadius: 16, padding: 16, marginBottom: 24, border: '1.5px solid #EBEBEB' }}>
@@ -141,9 +148,9 @@ export default function DriverPage() {
                   <div style={{ width: 6, height: 6, borderRadius: 1, background: '#1A1A1A' }} />
                 </div>
                 <div style={{ flex: 1, fontSize: 13, fontWeight: 700 }}>
-                  <p>///{incomingRide.pickupW3W}</p>
+                  <p>///{incomingRide.pickupW3W || incomingRide.pickup}</p>
                   <div style={{ height: 1, background: '#DDD', margin: '8px 0' }} />
-                  <p>///{incomingRide.destW3W}</p>
+                  <p>///{incomingRide.destW3W || incomingRide.destination}</p>
                 </div>
               </div>
             </div>
@@ -187,6 +194,7 @@ export default function DriverPage() {
             {([
               { id: 'map',  Icon: GlobalOutlined,        label: 'Map' },
               { id: 'list', Icon: UnorderedListOutlined, label: `Jobs (${sorted.length})` },
+              { id: 'wallet', Icon: WalletOutlined,      label: 'Wallet' },
             ] as const).map(t => (
               <button key={t.id} onClick={() => setTab(t.id)} style={{
                 flex: 1, padding: '9px', borderRadius: 10, border: 'none', cursor: 'pointer',
@@ -242,6 +250,37 @@ export default function DriverPage() {
                 <button onClick={() => router.push(`/track/${r.code}`)} style={{ width: '100%', padding: '10px', borderRadius: 10, background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontWeight: 700 }}>View Details</button>
               </div>
             ))}
+          </div>
+        )}
+
+        {tab === 'wallet' && !activeRide && (
+          <div style={{ position: 'absolute', inset: 0, background: '#F7F7F7', overflowY: 'auto', padding: 16 }}>
+            <div style={{ background: '#1A1A1A', borderRadius: 24, padding: 24, color: '#FFFFFF', marginBottom: 16, boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }}>
+              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: 800, textTransform: 'uppercase', marginBottom: 4 }}>Net Balance</p>
+              <h2 style={{ fontSize: 36, fontWeight: 900, color: '#22C55E' }}>KES {wallet?.walletBalance?.toLocaleString() || 0}</h2>
+              <button style={{ marginTop: 16, width: '100%', padding: '14px', background: '#FFD600', color: '#1A1A1A', border: 'none', borderRadius: 16, fontSize: 14, fontWeight: 900, cursor: 'pointer' }}>
+                Withdraw to M-Pesa
+              </button>
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
+              <div style={{ background: '#FFFFFF', padding: 16, borderRadius: 20, border: '1.5px solid #EBEBEB' }}>
+                <DollarOutlined style={{ fontSize: 20, color: '#888', marginBottom: 8 }} />
+                <p style={{ fontSize: 11, color: '#888', fontWeight: 800, textTransform: 'uppercase' }}>Gross Earnings</p>
+                <p style={{ fontSize: 18, fontWeight: 900, color: '#1A1A1A' }}>KES {wallet?.totalGross?.toLocaleString() || 0}</p>
+              </div>
+              <div style={{ background: '#FFFFFF', padding: 16, borderRadius: 20, border: '1.5px solid #EBEBEB' }}>
+                <HistoryOutlined style={{ fontSize: 20, color: '#888', marginBottom: 8 }} />
+                <p style={{ fontSize: 11, color: '#888', fontWeight: 800, textTransform: 'uppercase' }}>Kaalay Fee (20%)</p>
+                <p style={{ fontSize: 18, fontWeight: 900, color: '#EF4444' }}>KES {wallet?.commissionPaid?.toLocaleString() || 0}</p>
+              </div>
+            </div>
+            
+            <h3 style={{ fontSize: 16, fontWeight: 900, color: '#1A1A1A', marginBottom: 12 }}>Recent Activity</h3>
+            <div style={{ textAlign: 'center', padding: '32px 16px', background: '#FFFFFF', borderRadius: 20, border: '1.5px dashed #EBEBEB' }}>
+              <WalletOutlined style={{ fontSize: 32, color: '#EBEBEB', marginBottom: 12 }} />
+              <p style={{ fontSize: 13, color: '#888', fontWeight: 700 }}>Your earnings from completed rides will appear here.</p>
+            </div>
           </div>
         )}
       </div>

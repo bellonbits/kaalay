@@ -1,22 +1,30 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
   ArrowLeftOutlined, AlertOutlined, CarOutlined, TeamOutlined,
-  EnvironmentOutlined, CheckCircleFilled, CompassOutlined, GlobalOutlined,
+  EnvironmentOutlined, CheckCircleFilled, CompassOutlined, GlobalOutlined, ShareAltOutlined,
+  StarOutlined, StarFilled, PhoneOutlined, MessageOutlined, SafetyOutlined, 
+  ClockCircleOutlined, DollarOutlined, LoadingOutlined, RadarChartOutlined,
+  ArrowRightOutlined, RedoOutlined
 } from '@ant-design/icons';
 import { useGeolocation } from '../../../hooks/useGeolocation';
 import { useSessionSocket } from '../../../hooks/useSocket';
-import { getSessionByCode, convertTo3wa } from '../../../lib/api';
+import { getSessionByCode, convertTo3wa, signalArriving, signalArrived, startRide, completeRide, submitRating } from '../../../lib/api';
 import { getSocket } from '../../../lib/socket';
-import type { MarkerData } from '../../../components/MapBase';
+import type { MarkerData, MapHandle } from '../../../components/MapBase';
 import LowDataView from '../../../components/LowDataView';
 
-const MapBase = dynamic(() => import('../../../components/MapBase'), { ssr: false });
+const MapBase = dynamic(() => import('../../../components/MapBase').then((mod) => {
+  const Component = mod.default;
+  return function MapBaseWrapper({ forwardedRef, ...props }: any) {
+    return <Component ref={forwardedRef} {...props} />;
+  };
+}), { ssr: false });
 
 interface LivePos { lat: number; lng: number; accuracy?: number; timestamp: number }
-interface Session { shareCode: string; requestType: string; message?: string; status: string; user?: { fullName: string } }
+interface Session { shareCode: string; requestType: string; message?: string; status: string; user?: { fullName: string }; fare?: number; driverName?: string; vehicleModel?: string; licensePlate?: string; }
 
 function bearing(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
   const φ1 = from.lat * Math.PI / 180;
@@ -35,80 +43,84 @@ function dist(a: { lat: number; lng: number }, b: { lat: number; lng: number }) 
   return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
-const TYPE_META: Record<string, { Icon: React.ComponentType<any>; iconBg: string; iconColor: string; label: string }> = {
-  lost:    { Icon: AlertOutlined,       iconBg: '#FEE2E2', iconColor: '#DC2626', label: 'Lost' },
-  pickup:  { Icon: CarOutlined,         iconBg: '#EDE9FE', iconColor: '#7C3AED', label: 'Pickup' },
-  meetup:  { Icon: TeamOutlined,        iconBg: '#DCFCE7', iconColor: '#16A34A', label: 'Meetup' },
-  general: { Icon: EnvironmentOutlined, iconBg: '#F3F4F6', iconColor: '#6B7280', label: 'Live' },
+const TYPE_META: Record<string, { Icon: React.ComponentType<any>; bg: string; color: string; label: string }> = {
+  lost:    { Icon: AlertOutlined,       bg: '#FFF5F5', color: '#E03131', label: 'Lost' },
+  pickup:  { Icon: CarOutlined,         bg: '#F3F0FF', color: '#7048E8', label: 'Pickup' },
+  meetup:  { Icon: TeamOutlined,        bg: '#EBFBEE', color: '#2B8A3E', label: 'Meetup' },
+  general: { Icon: EnvironmentOutlined, bg: '#F8F9FA', color: '#495057', label: 'Live' },
 };
 
-// ── Enter code view ──────────────────────────────────────────────────────
+export default function TrackPage() {
+  const params = useParams();
+  const code = (params?.code as string) ?? '';
+  if (code === 'enter') return <EnterCode />;
+  return <LiveTracker code={code} />;
+}
+
 function EnterCode() {
   const router = useRouter();
   const [code, setCode] = useState('');
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
-      {/* Header */}
-      <div style={{ background: '#FFFFFF', padding: '48px 20px 16px', borderBottom: '1px solid #EBEBEB' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => router.back()} style={{
-            width: 40, height: 40, borderRadius: '50%', background: '#F7F7F7',
-            border: '1.5px solid #EBEBEB', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <ArrowLeftOutlined style={{ fontSize: 15, color: '#1A1A1A' }} />
-          </button>
-          <div>
-            <h1 style={{ fontSize: 20, fontWeight: 900, color: '#1A1A1A' }}>Track Someone</h1>
-            <p style={{ fontSize: 12, color: '#888' }}>Enter the share code they sent you</p>
-          </div>
+    <div className="min-h-full flex flex-col bg-white overflow-x-hidden font-outfit">
+      <div className="absolute -top-24 -left-24 w-64 h-64 bg-yellow-400/5 rounded-full blur-[80px]" />
+      
+      <div className="pt-16 px-6 pb-8 flex items-center gap-4 z-10 animate-fade-in">
+        <button 
+          onClick={() => router.back()} 
+          className="w-12 h-12 glass rounded-2xl flex items-center justify-center shadow-premium active:scale-90 transition-transform"
+        >
+          <ArrowLeftOutlined className="text-lg text-black" />
+        </button>
+        <div>
+          <h1 className="text-2xl font-black text-black tracking-tight">Precision Track</h1>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-0.5">Enter live share code</p>
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 24px', gap: 16 }}>
-        {/* Code input card */}
-        <div style={{ width: '100%', background: '#FFFFFF', borderRadius: 24, padding: 24, boxShadow: '0 2px 16px rgba(0,0,0,0.06)', border: '1.5px solid #EBEBEB' }}>
-          <p style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 12 }}>Share code</p>
-          <input
-            style={{
-              width: '100%', textAlign: 'center', fontSize: 28, fontWeight: 900,
-              letterSpacing: '6px', color: '#1A1A1A', background: '#F7F7F7',
-              border: '2px solid #EBEBEB', borderRadius: 16, padding: '16px',
-              outline: 'none', fontFamily: 'Inter, sans-serif', textTransform: 'uppercase',
-            }}
-            placeholder="KAA-XXXX"
-            value={code}
-            onChange={e => setCode(e.target.value.toUpperCase())}
-            maxLength={8}
-          />
-          <p style={{ fontSize: 12, color: '#888', textAlign: 'center', marginTop: 10 }}>
-            Ask the person sharing to give you their code
-          </p>
-        </div>
+      <div className="px-6 flex-1 flex flex-col items-center justify-center z-10 animate-slide-up-spring pb-24">
+        <div className="w-full max-w-sm space-y-8 text-center">
+          <div className="w-20 h-20 bg-black rounded-[28px] mx-auto flex items-center justify-center shadow-premium mb-4">
+            <RadarChartOutlined className="text-3xl text-white" />
+          </div>
+          
+          <div className="space-y-4">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[3px]">Waiting for Input</p>
+            <input
+              placeholder="KAA-XXXX"
+              value={code}
+              onChange={e => setCode(e.target.value.toUpperCase())}
+              maxLength={8}
+              className="w-full text-center text-4xl font-black tracking-[8px] text-black bg-gray-50 border-2 border-transparent focus:border-yellow-400/50 rounded-3xl py-8 outline-none transition-all placeholder:text-gray-100"
+            />
+            <p className="text-xs font-bold text-gray-400 px-6 leading-relaxed">
+              Codes are shared via SMS or WhatsApp. Every code is unique to a single journey.
+            </p>
+          </div>
 
-        <button
-          disabled={code.length < 6}
-          onClick={() => router.push(`/track/${code}`)}
-          style={{
-            width: '100%', padding: '16px',
-            background: code.length < 6 ? '#EBEBEB' : '#1A1A1A',
-            color: code.length < 6 ? '#BBBBBB' : '#FFFFFF',
-            border: 'none', borderRadius: 16, fontSize: 15, fontWeight: 800,
-            cursor: code.length < 6 ? 'not-allowed' : 'pointer',
-            fontFamily: 'Inter, sans-serif',
-          }}
-        >
-          Track Live Location
-        </button>
+          <button
+            disabled={code.length < 6}
+            onClick={() => router.push(`/track/${code}`)}
+            className={`btn w-full py-5 shadow-premium ${code.length < 6 ? 'bg-gray-100 text-gray-300' : 'btn-black'}`}
+          >
+            Start Live Tracking
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-// ── Live tracker ─────────────────────────────────────────────────────────
 function LiveTracker({ code }: { code: string }) {
   const router = useRouter();
-  const { position: me } = useGeolocation(false);
+  const mapRef = useRef<MapHandle | null>(null);
+  
+  // Navigation & Tracking state declarations
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [mapMode, setMapMode] = useState<'focus' | 'overview'>('overview');
+  const [sharingBack, setSharingBack] = useState(false);
+  const [activeRouteFrom, setActiveRouteFrom] = useState<{ lat: number; lng: number } | null>(null);
+  const [activeRouteTo, setActiveRouteTo] = useState<{ lat: number; lng: number } | null>(null);
+  const { position: me } = useGeolocation(sharingBack || isNavigating);
   const [tracked,  setTracked]  = useState<LivePos | null>(null);
   const [session,  setSession]  = useState<Session | null>(null);
   const [ended,    setEnded]    = useState(false);
@@ -116,11 +128,22 @@ function LiveTracker({ code }: { code: string }) {
   const [user,     setUser]     = useState<{ fullName?: string; id?: string; role?: string }>({});
   const [w3w,      setW3w]      = useState<string | null>(null);
   const [lowData,  setLowData]  = useState(false);
-  const isHelper = user.role === 'helper' || user.role === 'driver';
-
-  const [sharingBack, setSharingBack] = useState(false);
-  const [arrived,    setArrived]    = useState(false);
   const [viewerCount, setViewerCount] = useState(0);
+
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+
+  const [navSteps, setNavSteps] = useState<{ instruction: string; distance: string; duration: string; lat: number; lng: number }[]>([]);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [navRouteDetails, setNavRouteDetails] = useState<{ distance: string; duration: string } | null>(null);
+  const [showArrivedModal, setShowArrivedModal] = useState(false);
+
+  const lastQueryMeRef = useRef<{ lat: number; lng: number } | null>(null);
+  const lastQueryTrackedRef = useRef<{ lat: number; lng: number } | null>(null);
+  const lastQueryTimeRef = useRef<number>(0);
+
+  const isHelper = user.role === 'helper' || user.role === 'driver';
 
   useEffect(() => {
     const stored = localStorage.getItem('kaalay_user');
@@ -132,9 +155,8 @@ function LiveTracker({ code }: { code: string }) {
   useEffect(() => {
     if (!tracked) return;
     convertTo3wa(tracked.lat, tracked.lng).then(d => setW3w(d.what3words)).catch(() => null);
-  }, [tracked?.lat, tracked?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tracked?.lat, tracked?.lng]);
 
-  // Broadcast own location back to owner if sharingBack is on
   useEffect(() => {
     if (!sharingBack || !me || !code) return;
     const s = getSocket();
@@ -150,274 +172,532 @@ function LiveTracker({ code }: { code: string }) {
   useSessionSocket(
     code,
     useCallback((d: LivePos) => setTracked(d), []),
-    useCallback((d: { status: string }) => { if (d.status === 'ended') setEnded(true); }, []),
+    useCallback((d: any) => { 
+      if (d.status === 'ended' || d.status === 'completed') setEnded(true); 
+      if (d.status === 'accepted' || d.status === 'arriving' || d.status === 'arrived' || d.status === 'started') {
+        setSession(s => s ? { ...s, status: d.status, driverName: d.driverName, vehicleModel: d.vehicleModel, licensePlate: d.licensePlate } : null);
+      }
+    }, []),
     useCallback((d: { helperName: string }) => setAccepted(d.helperName), []),
     useCallback((d: { count: number }) => setViewerCount(d.count), []),
-    useCallback((d: { name: string }) => {
-      // In a tracking view, we usually don't care if *others* arrived
-    }, []),
+    useCallback(() => {}, []),
   );
+
+  // Manual Directions Recalculator Callback
+  const recalculateRoute = useCallback(() => {
+    if (!me || !tracked) return;
+
+    // Update stable route coordinates passed to MapBase
+    setActiveRouteFrom({ lat: me.lat, lng: me.lng });
+    setActiveRouteTo({ lat: tracked.lat, lng: tracked.lng });
+
+    if (typeof window !== 'undefined' && window.google) {
+      const ds = new google.maps.DirectionsService();
+      ds.route(
+        {
+          origin: { lat: me.lat, lng: me.lng },
+          destination: { lat: tracked.lat, lng: tracked.lng },
+          travelMode: google.maps.TravelMode.WALKING
+        },
+        (result, status) => {
+          if (status === 'OK' && result?.routes[0]?.legs[0]) {
+            const leg = result.routes[0].legs[0];
+            setNavRouteDetails({
+              distance: leg.distance?.text || '0 m',
+              duration: leg.duration?.text || '0 mins'
+            });
+            if (leg.steps) {
+              const cleanSteps = leg.steps.map((s: any) => ({
+                instruction: s.instructions.replace(/<[^>]*>/g, ''),
+                distance: s.distance?.text || '',
+                duration: s.duration?.text || '',
+                lat: typeof s.end_location?.lat === 'function' ? s.end_location.lat() : s.end_location?.lat || tracked.lat,
+                lng: typeof s.end_location?.lng === 'function' ? s.end_location.lng() : s.end_location?.lng || tracked.lng
+              }));
+              setNavSteps(cleanSteps);
+              setCurrentStepIndex(0); // Reset to first instruction on manual refresh
+            }
+          } else {
+            // Fallback for off-road/remote regions: straight line walking guidance!
+            const dKm = dist(me, tracked);
+            const dStr = dKm < 1 ? `${Math.round(dKm * 1000)} m` : `${dKm.toFixed(1)} km`;
+            const walkMins = Math.max(1, Math.round(dKm * 12));
+            setNavRouteDetails({
+              distance: dStr + ' (direct)',
+              duration: `${walkMins} mins`
+            });
+            setNavSteps([
+              {
+                instruction: 'Walk straight towards the tracked person',
+                distance: dStr,
+                duration: `${walkMins} mins`,
+                lat: tracked.lat,
+                lng: tracked.lng
+              }
+            ]);
+            setCurrentStepIndex(0);
+          }
+        }
+      );
+    }
+  }, [me?.lat, me?.lng, tracked?.lat, tracked?.lng]);
+
+  const resetNavigation = useCallback(() => {
+    setIsNavigating(false);
+    setMapMode('overview');
+    setNavSteps([]);
+    setCurrentStepIndex(0);
+    setNavRouteDetails(null);
+    setActiveRouteFrom(null);
+    setActiveRouteTo(null);
+  }, []);
+
+  // Trigger directions calculation exactly once when navigation is engaged
+  useEffect(() => {
+    if (isNavigating && navSteps.length === 0) {
+      recalculateRoute();
+    }
+  }, [isNavigating, recalculateRoute, navSteps.length]);
+
+  // Step advancement effect
+  useEffect(() => {
+    if (isNavigating && me && navSteps.length > 0 && currentStepIndex < navSteps.length) {
+      const nextStep = navSteps[currentStepIndex];
+      const distToStepEnd = dist(me, nextStep) * 1000;
+      if (distToStepEnd < 15) {
+        if (currentStepIndex < navSteps.length - 1) {
+          setCurrentStepIndex(prev => prev + 1);
+        }
+      }
+    }
+  }, [me?.lat, me?.lng, navSteps, currentStepIndex, isNavigating]);
+
+  // Arrival checks
+  useEffect(() => {
+    if (isNavigating && me && tracked) {
+      const distToTracked = dist(me, tracked) * 1000;
+      if (distToTracked < 12 && !showArrivedModal) {
+        setShowArrivedModal(true);
+      }
+    }
+  }, [isNavigating, me?.lat, me?.lng, tracked?.lat, tracked?.lng, showArrivedModal]);
 
   const km  = me && tracked ? dist(me, tracked) : null;
   const eta = km ? Math.round((km / 40) * 60) : null;
 
-  const openMaps = () => tracked && window.open(`https://www.google.com/maps/dir/?api=1&destination=${tracked.lat},${tracked.lng}`, '_blank');
-  const accept   = () => {
-    getSocket().emit('accept-request', { code, helperName: user.fullName ?? 'Helper', helperId: user.id });
-    openMaps();
-  };
-
-  const signalArrival = () => {
-    getSocket().emit('arrived', { code, name: user.fullName || 'Someone' });
-    setArrived(true);
-  };
-
   const markers: MarkerData[] = [
     ...(me      ? [{ lat: me.lat,      lng: me.lng,      type: 'me'      as const, accuracy: me.accuracy }] : []),
-    ...(tracked ? [{ lat: tracked.lat, lng: tracked.lng, type: 'tracked' as const }]                        : []),
+    ...(tracked ? [{ lat: tracked.lat, lng: tracked.lng, heading: (tracked as any).heading, type: (session?.status === 'accepted' || session?.status === 'started' || session?.status === 'arriving') ? 'car' as const : 'tracked' as const }] : []),
   ];
 
-  const center  = tracked ?? me ?? { lat: -1.29, lng: 36.82 };
   const typeMeta = TYPE_META[session?.requestType ?? 'general'] ?? TYPE_META.general;
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
-      {/* Map or Low Data View */}
-      <div style={{ position: 'relative', flex: 1 }}>
-        {lowData && tracked ? (
-          <LowDataView me={me ?? undefined} target={tracked} w3w={w3w ?? undefined} />
-        ) : (
-          <MapBase center={center} zoom={15} markers={markers}
-            routeTo={isHelper && tracked ? tracked : undefined}
-            className="w-full h-full" />
-        )}
-
-        {/* Low Data Toggle */}
-        <button onClick={() => setLowData(!lowData)} style={{
-          position: 'absolute', top: 48, right: 16, zIndex: 20,
-          background: lowData ? '#1A1A1A' : '#FFFFFF', color: lowData ? '#FFFFFF' : '#1A1A1A',
-          padding: '8px 12px', borderRadius: 50, border: 'none',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.15)', cursor: 'pointer',
-          fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6,
-          fontFamily: 'Inter, sans-serif',
-        }}>
-          <GlobalOutlined style={{ fontSize: 13 }} />
-          {lowData ? 'Map View' : 'Low Data'}
-        </button>
-
-        {/* Back */}
-        <button onClick={() => router.back()} style={{
-          position: 'absolute', top: 48, left: 16, zIndex: 20,
-          width: 40, height: 40, borderRadius: '50%',
-          background: '#FFFFFF', border: 'none', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 2px 16px rgba(0,0,0,0.10)',
-        }}>
-          <ArrowLeftOutlined style={{ fontSize: 15, color: '#1A1A1A' }} />
-        </button>
-
-        {/* Code pill */}
-        <div style={{ position: 'absolute', top: 48, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-          <div style={{
-            background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(8px)',
-            borderRadius: 50, padding: '6px 16px', border: '1px solid #EBEBEB',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.10)',
-          }}>
-            <span style={{ fontSize: 12, fontWeight: 900, letterSpacing: '3px', color: '#1A1A1A' }}>{code}</span>
-          </div>
-        </div>
-
-        {/* ETA pill */}
-        {km !== null && !ended && (
-          <div style={{
-            position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
-            background: '#FFD600', borderRadius: 20, padding: '8px 18px',
-            display: 'flex', alignItems: 'center', gap: 8,
-            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-            animation: 'bounce-in 0.4s cubic-bezier(.34,1.56,.64,1) both',
-          }}>
-            <typeMeta.Icon style={{ fontSize: 14, color: '#1A1A1A' }} />
-            <p style={{ fontSize: 13, fontWeight: 700, color: '#1A1A1A' }}>
-              To location&nbsp;
-              <span style={{ fontWeight: 900 }}>{eta} min</span>
-            </p>
-          </div>
-        )}
-
-        {/* Session ended overlay */}
-        {ended && (
-          <div style={{
-            position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.92)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16,
-          }}>
-            <div style={{ width: 72, height: 72, borderRadius: 24, background: '#F7F7F7', border: '1.5px solid #EBEBEB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <EnvironmentOutlined style={{ fontSize: 32, color: '#BBBBBB' }} />
-            </div>
-            <p style={{ fontSize: 20, fontWeight: 900, color: '#1A1A1A' }}>Session ended</p>
-            <p style={{ fontSize: 13, color: '#888' }}>This location share has stopped</p>
-            <button onClick={() => router.push('/home')} style={{
-              padding: '14px 32px', background: '#1A1A1A', color: '#FFFFFF',
-              border: 'none', borderRadius: 16, fontSize: 14, fontWeight: 800,
-              cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-            }}>
-              Go home
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Info card */}
-      <div style={{ background: '#FFFFFF', padding: '16px 20px 40px', boxShadow: '0 -4px 32px rgba(0,0,0,0.10)' }}>
-        {/* Accepted banner */}
-        {accepted && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            background: '#F0FDF4', borderRadius: 16, padding: '12px 14px',
-            border: '1.5px solid #86EFAC', marginBottom: 14,
-          }}>
-            <CheckCircleFilled style={{ fontSize: 22, color: '#16A34A', flexShrink: 0 }} />
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 700, color: '#15803D' }}>Help is on the way</p>
-              <p style={{ fontSize: 12, color: '#16A34A' }}>{accepted} accepted your request</p>
-            </div>
-          </div>
-        )}
-
-        {/* w3w + compass card */}
-        {tracked && (
-          <div style={{
-            background: '#1A1A1A', borderRadius: 20, padding: '14px 16px',
-            marginBottom: 14, display: 'flex', alignItems: 'center', gap: 14,
-          }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 4 }}>Precise location</p>
-              {w3w ? (
-                <p style={{ fontSize: 15, fontWeight: 900, color: '#FFD600', letterSpacing: '-0.3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  ///{w3w}
-                </p>
-              ) : (
-                <div style={{ height: 18, width: 140, background: '#333', borderRadius: 6, animation: 'pulse 1.5s ease-in-out infinite' }} />
-              )}
-              {km !== null && (
-                <p style={{ fontSize: 11, color: '#666', marginTop: 3 }}>
-                  {km < 1 ? `${Math.round(km * 1000)} m away` : `${km.toFixed(1)} km away`}
-                </p>
-              )}
-            </div>
-            {/* Compass */}
-            <div style={{
-              width: 52, height: 52, borderRadius: '50%',
-              border: '1.5px solid #333', flexShrink: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              position: 'relative', background: '#111',
-            }}>
-              <span style={{ position: 'absolute', top: 3, fontSize: 8, fontWeight: 700, color: '#555', letterSpacing: 0 }}>N</span>
-              <div style={{
-                width: 0, height: 0,
-                borderLeft: '5px solid transparent',
-                borderRight: '5px solid transparent',
-                borderBottom: '18px solid #FFD600',
-                transform: `rotate(${me && tracked ? bearing(me, tracked) : 0}deg)`,
-                transformOrigin: '50% 75%',
-                transition: 'transform 0.5s ease',
-              }} />
-            </div>
-          </div>
-        )}
-
-        {/* Route row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#F7F7F7', borderRadius: 16, padding: '14px 16px', border: '1.5px solid #EBEBEB', marginBottom: 14 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E' }} />
-            <div style={{ width: 1, height: 16, background: '#EBEBEB' }} />
-            <div style={{ width: 8, height: 8, borderRadius: 2, background: '#1A1A1A' }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <p style={{ fontSize: 12, color: '#888' }}>My location</p>
-            <div style={{ height: 1, background: '#EBEBEB', margin: '6px 0' }} />
-            <p style={{ fontSize: 12, color: '#888' }}>{session?.user?.fullName ?? 'Someone'}</p>
-          </div>
-          {km !== null && (
-            <div style={{ textAlign: 'right' }}>
-              <p style={{ fontSize: 20, fontWeight: 900, color: '#1A1A1A' }}>
-                {km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`}
-              </p>
-              {eta && <p style={{ fontSize: 11, color: '#888' }}>~{eta} min</p>}
-            </div>
+    <div className="h-full flex flex-col bg-[#F8F9FA] font-outfit relative overflow-y-auto no-scroll">
+      {/* Immersive Map Background */}
+      <div className="relative flex-1">
+        {/* Stable Map/View Container */}
+        <div className="w-full h-full relative">
+          {lowData && tracked ? (
+            <LowDataView me={me ?? undefined} target={tracked} w3w={w3w ?? undefined} />
+          ) : (
+            <MapBase 
+              key="track-map-instance"
+              forwardedRef={mapRef}
+              center={tracked ?? me ?? { lat: -1.29, lng: 36.82 }} 
+              zoom={15} 
+              markers={markers}
+              routeFrom={isNavigating && activeRouteFrom ? activeRouteFrom : undefined}
+              routeTo={isNavigating && activeRouteTo ? activeRouteTo : (isHelper && tracked ? tracked : undefined)}
+              travelMode={isNavigating ? 'WALKING' : undefined}
+              zoomState={isNavigating ? (mapMode === 'overview' ? 'tracking' : 'navigation') : undefined}
+              followMode={isNavigating && mapMode === 'focus'}
+              onFollowModeChange={(active: boolean) => {
+                if (!active && mapMode === 'focus') {
+                  setMapMode('overview');
+                }
+              }}
+              className="w-full h-full" 
+            />
           )}
         </div>
 
-        {/* Type badge */}
-        {session && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 8, background: typeMeta.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <typeMeta.Icon style={{ fontSize: 13, color: typeMeta.iconColor }} />
+        {/* Premium Floating Controls */}
+        <div className="absolute top-12 left-4 right-4 z-40 flex items-center justify-between pointer-events-none">
+          <button 
+            onClick={() => router.back()} 
+            className="pointer-events-auto w-12 h-12 bg-black rounded-2xl flex items-center justify-center shadow-premium active:scale-95 transition-transform"
+          >
+            <ArrowLeftOutlined className="text-lg text-white" />
+          </button>
+
+          <div className="pointer-events-auto bg-black px-5 h-11 rounded-full flex items-center gap-3 shadow-premium border border-white/10">
+            <span className="text-[11px] font-black uppercase tracking-[2px] text-white">{code}</span>
+            <div className="w-[1px] h-3 bg-white/20" />
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-[10px] font-black text-white">{viewerCount} Live</span>
             </div>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#1A1A1A' }}>{typeMeta.label}</span>
-            {session.message && (
-              <span style={{ fontSize: 12, color: '#888', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                · {session.message}
+          </div>
+
+          <button 
+            onClick={() => setLowData(!lowData)}
+            className={`pointer-events-auto w-12 h-12 rounded-2xl flex items-center justify-center shadow-premium active:scale-95 transition-transform ${lowData ? 'bg-yellow-400' : 'bg-black'}`}
+          >
+            <GlobalOutlined className={`text-lg ${lowData ? 'text-black' : 'text-white'}`} />
+          </button>
+        </div>
+
+        {/* ETA Bubble */}
+        {km !== null && !ended && (
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40">
+            <div className="bg-yellow-400 px-5 py-3 rounded-full shadow-premium flex items-center gap-3 animate-bounce-in">
+              <ClockCircleOutlined className="text-black text-sm" />
+              <p className="text-sm font-black text-black whitespace-nowrap">
+                {session?.status === 'started' ? 'Trip in progress' : `${eta} min away`}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Snap Button */}
+        <button 
+          onClick={() => tracked && mapRef.current?.panTo(tracked.lat, tracked.lng)}
+          className="absolute top-28 right-4 z-40 w-12 h-12 bg-black rounded-2xl flex items-center justify-center shadow-premium active:scale-95 transition-transform animate-fade-in"
+        >
+          <CompassOutlined className="text-lg text-white" />
+        </button>
+
+        {/* Premium View/Overview Toggle Button */}
+        {isNavigating && (
+          <button 
+            onClick={() => setMapMode(prev => prev === 'overview' ? 'focus' : 'overview')}
+            className="absolute top-44 right-4 z-40 bg-black/95 text-white px-4 py-3.5 rounded-2xl flex items-center gap-2 shadow-premium font-black text-[10px] uppercase tracking-[1.5px] border border-white/10 active:scale-95 transition-all backdrop-blur-md animate-slide-up-spring"
+          >
+            {mapMode === 'overview' ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <span>🎯 Focus View</span>
+              </>
+            ) : (
+              <>
+                <span className="w-2 h-2 rounded-full bg-[#FFD600] animate-pulse" />
+                <span>🗺️ Overview</span>
+              </>
+            )}
+          </button>
+        )}
+      </div>
+
+      {isNavigating ? (
+        /* Glassmorphic Turn-by-Turn Panel */
+        <div className="bg-black/95 backdrop-blur-md rounded-t-[40px] border-t border-white/10 p-6 z-50 flex flex-col gap-4 animate-slide-up-spring shadow-2xl">
+          <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-2" />
+          
+          {/* Start to Finish Route Tag */}
+          <div className="bg-white/5 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 text-white/80 text-[10px] font-black uppercase tracking-wider flex items-center justify-between shadow-lg">
+            <span className="truncate max-w-[120px] text-green-400">My Location</span>
+            <ArrowRightOutlined className="text-gray-500 mx-2 text-[8px]" />
+            <span className="truncate max-w-[120px] text-white">///{w3w?.split('.')[0] || 'Target'}</span>
+          </div>
+
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="w-14 h-14 rounded-2xl bg-[#FFD600] flex items-center justify-center text-2xl flex-shrink-0 animate-pulse border border-black/20">
+              🚶‍♂️
+            </div>
+            <div className="min-w-0 flex-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-[#FFD600] flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#FFD600] animate-ping" />
+                Live Walking Navigation
               </span>
+              {navSteps.length > 0 && currentStepIndex < navSteps.length ? (
+                <h3 className="text-base font-black text-white leading-snug mt-1 text-glow">
+                  {navSteps[currentStepIndex].instruction}
+                </h3>
+              ) : (
+                <h3 className="text-base font-black text-white leading-snug mt-1">
+                  Follow the highlighted path on the map
+                </h3>
+              )}
+              <div className="flex items-center gap-3 mt-1.5">
+                <p className="text-xs font-bold text-gray-400">
+                  {navRouteDetails?.distance || '---'} remaining
+                </p>
+                <div className="w-1 h-1 rounded-full bg-white/30" />
+                <p className="text-xs font-bold text-[#FFD600]">
+                  Arriving in {navRouteDetails?.duration || '---'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Step Buttons and End button */}
+          <div className="flex items-center justify-between gap-3 pt-4 border-t border-white/10 mt-2">
+            {navSteps.length > 1 && (
+              <div className="flex gap-2">
+                <button 
+                  disabled={currentStepIndex === 0}
+                  onClick={() => setCurrentStepIndex(prev => prev - 1)}
+                  className="h-11 px-4 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-white font-black text-[11px] uppercase tracking-wider transition-all"
+                >
+                  Prev
+                </button>
+                <button 
+                  disabled={currentStepIndex >= navSteps.length - 1}
+                  onClick={() => setCurrentStepIndex(prev => prev + 1)}
+                  className="h-11 px-4 rounded-xl bg-[#FFD600] text-black font-black text-[11px] uppercase tracking-wider active:scale-95 disabled:opacity-30 disabled:pointer-events-none transition-all shadow-lg shadow-yellow-400/20"
+                >
+                  Next ({currentStepIndex + 1}/{navSteps.length})
+                </button>
+              </div>
+            )}
+            
+            <div className="flex gap-2 ml-auto">
+              <button 
+                onClick={recalculateRoute}
+                className="h-11 px-4 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-[#FFD600] font-black text-[11px] tracking-wider uppercase transition-all flex items-center gap-1.5 border border-white/10"
+              >
+                <RedoOutlined className="text-[10px]" />
+                <span>Recalculate</span>
+              </button>
+
+              <button 
+                onClick={resetNavigation}
+                className="h-11 px-5 rounded-xl bg-red-500 hover:bg-red-600 active:scale-95 text-white font-black text-[11px] tracking-wider uppercase transition-all shadow-lg"
+              >
+                Cancel Nav
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Premium Coordination Sheet */
+        <div className="bg-white rounded-t-[40px] shadow-sheet z-50 flex flex-col animate-slide-up-spring max-h-[75vh]">
+          <div className="sheet-handle" />
+          
+          <div className="px-6 h-full overflow-y-auto no-scroll pb-10">
+            {/* Driver En-Route Reveal */}
+            {(session?.status === 'accepted' || session?.status === 'arriving') && session.driverName && (
+              <div className="mb-6 p-5 bg-black rounded-[32px] shadow-premium animate-fade-in">
+                <div className="flex items-center gap-4 mb-5">
+                  <div className="w-16 h-16 rounded-2xl bg-yellow-400 flex items-center justify-center">
+                    <CarOutlined className="text-3xl text-black" />
+                  </div>
+                  <div className="flex-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-white/70">Driver approaching</span>
+                    <h3 className="text-lg font-black text-white">{session.driverName}</h3>
+                    <p className="text-xs font-bold text-gray-500">{session.vehicleModel} • {session.licensePlate}</p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <button className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center active:scale-90 transition-transform">
+                      <PhoneOutlined className="text-white text-sm" />
+                    </button>
+                    <button className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center active:scale-90 transition-transform">
+                      <MessageOutlined className="text-white text-sm" />
+                    </button>
+                  </div>
+                </div>
+                <div className="h-0.5 bg-white/5 w-full mb-5" />
+                <div className="flex items-center justify-between px-2">
+                  <div className="flex items-center gap-2">
+                    <SafetyOutlined className="text-green-500 text-sm" />
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Kaalay Verified</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <StarFilled className="text-yellow-400 text-xs" />
+                    <span className="text-xs font-black text-white">4.9</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Precise Location Hub */}
+            {tracked && (
+              <div className="bg-gray-50 rounded-[32px] p-6 mb-6 border border-gray-100 flex items-center gap-6">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-[2px] mb-2">Target Square</p>
+                  {w3w ? (
+                    <h3 className="text-xl font-black text-red-600 tracking-tight truncate">///{w3w}</h3>
+                  ) : (
+                    <div className="h-6 w-32 bg-gray-200 rounded-lg animate-pulse" />
+                  )}
+                  {km !== null && (
+                    <p className="text-xs font-bold text-gray-400 mt-1">
+                      {km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`} precision coordinate
+                    </p>
+                  )}
+                </div>
+                
+                {/* Coordination Compass */}
+                <div className="w-16 h-16 rounded-full bg-black border-4 border-gray-200 flex items-center justify-center relative shadow-premium flex-shrink-0">
+                  <div className="absolute top-1 text-[8px] font-black text-gray-500">N</div>
+                  <div 
+                    className="w-1 h-8 bg-yellow-400 rounded-full transition-transform duration-500"
+                    style={{ transform: `rotate(${me && tracked ? bearing(me, tracked) : 0}deg)`, transformOrigin: 'center bottom', marginTop: '-16px' }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Action Row */}
+            <div className="grid grid-cols-2 gap-4 mb-8">
+              <button 
+                onClick={() => {
+                  if (tracked) {
+                    setIsNavigating(true);
+                    lastQueryMeRef.current = null;
+                    lastQueryTrackedRef.current = null;
+                  }
+                }}
+                className="btn bg-gray-100 text-black py-4 flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"
+              >
+                <CompassOutlined className="text-lg text-yellow-500" />
+                <span>Navigate</span>
+              </button>
+              
+              <button 
+                onClick={() => setSharingBack(!sharingBack)}
+                className={`btn py-4 flex items-center justify-center gap-2 transition-all active:scale-95 ${sharingBack ? 'bg-green-500 text-white shadow-premium' : 'bg-gray-100 text-gray-400 shadow-sm'}`}
+              >
+                {sharingBack ? <CheckCircleFilled className="text-lg" /> : <ShareAltOutlined className="text-lg" />}
+                <span>{sharingBack ? 'Sharing back' : 'Share back'}</span>
+              </button>
+            </div>
+
+            {/* Driver Controls Overlay */}
+            {isHelper && (
+              <div className="space-y-4">
+                {session?.status === 'accepted' && (
+                  <button onClick={() => signalArriving(code)} className="btn btn-black w-full py-5 shadow-premium">On my way to Pickup</button>
+                )}
+                {session?.status === 'arriving' && (
+                  <button onClick={() => signalArrived(code)} className="btn bg-green-500 text-white w-full py-5 shadow-premium">I've Arrived at Square</button>
+                )}
+                {session?.status === 'arrived' && (
+                  <button onClick={() => startRide(code)} className="btn btn-black w-full py-5 shadow-premium">Start Precision Trip</button>
+                )}
+                {session?.status === 'started' && (
+                  <button onClick={() => completeRide(code)} className="btn bg-yellow-400 text-black w-full py-5 shadow-premium">Complete Trip</button>
+                )}
+              </div>
+            )}
+
+            {/* Completion & Rating Flow */}
+            {!isHelper && session?.status === 'completed' && (
+              <div className="animate-fade-in space-y-6 text-center py-4">
+                <div className="bg-black text-white p-8 rounded-[40px] shadow-premium">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Final Amount</p>
+                  <h2 className="text-4xl font-black text-green-400 tracking-tighter">KES {session.fare || 150}</h2>
+                  <div className="mt-4 px-4 py-2 bg-white/5 rounded-full inline-block">
+                    <p className="text-[10px] font-bold text-gray-400">Direct cash or M-Pesa payment</p>
+                  </div>
+                </div>
+
+                {!ratingSubmitted ? (
+                  <div className="space-y-6 py-6">
+                    <div>
+                      <h3 className="text-xl font-black text-black">How was the trip?</h3>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mt-1">Rate your coordination experience</p>
+                    </div>
+                    <div className="flex justify-center gap-4">
+                      {[1, 2, 3, 4, 5].map(star => (
+                        <button 
+                          key={star} 
+                          onClick={() => setRating(star)}
+                          className="text-4xl transition-transform active:scale-90"
+                        >
+                          {rating >= star ? <StarFilled className="text-yellow-400" /> : <StarOutlined className="text-gray-100" />}
+                        </button>
+                      ))}
+                    </div>
+                    {rating > 0 && (
+                      <div className="animate-slide-up-spring space-y-4">
+                        <textarea 
+                          placeholder="Any feedback for the driver?"
+                          value={comment}
+                          onChange={e => setComment(e.target.value)}
+                          className="w-full bg-gray-50 border-2 border-transparent focus:border-yellow-400/30 rounded-[24px] p-6 text-sm font-bold outline-none h-32 resize-none"
+                        />
+                        <button 
+                          onClick={async () => {
+                            await submitRating(code, { rating, comment });
+                            setRatingSubmitted(true);
+                          }}
+                          className="btn btn-black w-full py-5"
+                        >
+                          Submit Review
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="py-10">
+                    <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <CheckCircleFilled className="text-3xl text-green-500" />
+                    </div>
+                    <h3 className="text-lg font-black text-black">Feedback Sent</h3>
+                    <p className="text-sm font-bold text-gray-400 mt-1">Thanks for helping us improve!</p>
+                    <button onClick={() => router.push('/home')} className="mt-8 text-black font-black underline underline-offset-4 decoration-yellow-400">Return Home</button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
-        )}
-
-        {/* Actions */}
-        <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-          <button onClick={openMaps} style={{
-            flex: 1, padding: '14px', background: '#F7F7F7', color: '#1A1A1A',
-            border: '1.5px solid #EBEBEB', borderRadius: 16, fontSize: 13, fontWeight: 700,
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            fontFamily: 'Inter, sans-serif',
-          }}>
-            <CompassOutlined style={{ fontSize: 15 }} />
-            Navigate
-          </button>
-          {isHelper ? (
-            <button onClick={accept} style={{
-              flex: 1, padding: '14px', background: '#1A1A1A', color: '#FFFFFF',
-              border: 'none', borderRadius: 16, fontSize: 13, fontWeight: 800,
-              cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-            }}>
-              Accept request
-            </button>
-          ) : (
-            <button onClick={signalArrival} disabled={arrived} style={{
-              flex: 1, padding: '14px', background: arrived ? '#F0FDF4' : '#1A1A1A', color: arrived ? '#16A34A' : '#FFFFFF',
-              border: arrived ? '1.5px solid #86EFAC' : 'none', borderRadius: 16, fontSize: 13, fontWeight: 800,
-              cursor: arrived ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              fontFamily: 'Inter, sans-serif',
-            }}>
-              {arrived ? <CheckCircleFilled style={{ fontSize: 14 }} /> : <TeamOutlined style={{ fontSize: 14 }} />}
-              {arrived ? 'Arrived!' : "I've arrived"}
-            </button>
-          )}
         </div>
+      )}
 
-        {/* Coordination toggle */}
-        {!isHelper && (
+      {/* Arrival Confirmation Modal */}
+      {showArrivedModal && (
+        <div className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-md flex items-center justify-center p-6 animate-fade-in">
+          <div className="bg-black/95 border border-white/15 rounded-[32px] p-8 shadow-2xl max-w-sm w-full text-center space-y-6 animate-slide-up-spring">
+            <div className="w-20 h-20 rounded-full bg-[#FFD600]/10 flex items-center justify-center text-4xl mx-auto shadow-inner border border-[#FFD600]/20 animate-bounce">
+              🎉
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-[#FFD600] uppercase tracking-widest leading-none">Destination Reached</p>
+              <h2 className="text-2xl font-black text-white mt-3 leading-none">You Have Arrived!</h2>
+              <p className="text-xs font-bold text-gray-400 mt-2 leading-relaxed">
+                You have successfully completed your journey and met up.
+              </p>
+            </div>
+            <div className="space-y-2 pt-2">
+              <button 
+                onClick={() => {
+                  setShowArrivedModal(false);
+                  resetNavigation();
+                }}
+                className="w-full py-4 rounded-2xl bg-[#FFD600] hover:bg-[#FFD600]/90 active:scale-95 text-black font-black text-sm transition-all shadow-lg"
+              >
+                CLOSE DIRECTIONS
+              </button>
+              <button 
+                onClick={() => setShowArrivedModal(false)}
+                className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-bold text-xs tracking-wider uppercase transition-all"
+              >
+                KEEP MAP OPEN
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Session Ended Overlay */}
+      {ended && (
+        <div className="fixed inset-0 z-[1000] bg-white/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 text-center animate-fade-in">
+          <div className="w-24 h-24 bg-gray-100 rounded-[32px] flex items-center justify-center mb-8">
+            <EnvironmentOutlined className="text-4xl text-gray-300" />
+          </div>
+          <h2 className="text-3xl font-black text-black tracking-tighter mb-2">Journey Ended</h2>
+          <p className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-12">Live sharing has expired</p>
           <button 
-            onClick={() => setSharingBack(!sharingBack)}
-            style={{
-              width: '100%', padding: '12px', background: sharingBack ? '#1A1A1A' : '#F7F7F7',
-              color: sharingBack ? '#FFFFFF' : '#888', border: '1.5px solid #EBEBEB',
-              borderRadius: 12, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              fontFamily: 'Inter, sans-serif', transition: 'all 0.2s',
-            }}
+            onClick={() => router.push('/home')}
+            className="btn btn-black w-full py-5 shadow-premium max-w-xs"
           >
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: sharingBack ? '#22C55E' : '#CCC' }} />
-            {sharingBack ? 'Sharing my location back' : 'Share my location back'}
+            Go to Dashboard
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
 
-export default function TrackPage() {
-  const params = useParams();
-  const code = (params?.code as string) ?? '';
-  if (code === 'enter') return <EnterCode />;
-  return <LiveTracker code={code} />;
-}

@@ -232,363 +232,211 @@ export default function MeetPage() {
 
   const center = position ?? { lat: -1.29, lng: 36.82 };
 
-  // ── LIVE VIEW ────────────────────────────────────────────────────────────
-  if (step === 'live') return (
-    <div style={{ height: '100%', position: 'relative', overflow: 'hidden', background: '#F7F7F7' }}>
-      {/* Map */}
-      <div style={{ position: 'absolute', inset: 0 }}>
-        <MapBase center={center} zoom={14} markers={markers}
-          routeTo={destination ?? undefined} className="w-full h-full" />
-      </div>
-
-      {/* Back button */}
-      <button onClick={leave} style={{
-        position: 'absolute', top: 48, left: 16, zIndex: 20,
-        width: 40, height: 40, borderRadius: '50%', background: '#FFFFFF',
-        border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: '0 2px 16px rgba(0,0,0,0.10)',
-      }}>
-        <ArrowLeftOutlined style={{ fontSize: 15, color: '#1A1A1A' }} />
-      </button>
-
-      {/* Top pill: code + member count */}
-      <div style={{ position: 'absolute', top: 48, left: 0, right: 0, zIndex: 20, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-        <div style={{
-          background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(8px)',
-          borderRadius: 50, padding: '6px 16px', border: '1px solid #EBEBEB',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.10)', display: 'flex', alignItems: 'center', gap: 10,
-        }}>
-          <TeamOutlined style={{ fontSize: 12, color: '#1A1A1A' }} />
-          <span style={{ fontSize: 12, fontWeight: 900, letterSpacing: '2px', color: '#1A1A1A' }}>{activeCode}</span>
-          <span style={{ fontSize: 11, color: '#888' }}>{otherMembers.length + 1} here</span>
-        </div>
-      </div>
-
-      {/* Bottom sheet */}
-      <div style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 20,
-        height: '75%', background: '#FFFFFF',
-        borderRadius: '28px 28px 0 0',
-        boxShadow: '0 -4px 32px rgba(0,0,0,0.10)',
-        transform: `translateY(${sheetTranslate})`,
-        transition: 'transform 0.35s cubic-bezier(.22,.68,0,1.1)',
-        display: 'flex', flexDirection: 'column',
-      }}>
-        {/* Handle */}
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 8px', cursor: 'pointer', flexShrink: 0 }}
-          onClick={() => setSheetH(h => h === 'peek' ? 'half' : h === 'half' ? 'full' : 'peek')}>
-          <div style={{ width: 36, height: 4, borderRadius: 2, background: '#EBEBEB' }} />
-        </div>
-
-        <div style={{ flex: 1, overflowY: 'auto', padding: '4px 20px 40px' }}>
-          {/* Invite row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-            <div style={{ flex: 1, background: '#F7F7F7', border: '1.5px solid #EBEBEB', borderRadius: 12, padding: '10px 14px' }}>
-              <p style={{ fontSize: 10, color: '#888', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 2 }}>Session code</p>
-              <p style={{ fontSize: 18, fontWeight: 900, letterSpacing: '4px', color: '#1A1A1A' }}>{activeCode}</p>
-            </div>
-            <button onClick={copyCode} style={{
-              padding: '10px 14px', background: copied ? '#F0FDF4' : '#F7F7F7',
-              color: copied ? '#16A34A' : '#1A1A1A',
-              border: `1.5px solid ${copied ? '#86EFAC' : '#EBEBEB'}`,
-              borderRadius: 12, fontSize: 12, fontWeight: 700,
-              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-              fontFamily: 'Inter, sans-serif',
-            }}>
-              {copied ? <CheckOutlined style={{ fontSize: 12 }} /> : <CopyOutlined style={{ fontSize: 12 }} />}
-              {copied ? 'Copied!' : 'Invite'}
-            </button>
-            <button onClick={shareWhatsApp} style={{
-              padding: '10px 14px', background: '#25D366', color: '#FFFFFF',
-              border: 'none', borderRadius: 12, fontSize: 12, fontWeight: 700,
-              cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-            }}>
-              WhatsApp
-            </button>
-          </div>
-
-          {/* Destination card */}
-          {destination && (
-            <div style={{ background: '#1A1A1A', borderRadius: 16, padding: '12px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <EnvironmentOutlined style={{ fontSize: 18, color: '#FFD600', flexShrink: 0 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 10, color: '#888', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 2 }}>Meeting point</p>
-                <p style={{ fontSize: 14, fontWeight: 900, color: '#FFD600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {destination.w3w ? `///${destination.w3w}` : (destination.label ?? 'Set')}
-                </p>
-              </div>
-              <button onClick={() => setShowDestSheet(true)} style={{
-                padding: '6px 10px', background: 'rgba(255,255,255,0.1)', color: '#FFFFFF',
-                border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, fontSize: 11, fontWeight: 700,
-                cursor: 'pointer', fontFamily: 'Inter, sans-serif', flexShrink: 0,
-              }}>
-                Change
-              </button>
-            </div>
-          )}
-
-          {/* Members section */}
-          <p style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 10 }}>
-            Members · {otherMembers.length + 1}
-          </p>
-
-          {/* My row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #F0F0F0' }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: '50%', background: '#1A1A1A',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              <UserOutlined style={{ fontSize: 15, color: '#FFFFFF' }} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 14, fontWeight: 700, color: '#1A1A1A' }}>{name || 'Me'}</p>
-              <p style={{ fontSize: 11, color: '#888' }}>You</p>
-            </div>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E', animation: 'pulse-dot 1.6s ease-in-out infinite' }} />
-          </div>
-
-          {/* Other members */}
-          {otherMembers.length === 0 ? (
-            <div style={{ padding: '20px 0', textAlign: 'center' }}>
-              <p style={{ fontSize: 13, color: '#BBBBBB' }}>Waiting for others to join…</p>
-              <p style={{ fontSize: 11, color: '#CCCCCC', marginTop: 4 }}>Share the code above</p>
-            </div>
-          ) : (
-            otherMembers.map((m, idx) => {
-              const d = position ? dist(position, m) : null;
-              const eta = d ? Math.round((d / 5) * 60) : null;
-              const destDist = destination && d !== null ? dist(m, destination) : null;
-              const destEta  = destDist !== null ? Math.round((destDist! / 5) * 60) : null;
-              return (
-                <div key={m.memberId} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #F0F0F0' }}>
-                  <div style={{
-                    width: 36, height: 36, borderRadius: '50%', background: memberColor(idx),
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  }}>
-                    <span style={{ fontSize: 14, fontWeight: 900, color: '#FFFFFF' }}>{m.name.charAt(0).toUpperCase()}</span>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: '#1A1A1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</p>
-                    <p style={{ fontSize: 11, color: '#888' }}>
-                      {d !== null ? (d < 1 ? `${Math.round(d * 1000)}m away` : `${d.toFixed(1)}km away`) : 'Locating…'}
-                    </p>
-                  </div>
-                  {destination && destEta !== null ? (
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <p style={{ fontSize: 13, fontWeight: 800, color: '#1A1A1A' }}>{destEta}m</p>
-                      <p style={{ fontSize: 10, color: '#888' }}>to pin</p>
-                    </div>
-                  ) : eta !== null ? (
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <p style={{ fontSize: 13, fontWeight: 800, color: '#1A1A1A' }}>{eta < 1 ? '<1m' : `${eta}m`}</p>
-                      <p style={{ fontSize: 10, color: '#888' }}>from you</p>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })
-          )}
-
-          {/* Action buttons */}
-          <div style={{ display: 'flex', gap: 10, marginTop: 20, marginBottom: 12 }}>
-            <button onClick={() => setShowDestSheet(true)} style={{
-              flex: 1, padding: '14px', background: '#F7F7F7', color: '#1A1A1A',
-              border: '1.5px solid #EBEBEB', borderRadius: 16, fontSize: 13, fontWeight: 700,
-              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              fontFamily: 'Inter, sans-serif',
-            }}>
-              <EnvironmentOutlined style={{ fontSize: 14 }} />
-              {destination ? 'Change Pin' : 'Set Meeting Point'}
-            </button>
-            <button 
-              onClick={() => {
-                socketRef.current?.emit('arrived', { code: activeCode, name });
-                setArrived(true);
-              }} 
-              disabled={arrived}
-              style={{
-                flex: 1, padding: '14px', 
-                background: arrived ? '#F0FDF4' : '#1A1A1A', 
-                color: arrived ? '#16A34A' : '#FFFFFF',
-                border: arrived ? '1.5px solid #86EFAC' : 'none', 
-                borderRadius: 16, fontSize: 13, fontWeight: 800,
-                cursor: arrived ? 'default' : 'pointer',
-                fontFamily: 'Inter, sans-serif',
-              }}
-            >
-              {arrived ? 'Arrived!' : "I've arrived"}
-            </button>
-          </div>
-
-          <button onClick={leave} style={{
-            width: '100%', padding: '14px', background: '#FFF5F5', color: '#DC2626',
-            border: '1.5px solid #FCA5A5', borderRadius: 16, fontSize: 13, fontWeight: 700,
-            cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-          }}>
-            Leave Group
-          </button>
-        </div>
-      </div>
-
-      {/* Arrival notifications */}
-      <div style={{ position: 'absolute', top: 100, left: 16, right: 16, zIndex: 40, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {arrivals.map((a, i) => (
-          <div key={`${a.name}-${a.timestamp}`} style={{
-            background: '#F0FDF4', borderRadius: 16, padding: '10px 16px',
-            border: '1.5px solid #86EFAC', boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-            display: 'flex', alignItems: 'center', gap: 10,
-            animation: 'slide-in-right 0.4s cubic-bezier(.34,1.56,.64,1) both',
-          }}>
-            <EnvironmentOutlined style={{ fontSize: 18, color: '#16A34A' }} />
-            <p style={{ fontSize: 13, fontWeight: 700, color: '#15803D' }}>{a.name} has arrived!</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Destination sheet overlay */}
-      {showDestSheet && (
-        <div style={{
-          position: 'absolute', inset: 0, zIndex: 30,
-          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end',
-        }} onClick={() => setShowDestSheet(false)}>
-          <div style={{
-            width: '100%', background: '#FFFFFF',
-            borderRadius: '28px 28px 0 0', padding: '24px 20px 48px',
-          }} onClick={e => e.stopPropagation()}>
-            <div style={{ width: 36, height: 4, borderRadius: 2, background: '#EBEBEB', margin: '0 auto 20px' }} />
-            <p style={{ fontSize: 16, fontWeight: 900, color: '#1A1A1A', marginBottom: 16 }}>Set Meeting Point</p>
-
-            <button onClick={pinMyLocation} style={{
-              width: '100%', padding: '14px', background: '#FFD600', color: '#1A1A1A',
-              border: 'none', borderRadius: 16, fontSize: 14, fontWeight: 800,
-              cursor: 'pointer', marginBottom: 12, fontFamily: 'Inter, sans-serif',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            }}>
-              <EnvironmentOutlined style={{ fontSize: 15 }} />
-              Pin my current location
-            </button>
-
-            <p style={{ fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 12 }}>or enter a what3words address</p>
-
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                style={{
-                  flex: 1, background: '#F7F7F7', border: '1.5px solid #EBEBEB',
-                  borderRadius: 14, padding: '14px 16px', fontSize: 14, color: '#1A1A1A',
-                  outline: 'none', fontFamily: 'Inter, sans-serif',
-                }}
-                placeholder="e.g. filled.count.soap"
-                value={destInput}
-                onChange={e => setDestInput(e.target.value)}
-              />
-              <button onClick={submitDestination} disabled={!destInput.trim() || destLoading} style={{
-                padding: '14px 18px', background: destInput.trim() ? '#1A1A1A' : '#EBEBEB',
-                color: destInput.trim() ? '#FFFFFF' : '#BBBBBB',
-                border: 'none', borderRadius: 14, fontSize: 13, fontWeight: 800,
-                cursor: destInput.trim() ? 'pointer' : 'not-allowed', fontFamily: 'Inter, sans-serif',
-                display: 'flex', alignItems: 'center', gap: 6,
-              }}>
-                {destLoading ? <LoadingOutlined style={{ fontSize: 14 }} /> : 'Set'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  // ── SETUP VIEW ───────────────────────────────────────────────────────────
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
-      {/* Header */}
-      <div style={{ background: '#FFFFFF', padding: '48px 20px 20px', borderBottom: '1px solid #EBEBEB' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
-          <button onClick={() => router.back()} style={{
-            width: 40, height: 40, borderRadius: '50%', background: '#F7F7F7',
-            border: '1.5px solid #EBEBEB', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <ArrowLeftOutlined style={{ fontSize: 15, color: '#1A1A1A' }} />
-          </button>
-          <div>
-            <h1 style={{ fontSize: 22, fontWeight: 900, color: '#1A1A1A', lineHeight: 1.1 }}>Group Location</h1>
-            <p style={{ fontSize: 12, color: '#888', marginTop: 2 }}>Track everyone in real-time</p>
+    <div className="h-full relative bg-[#F7F7F7] overflow-hidden font-outfit">
+      {/* ── LIVE VIEW (Always Mounted) ────────────────────────────────────── */}
+      <div className={`absolute inset-0 transition-opacity duration-500 z-0 ${step === 'live' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+        <div className="absolute inset-0 z-0">
+          <MapBase center={center} zoom={14} markers={markers}
+            routeTo={destination ?? undefined} className="w-full h-full" />
+        </div>
+
+        {/* Back button */}
+        <button onClick={leave} className="absolute top-12 left-4 z-20 w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-md border-none cursor-pointer">
+          <ArrowLeftOutlined className="text-[15px] text-[#1A1A1A]" />
+        </button>
+
+        {/* Top pill: code + member count */}
+        <div className="absolute top-12 left-0 right-0 z-20 flex justify-center pointer-events-none">
+          <div className="bg-white/90 backdrop-blur-md rounded-full px-4 py-1.5 border border-[#EBEBEB] shadow-sm flex items-center gap-2.5">
+            <TeamOutlined className="text-xs text-[#1A1A1A]" />
+            <span className="text-xs font-black tracking-widest text-[#1A1A1A]">{activeCode}</span>
+            <span className="text-[11px] text-[#888]">{otherMembers.length + 1} here</span>
           </div>
         </div>
-      </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 20px 40px' }}>
-        {/* Tab pills */}
-        <div style={{ display: 'flex', background: '#F7F7F7', borderRadius: 14, padding: 4, marginBottom: 28, border: '1.5px solid #EBEBEB' }}>
-          {(['create', 'join'] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)} style={{
-              flex: 1, padding: '10px', borderRadius: 11,
-              background: tab === t ? '#1A1A1A' : 'transparent',
-              color: tab === t ? '#FFFFFF' : '#888',
-              border: 'none', fontSize: 13, fontWeight: 800, cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif', transition: 'all 0.15s',
-            }}>
-              {t === 'create' ? 'Create Group' : 'Join Group'}
-            </button>
+        {/* Bottom sheet */}
+        <div 
+          className="absolute bottom-0 left-0 right-0 z-20 h-[75%] bg-white rounded-t-[28px] shadow-sheet flex flex-col transition-transform duration-300 ease-out pointer-events-auto"
+          style={{ transform: `translateY(${sheetTranslate})` }}
+        >
+          {/* Handle */}
+          <div className="flex justify-center py-3 cursor-pointer shrink-0" onClick={() => setSheetH(h => h === 'peek' ? 'half' : h === 'half' ? 'full' : 'peek')}>
+            <div className="w-9 h-1 rounded-full bg-[#EBEBEB]" />
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-5 pb-10 no-scroll">
+            {/* Invite row */}
+            <div className="flex items-center gap-2 mb-4">
+              <div className="flex-1 bg-[#F7F7F7] border-[1.5px] border-[#EBEBEB] rounded-xl px-3.5 py-2.5">
+                <p className="text-[10px] text-[#888] font-bold tracking-widest uppercase mb-0.5">Session code</p>
+                <p className="text-lg font-black tracking-widest text-[#1A1A1A]">{activeCode}</p>
+              </div>
+              <button onClick={copyCode} className={`px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors ${copied ? 'bg-[#F0FDF4] text-[#16A34A] border-[1.5px] border-[#86EFAC]' : 'bg-[#F7F7F7] text-[#1A1A1A] border-[1.5px] border-[#EBEBEB]'}`}>
+                {copied ? <CheckOutlined /> : <CopyOutlined />}
+                {copied ? 'Copied!' : 'Invite'}
+              </button>
+              <button onClick={shareWhatsApp} className="px-3.5 py-2.5 bg-[#25D366] text-white border-none rounded-xl text-xs font-bold">WhatsApp</button>
+            </div>
+
+            {/* Destination card */}
+            {destination && (
+              <div className="bg-[#1A1A1A] rounded-2xl px-4 py-3 mb-3 flex items-center gap-2.5">
+                <EnvironmentOutlined className="text-lg text-[#FFD600] shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] text-[#888] font-bold tracking-widest uppercase mb-0.5">Meeting point</p>
+                  <p className="text-sm font-black text-[#FFD600] truncate">{destination.w3w ? `///${destination.w3w}` : (destination.label ?? 'Set')}</p>
+                </div>
+                <button onClick={() => setShowDestSheet(true)} className="px-2.5 py-1.5 bg-white/10 text-white border border-white/15 rounded-lg text-[11px] font-bold shrink-0">Change</button>
+              </div>
+            )}
+
+            {/* Members section */}
+            <p className="text-[11px] font-bold text-[#888] tracking-widest uppercase mb-2.5">Members · {otherMembers.length + 1}</p>
+
+            {/* My row */}
+            <div className="flex items-center gap-3 py-2.5 border-b border-[#F0F0F0]">
+              <div className="w-9 h-9 rounded-full bg-[#1A1A1A] flex items-center justify-center shrink-0">
+                <UserOutlined className="text-[15px] text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-[#1A1A1A]">{name || 'Me'}</p>
+                <p className="text-[11px] text-[#888]">You</p>
+              </div>
+              <div className="w-2 h-2 rounded-full bg-[#22C55E] animate-pulse" />
+            </div>
+
+            {/* Other members */}
+            {otherMembers.length === 0 ? (
+              <div className="py-5 text-center">
+                <p className="text-[13px] text-[#BBB]">Waiting for others to join…</p>
+                <p className="text-[11px] text-[#CCC] mt-1">Share the code above</p>
+              </div>
+            ) : (
+              otherMembers.map((m, idx) => {
+                const d = position ? dist(position, m) : null;
+                const eta = d ? Math.round((d / 5) * 60) : null;
+                const destDist = destination && d !== null ? dist(m, destination) : null;
+                const destEta  = destDist !== null ? Math.round((destDist! / 5) * 60) : null;
+                return (
+                  <div key={m.memberId} className="flex items-center gap-3 py-2.5 border-b border-[#F0F0F0]">
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: memberColor(idx) }}>
+                      <span className="text-sm font-black text-white">{m.name.charAt(0).toUpperCase()}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-[#1A1A1A] truncate">{m.name}</p>
+                      <p className="text-[11px] text-[#888]">
+                        {d !== null ? (d < 1 ? `${Math.round(d * 1000)}m away` : `${d.toFixed(1)}km away`) : 'Locating…'}
+                      </p>
+                    </div>
+                    {destination && destEta !== null ? (
+                      <div className="text-right shrink-0">
+                        <p className="text-[13px] font-black text-[#1A1A1A]">{destEta}m</p>
+                        <p className="text-[10px] text-[#888]">to pin</p>
+                      </div>
+                    ) : eta !== null ? (
+                      <div className="text-right shrink-0">
+                        <p className="text-[13px] font-black text-[#1A1A1A]">{eta < 1 ? '<1m' : `${eta}m`}</p>
+                        <p className="text-[10px] text-[#888]">from you</p>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
+
+            {/* Action buttons */}
+            <div className="flex gap-2.5 mt-5 mb-3">
+              <button onClick={() => setShowDestSheet(true)} className="flex-1 py-3.5 bg-[#F7F7F7] text-[#1A1A1A] border-[1.5px] border-[#EBEBEB] rounded-2xl text-[13px] font-bold flex items-center justify-center gap-2">
+                <EnvironmentOutlined className="text-sm" />
+                {destination ? 'Change Pin' : 'Set Meeting Point'}
+              </button>
+              <button onClick={() => { socketRef.current?.emit('arrived', { code: activeCode, name }); setArrived(true); }} disabled={arrived} className={`flex-1 py-3.5 rounded-2xl text-[13px] font-black ${arrived ? 'bg-[#F0FDF4] text-[#16A34A] border-[1.5px] border-[#86EFAC]' : 'bg-[#1A1A1A] text-white border-none'}`}>
+                {arrived ? 'Arrived!' : "I've arrived"}
+              </button>
+            </div>
+
+            <button onClick={leave} className="w-full py-3.5 bg-[#FFF5F5] text-[#DC2626] border-[1.5px] border-[#FCA5A5] rounded-2xl text-[13px] font-bold">Leave Group</button>
+          </div>
+        </div>
+
+        {/* Arrival notifications */}
+        <div className="absolute top-[100px] left-4 right-4 z-40 pointer-events-none flex flex-col gap-2">
+          {arrivals.map((a, i) => (
+            <div key={`${a.name}-${a.timestamp}`} className="bg-[#F0FDF4] rounded-2xl px-4 py-2.5 border-[1.5px] border-[#86EFAC] shadow-md flex items-center gap-2.5 animate-slide-in-right">
+              <EnvironmentOutlined className="text-lg text-[#16A34A]" />
+              <p className="text-[13px] font-bold text-[#15803D]">{a.name} has arrived!</p>
+            </div>
           ))}
         </div>
 
-        {/* Name field — shared across both tabs */}
-        <p style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8 }}>Your display name</p>
-        <input
-          style={{
-            width: '100%', background: '#F7F7F7', border: '1.5px solid #EBEBEB',
-            borderRadius: 14, padding: '14px 16px', fontSize: 15, color: '#1A1A1A',
-            outline: 'none', fontFamily: 'Inter, sans-serif', marginBottom: 20,
-          }}
-          placeholder="How others will see you"
-          value={name}
-          onChange={e => setName(e.target.value)}
-        />
-
-        {tab === 'join' && (
-          <>
-            <p style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8 }}>Session code</p>
-            <input
-              style={{
-                width: '100%', textAlign: 'center', fontSize: 24, fontWeight: 900,
-                letterSpacing: '6px', color: '#1A1A1A', background: '#F7F7F7',
-                border: '2px solid #EBEBEB', borderRadius: 16, padding: '16px',
-                outline: 'none', fontFamily: 'Inter, sans-serif', textTransform: 'uppercase', marginBottom: 24,
-              }}
-              placeholder="KAA-XXXX"
-              value={joinCode}
-              onChange={e => setJoinCode(e.target.value.toUpperCase())}
-              maxLength={8}
-            />
-          </>
-        )}
-
-        {tab === 'create' && (
-          <div style={{ background: '#F7F7F7', borderRadius: 16, padding: '14px 16px', border: '1.5px solid #EBEBEB', marginBottom: 24 }}>
-            <p style={{ fontSize: 13, fontWeight: 700, color: '#1A1A1A', marginBottom: 4 }}>How it works</p>
-            <p style={{ fontSize: 12, color: '#888', lineHeight: 1.6 }}>
-              Start a group session and share the code with your friends. Everyone joins and sees each other's live location on the map. Set a meeting point to show ETAs.
-            </p>
+        {/* Destination sheet overlay */}
+        {showDestSheet && (
+          <div className="absolute inset-0 z-30 bg-black/50 flex items-end pointer-events-auto" onClick={() => setShowDestSheet(false)}>
+            <div className="w-full bg-white rounded-t-[28px] px-5 pt-6 pb-12" onClick={e => e.stopPropagation()}>
+              <div className="w-9 h-1 rounded-full bg-[#EBEBEB] mx-auto mb-5" />
+              <p className="text-base font-black text-[#1A1A1A] mb-4">Set Meeting Point</p>
+              <button onClick={pinMyLocation} className="w-full py-3.5 bg-[#FFD600] text-[#1A1A1A] rounded-2xl text-sm font-black mb-3 flex items-center justify-center gap-2">
+                <EnvironmentOutlined className="text-[15px]" />
+                Pin my current location
+              </button>
+              <p className="text-xs text-[#888] text-center mb-3">or enter a what3words address</p>
+              <div className="flex gap-2">
+                <input className="flex-1 bg-[#F7F7F7] border-[1.5px] border-[#EBEBEB] rounded-xl px-4 py-3.5 text-sm outline-none" placeholder="e.g. filled.count.soap" value={destInput} onChange={e => setDestInput(e.target.value)} />
+                <button onClick={submitDestination} disabled={!destInput.trim() || destLoading} className={`px-4.5 py-3.5 rounded-xl text-[13px] font-black flex items-center gap-1.5 ${destInput.trim() ? 'bg-[#1A1A1A] text-white cursor-pointer' : 'bg-[#EBEBEB] text-[#BBB] cursor-not-allowed'}`}>
+                  {destLoading ? <LoadingOutlined className="text-sm" /> : 'Set'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
+      </div>
 
-        <button
-          onClick={tab === 'create' ? startGroup : joinGroup}
-          disabled={!name.trim() || !position || starting || (tab === 'join' && joinCode.length < 6)}
-          style={{
-            width: '100%', padding: '16px',
-            background: (!name.trim() || !position || starting || (tab === 'join' && joinCode.length < 6)) ? '#EBEBEB' : '#1A1A1A',
-            color: (!name.trim() || !position || starting || (tab === 'join' && joinCode.length < 6)) ? '#BBBBBB' : '#FFFFFF',
-            border: 'none', borderRadius: 16, fontSize: 15, fontWeight: 800,
-            cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            fontFamily: 'Inter, sans-serif',
-          }}
-        >
-          {starting ? <LoadingOutlined style={{ fontSize: 16 }} /> : <TeamOutlined style={{ fontSize: 15 }} />}
-          {starting ? 'Starting…' : !position ? 'Getting location…' : tab === 'create' ? 'Start Group Session' : 'Join Session'}
-        </button>
+      {/* ── SETUP VIEW (Always Mounted) ───────────────────────────────────── */}
+      <div className={`absolute inset-0 transition-opacity duration-500 z-10 flex flex-col bg-[#F7F7F7] ${step === 'setup' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+        <div className="bg-white pt-12 px-5 pb-5 border-b border-[#EBEBEB]">
+          <div className="flex items-center gap-3 mb-1">
+            <button onClick={() => router.back()} className="w-10 h-10 rounded-full bg-[#F7F7F7] border-[1.5px] border-[#EBEBEB] flex items-center justify-center shrink-0">
+              <ArrowLeftOutlined className="text-[15px] text-[#1A1A1A]" />
+            </button>
+            <div>
+              <h1 className="text-[22px] font-black text-[#1A1A1A] leading-tight">Group Location</h1>
+              <p className="text-xs text-[#888] mt-0.5">Track everyone in real-time</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-6 no-scroll">
+          <div className="flex bg-[#F7F7F7] border-[1.5px] border-[#EBEBEB] rounded-[14px] p-1 mb-7">
+            {(['create', 'join'] as const).map(t => (
+              <button key={t} onClick={() => setTab(t)} className={`flex-1 py-2.5 rounded-[11px] text-[13px] font-bold transition-all ${tab === t ? 'bg-[#1A1A1A] text-white' : 'bg-transparent text-[#888]'}`}>
+                {t === 'create' ? 'Create Group' : 'Join Group'}
+              </button>
+            ))}
+          </div>
+
+          <p className="text-[11px] font-bold text-[#888] tracking-widest uppercase mb-2">Your display name</p>
+          <input className="w-full bg-[#F7F7F7] border-[1.5px] border-[#EBEBEB] rounded-[14px] px-4 py-3.5 text-[15px] outline-none mb-5" placeholder="How others will see you" value={name} onChange={e => setName(e.target.value)} />
+
+          {tab === 'join' && (
+            <>
+              <p className="text-[11px] font-bold text-[#888] tracking-widest uppercase mb-2">Session code</p>
+              <input className="w-full text-center text-2xl font-black tracking-[6px] uppercase bg-[#F7F7F7] border-2 border-[#EBEBEB] rounded-2xl p-4 outline-none mb-6" placeholder="KAA-XXXX" value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase())} maxLength={8} />
+            </>
+          )}
+
+          {tab === 'create' && (
+            <div className="bg-[#F7F7F7] border-[1.5px] border-[#EBEBEB] rounded-2xl px-4 py-3.5 mb-6">
+              <p className="text-[13px] font-bold text-[#1A1A1A] mb-1">How it works</p>
+              <p className="text-xs text-[#888] leading-relaxed">Start a group session and share the code with your friends. Everyone joins and sees each other's live location on the map. Set a meeting point to show ETAs.</p>
+            </div>
+          )}
+
+          <button onClick={tab === 'create' ? startGroup : joinGroup} disabled={!name.trim() || !position || starting || (tab === 'join' && joinCode.length < 6)} className={`w-full py-4 rounded-2xl text-[15px] font-black flex items-center justify-center gap-2.5 ${(!name.trim() || !position || starting || (tab === 'join' && joinCode.length < 6)) ? 'bg-[#EBEBEB] text-[#BBB]' : 'bg-[#1A1A1A] text-white'}`}>
+            {starting ? <LoadingOutlined className="text-base" /> : <TeamOutlined className="text-[15px]" />}
+            {starting ? 'Starting…' : !position ? 'Getting location…' : tab === 'create' ? 'Start Group Session' : 'Join Session'}
+          </button>
+        </div>
       </div>
     </div>
   );

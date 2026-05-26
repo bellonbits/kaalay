@@ -4,91 +4,210 @@
 
 :root {
   --yellow: #FFD600;
-  --black:  #1A1A1A;
+  --yellow-light: #FFF9DB;
+  --black:  #000000;
   --white:  #FFFFFF;
-  --bg:     #F7F7F7;
+  --bg:     #FFFFFF;
   --card:   #FFFFFF;
-  --border: #EBEBEB;
-  --muted:  #888888;
-  --text:   #1A1A1A;
+  --border: #F1F3F5;
+  --muted:  #8E8E93;
+  --text:   #000000;
+  --radius-3xl: 40px;
+  --radius-2xl: 32px;
+  --radius-xl: 24px;
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+* { 
+  box-sizing: border-box; 
+  margin: 0; 
+  padding: 0; 
+  -webkit-tap-highlight-color: transparent;
+}
 
 html, body {
   height: 100%;
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-
-#__next { height: 100%; }
 
 /* ── Scrollbars hidden ── */
 .no-scroll::-webkit-scrollbar { display: none; }
 .no-scroll { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* ── Shadows ── */
-.shadow-card  { box-shadow: 0 2px 16px rgba(0,0,0,0.08); }
-.shadow-sheet { box-shadow: 0 -4px 24px rgba(0,0,0,0.10); }
-
-/* ── Animations ── */
-@keyframes slide-up {
-  from { transform: translateY(40px); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
+/* ── Shadows (Multi-layered for hyper-realism) ── */
+.shadow-premium {
+  box-shadow: 
+    0 10px 30px -10px rgba(0, 0, 0, 0.1),
+    0 20px 40px -15px rgba(0, 0, 0, 0.05),
+    0 1px 3px rgba(0, 0, 0, 0.02);
 }
-.slide-up { animation: slide-up 0.32s cubic-bezier(.22,.68,0,1.2) both; }
 
-@keyframes fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+.shadow-sheet {
+  box-shadow: 0 -15px 50px -12px rgba(0, 0, 0, 0.1);
 }
-.fade-in { animation: fade-in 0.2s ease both; }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+/* ── Crystalline Glassmorphism ── */
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
 }
-.spin { animation: spin 0.9s linear infinite; }
 
-@keyframes pulse-dot {
-  0%, 100% { transform: scale(1);   opacity: 1; }
-  50%       { transform: scale(1.4); opacity: 0.6; }
+.glass-premium {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(32px) saturate(160%);
+  -webkit-backdrop-filter: blur(32px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
 }
-.pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
+
+/* ── Uber-Spring Animations ── */
+@keyframes slide-up-spring {
+  0% { transform: translateY(100%); opacity: 0; }
+  60% { transform: translateY(-5px); }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.animate-slide-up-spring { 
+  animation: slide-up-spring 0.6s cubic-bezier(0.23, 1, 0.32, 1) both; 
+}
 
 @keyframes bounce-in {
-  0%   { transform: scale(0.7); opacity: 0; }
-  60%  { transform: scale(1.1); opacity: 1; }
-  100% { transform: scale(1); }
+  0% { transform: scale(0.9) translateY(20px); opacity: 0; }
+  70% { transform: scale(1.02) translateY(-5px); }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
 }
-.bounce-in { animation: bounce-in 0.4s cubic-bezier(.34,1.56,.64,1) both; }
+.animate-bounce-in { animation: bounce-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 
-/* ── Map container resets ── */
-.map-wrap { position: absolute; inset: 0; }
-.map-wrap > div { height: 100% !important; }
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fade-in 0.4s ease-out both; }
 
-/* ── Button base ── */
+/* ── UI Components ── */
 .btn {
   display: flex; align-items: center; justify-content: center;
   border: none; cursor: pointer; font-family: inherit;
-  font-weight: 700; transition: opacity 0.15s, transform 0.1s;
+  font-weight: 800; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  gap: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
 }
-.btn:active { transform: scale(0.97); }
-.btn-black  { background: var(--black); color: var(--white); border-radius: 16px; padding: 16px 24px; font-size: 16px; }
-.btn-yellow { background: var(--yellow); color: var(--black); border-radius: 16px; padding: 16px 24px; font-size: 16px; }
-.btn-ghost  { background: var(--bg); color: var(--black); border: 1.5px solid var(--border); border-radius: 16px; padding: 14px 24px; font-size: 15px; }
-.btn:disabled { opacity: 0.38; pointer-events: none; }
+.btn:active { transform: scale(0.94); }
 
-/* ── Input ── */
-.input {
-  width: 100%; background: var(--bg); border: 1.5px solid var(--border);
-  border-radius: 14px; padding: 14px 16px; font-size: 15px; color: var(--text);
-  font-family: inherit; outline: none; transition: border-color 0.15s;
+.btn-black {
+  background: var(--black);
+  color: #FFFFFF;
+  border-radius: var(--radius-xl);
+  box-shadow: 0 12px 24px -8px rgba(0,0,0,0.3);
 }
-.input:focus { border-color: var(--black); }
-.input::placeholder { color: var(--muted); }
 
-/* ── Pill tag ── */
-.pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.btn-yellow {
+  background: var(--yellow);
+  color: var(--black);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 12px 24px -8px rgba(255,214,0,0.25);
+}
+
+.input-container {
+  display: flex; align-items: center; gap: 16px;
+  background: #F8F9FA; border-radius: 20px; padding: 0 20px;
+  height: 64px; border: 2px solid transparent; transition: all 0.3s;
+}
+.input-container:focus-within {
+  background: white; border-color: var(--black); box-shadow: 0 10px 25px -10px rgba(0,0,0,0.05);
+}
+
+.sheet-handle {
+  width: 36px; height: 5px; background: #E9ECEF; border-radius: 10px;
+  margin: 16px auto;
+}
+
+/* ── Map Overlays ── */
+.map-overlay-gradient {
+  background: linear-gradient(to bottom, rgba(255,255,255,0.9), transparent 20%, transparent 80%, rgba(255,255,255,0.9));
+  pointer-events: none;
+}
+
+/* ── Fixed Center Pin Premium Animations ── */
+@keyframes pin-bounce-up {
+  0% { transform: translateY(-50%) scale(1); }
+  100% { transform: translateY(-75%) scale(1.08); }
+}
+
+@keyframes pin-bounce-down {
+  0% { transform: translateY(-75%) scale(1.08); }
+  50% { transform: translateY(-40%) scale(0.95); }
+  100% { transform: translateY(-50%) scale(1); }
+}
+
+.pin-active {
+  animation: pin-bounce-up 0.25s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+.pin-idle {
+  animation: pin-bounce-down 0.4s cubic-bezier(0.25, 1.8, 0.5, 1) forwards;
+}
+
+@keyframes shadow-scale-up {
+  0% { transform: translateX(-50%) scale(1); opacity: 0.4; }
+  100% { transform: translateX(-50%) scale(0.6); opacity: 0.15; }
+}
+
+@keyframes shadow-scale-down {
+  0% { transform: translateX(-50%) scale(0.6); opacity: 0.15; }
+  100% { transform: translateX(-50%) scale(1); opacity: 0.4; }
+}
+
+.shadow-active {
+  animation: shadow-scale-up 0.25s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+.shadow-idle {
+  animation: shadow-scale-down 0.4s cubic-bezier(0.25, 1.8, 0.5, 1) forwards;
+}
+
+@keyframes pulse-ring {
+  0% { transform: translate(-50%, -50%) scale(0.2); opacity: 0.8; }
+  80% { opacity: 0; }
+  100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+}
+
+.pulse-ring-element {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(255, 214, 0, 0.35);
+  border: 1px solid rgba(255, 214, 0, 0.8);
+  pointer-events: none;
+  animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+/* ── Shimmer/Loading Animations ── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer-bg {
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+/* ── Glowing Active GPS Accuracy Ring ── */
+@keyframes glow-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(66, 133, 244, 0.4); }
+  70% { box-shadow: 0 0 0 12px rgba(66, 133, 244, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(66, 133, 244, 0); }
+}
+
+.glow-active {
+  animation: glow-pulse 2s infinite;
+}

@@ -27,6 +27,10 @@ export class UsersService {
     return user;
   }
 
+  async findByPhoneNumber(phoneNumber: string) {
+    return this.userRepository.findOne({ where: { phoneNumber } });
+  }
+
   async update(id: string, updateUserDto: UpdateUserDto) {
     await this.userRepository.update(id, updateUserDto);
     return this.findOne(id);

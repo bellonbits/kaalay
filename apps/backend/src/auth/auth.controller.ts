@@ -2,6 +2,15 @@ import { Controller, Post, Body } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { UserRole } from '../users/entities/user.entity';
 
+class OtpRequestDto {
+  phoneNumber: string;
+}
+
+class OtpVerifyDto {
+  phoneNumber: string;
+  code: string;
+}
+
 class LoginDto {
   phoneNumber: string;
 }
@@ -15,6 +24,16 @@ class RegisterDto {
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Post('request-otp')
+  async requestOtp(@Body() dto: OtpRequestDto) {
+    return this.authService.requestOtp(dto.phoneNumber);
+  }
+
+  @Post('verify-otp')
+  async verifyOtp(@Body() dto: OtpVerifyDto) {
+    return this.authService.verifyOtp(dto.phoneNumber, dto.code);
+  }
 
   @Post('login')
   async login(@Body() loginDto: LoginDto) {

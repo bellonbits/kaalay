@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, LessThan, In } from 'typeorm';
 import { CreateRideDto } from './dto/create-ride.dto';
 import { Ride, RideStatus } from './entities/ride.entity';
 import { User } from '../users/entities/user.entity';
@@ -24,12 +24,14 @@ export class RidesService {
     const dG = (destLng - pickupLng) * Math.PI / 180;
     const a = Math.sin(dL / 2) ** 2 + Math.cos(pickupLat * Math.PI / 180) * Math.cos(destLat * Math.PI / 180) * Math.sin(dG / 2) ** 2;
     const distKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return Math.round((50 + distKm * 50) / 10) * 10; // KES, rounded to nearest 10
+    return Math.round((50 + distKm * 50) / 10) * 10;
   }
 
   async create(createRideDto: CreateRideDto): Promise<Ride> {
-    const { riderId, pickupWhat3words, destinationWhat3words } = createRideDto;
+    // Purge stale data before creating new entries to keep DB clean
+    await this.purgeStaleData();
 
+    const { riderId, pickupWhat3words, destinationWhat3words } = createRideDto;
     const rider = await this.userRepository.findOne({ where: { id: riderId } });
     if (!rider) throw new NotFoundException('Rider not found');
 
@@ -50,7 +52,6 @@ export class RidesService {
     }
 
     const fare = this.calculateFare(pickupLat, pickupLng, destLat, destLng);
-
     const ride = this.rideRepository.create({
       rider,
       pickupLat,
@@ -64,6 +65,17 @@ export class RidesService {
     });
 
     return this.rideRepository.save(ride);
+  }
+
+  async purgeStaleData() {
+    this.logger.log('Purging non-real-time data...');
+    // Remove rides older than 12 hours or those already completed/cancelled
+    await this.rideRepository.delete({
+      createdAt: LessThan(new Date(Date.now() - 12 * 60 * 60 * 1000)),
+    });
+    await this.rideRepository.delete({
+      status: In([RideStatus.COMPLETED, RideStatus.CANCELLED]),
+    });
   }
 
   async assignDriver(rideId: string, driverId: string): Promise<Ride> {
@@ -85,12 +97,18 @@ export class RidesService {
       if (ride.driver?.id) {
         await this.driverRepository.update(ride.driver.id, { status: 'online' as any });
       }
+      // Optional: Delete immediately for maximum real-time focus
+      // await this.rideRepository.delete(id);
     }
     return this.findOne(id);
   }
 
   findAll() {
-    return this.rideRepository.find({ relations: ['rider', 'driver', 'driver.user'] });
+    // Strictly real-time: only show requested rides that haven't been picked up
+    return this.rideRepository.find({ 
+      where: { status: RideStatus.REQUESTED },
+      relations: ['rider', 'driver', 'driver.user'] 
+    });
   }
 
   async findOne(id: string): Promise<Ride> {
@@ -107,7 +125,7 @@ export class RidesService {
       where: { rider: { id: riderId } },
       relations: ['rider', 'driver', 'driver.user'],
       order: { createdAt: 'DESC' },
-      take: 20,
+      take: 10, // Limit history to keep it fresh
     });
   }
 
@@ -116,7 +134,7 @@ export class RidesService {
       where: { driver: { id: driverId } },
       relations: ['rider', 'driver', 'driver.user'],
       order: { createdAt: 'DESC' },
-      take: 20,
+      take: 10,
     });
   }
 

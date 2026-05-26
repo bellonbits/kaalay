@@ -18,6 +18,9 @@ export class User {
   @Column({ unique: true })
   phoneNumber: string;
 
+  @Column({ type: 'varchar', unique: true, nullable: true })
+  email: string | null;
+
   @Column({ nullable: true })
   fullName: string;
 

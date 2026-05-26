@@ -28,6 +28,28 @@ services:
     ports:
       - "8080:8080"
 
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: kaalay-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kaalay-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
   backend:
     build:
       context: ./apps/backend
@@ -42,25 +64,18 @@ services:
       DATABASE_USER: admin
       DATABASE_PASSWORD: password
       DATABASE_NAME: kaalay
+      DATABASE_URL: postgresql://admin:password@postgres:5432/kaalay
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      KAFKA_BROKER_URL: kafka:9092
       JWT_SECRET: super-secret-key
     depends_on:
       - postgres
       - redis
-
-  frontend:
-    build:
-      context: ./apps/frontend
-      dockerfile: Dockerfile
-    container_name: kaalay-frontend
-    restart: always
-    ports:
-      - "3001:3001"
-    environment:
-      NEXT_PUBLIC_API_URL: http://backend:3000
-    depends_on:
-      - backend
+      - kafka
+    volumes:
+      - ./apps/backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 3000 --reload
 
 volumes:
   postgres_data:

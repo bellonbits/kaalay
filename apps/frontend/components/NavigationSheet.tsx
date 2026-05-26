@@ -1,11 +1,10 @@
 'use client';
-import { useState, useRef } from 'react';
-import { Autocomplete, useJsApiLoader } from '@react-google-maps/api';
-import { EnvironmentOutlined, CarOutlined, SearchOutlined, SwapOutlined, LoadingOutlined } from '@ant-design/icons';
-import { convertToCoordinates } from '../lib/api';
+import { useState, useRef, useEffect } from 'react';
+import { Autocomplete } from '@react-google-maps/api';
+import { useGoogleMaps } from './GoogleMapsProvider';
+import { EnvironmentOutlined, CarOutlined, SearchOutlined, SwapOutlined, LoadingOutlined, ArrowLeftOutlined, CloseOutlined, AimOutlined } from '@ant-design/icons';
+import { convertToCoordinates, searchPlaces } from '../lib/api';
 
-const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? '';
-const LIBRARIES: ('geometry' | 'places')[] = ['geometry', 'places'];
 
 export interface LocationPoint {
   lat: number;
@@ -15,24 +14,89 @@ export interface LocationPoint {
 }
 
 interface Props {
+  isVisible: boolean;
   currentLocation?: { lat: number; lng: number };
+  initialStartPoint?: LocationPoint | null;
+  initialDestPoint?: LocationPoint | null;
   onRouteSubmit: (start: LocationPoint, dest: LocationPoint) => void;
   onClose: () => void;
+  onPickOnMapStart?: () => void;
+  onPickOnMapDest?: () => void;
 }
 
-export default function NavigationSheet({ currentLocation, onRouteSubmit, onClose }: Props) {
-  const { isLoaded } = useJsApiLoader({ googleMapsApiKey: MAPS_KEY, libraries: LIBRARIES });
+export default function NavigationSheet({ 
+  isVisible, 
+  currentLocation, 
+  initialStartPoint, 
+  initialDestPoint, 
+  onRouteSubmit, 
+  onClose,
+  onPickOnMapStart,
+  onPickOnMapDest
+}: Props) {
+  const { isLoaded } = useGoogleMaps();
   
-  const [startQuery, setStartQuery] = useState('');
-  const [destQuery, setDestQuery] = useState('');
+  const [startQuery, setStartQuery] = useState(initialStartPoint?.label || '');
+  const [destQuery, setDestQuery] = useState(initialDestPoint?.label || '');
   
-  const [startPoint, setStartPoint] = useState<LocationPoint | null>(null);
-  const [destPoint, setDestPoint] = useState<LocationPoint | null>(null);
+  const [startPoint, setStartPoint] = useState<LocationPoint | null>(initialStartPoint || null);
+  const [destPoint, setDestPoint] = useState<LocationPoint | null>(initialDestPoint || null);
+  const [w3wSuggestions, setW3wSuggestions] = useState<any[]>([]);
+  const [customStartSuggestions, setCustomStartSuggestions] = useState<any[]>([]);
+  const [customDestSuggestions, setCustomDestSuggestions] = useState<any[]>([]);
   
   const [loadingW3W, setLoadingW3W] = useState(false);
 
   const startAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const destAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+
+  const lastStartRef = useRef<LocationPoint | null | undefined>(initialStartPoint);
+  const lastDestRef = useRef<LocationPoint | null | undefined>(initialDestPoint);
+
+  // Synchronize with external changes (e.g. from map picking) with value-based comparison
+  useEffect(() => {
+    const hasChanged = 
+      (!initialStartPoint && lastStartRef.current) ||
+      (initialStartPoint && !lastStartRef.current) ||
+      (initialStartPoint && lastStartRef.current && (
+        initialStartPoint.lat !== lastStartRef.current.lat ||
+        initialStartPoint.lng !== lastStartRef.current.lng ||
+        initialStartPoint.label !== lastStartRef.current.label
+      ));
+
+    if (hasChanged) {
+      lastStartRef.current = initialStartPoint;
+      if (initialStartPoint) {
+        setStartPoint(initialStartPoint);
+        setStartQuery(initialStartPoint.label);
+      } else {
+        setStartPoint(null);
+        setStartQuery('');
+      }
+    }
+  }, [initialStartPoint]);
+
+  useEffect(() => {
+    const hasChanged = 
+      (!initialDestPoint && lastDestRef.current) ||
+      (initialDestPoint && !lastDestRef.current) ||
+      (initialDestPoint && lastDestRef.current && (
+        initialDestPoint.lat !== lastDestRef.current.lat ||
+        initialDestPoint.lng !== lastDestRef.current.lng ||
+        initialDestPoint.label !== lastDestRef.current.label
+      ));
+
+    if (hasChanged) {
+      lastDestRef.current = initialDestPoint;
+      if (initialDestPoint) {
+        setDestPoint(initialDestPoint);
+        setDestQuery(initialDestPoint.label);
+      } else {
+        setDestPoint(null);
+        setDestQuery('');
+      }
+    }
+  }, [initialDestPoint]);
 
   // Use "My Location" if `currentLocation` exists and `startPoint` is null
   const effectiveStart = startPoint ?? (currentLocation ? { ...currentLocation, label: 'Your Current Location' } : null);
@@ -46,7 +110,7 @@ export default function NavigationSheet({ currentLocation, onRouteSubmit, onClos
   ) => {
     if (!autocompleteRef.current) return;
     const place = autocompleteRef.current.getPlace();
-    if (place.geometry?.location) {
+    if (place?.geometry?.location) {
       const lat = place.geometry.location.lat();
       const lng = place.geometry.location.lng();
       setPoint({ lat, lng, label: place.formatted_address || place.name || '' });
@@ -68,129 +132,296 @@ export default function NavigationSheet({ currentLocation, onRouteSubmit, onClos
     }
   };
 
-  const handleStartChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setStartQuery(e.target.value);
+  const handleStartChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setStartQuery(val);
     if (startPoint) setStartPoint(null);
+    if (val.length >= 2) {
+      try {
+        const res = await searchPlaces(val);
+        setCustomStartSuggestions(res || []);
+      } catch {
+        setCustomStartSuggestions([]);
+      }
+    } else {
+      setCustomStartSuggestions([]);
+    }
   };
   const handleDestChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setDestQuery(e.target.value);
     if (destPoint) setDestPoint(null);
   };
 
-  const handleStartBlur = () => { checkW3W(startQuery, setStartPoint); };
+  const handleStartBlur = () => { 
+    setTimeout(() => setCustomStartSuggestions([]), 200);
+    checkW3W(startQuery, setStartPoint); 
+  };
   const handleDestBlur = () => { checkW3W(destQuery, setDestPoint); };
 
   const submitRoute = () => {
     if (effectiveStart && destPoint) onRouteSubmit(effectiveStart, destPoint);
   };
 
+  // Auto-submit instantly when both points are ready (Uber-like flow)
+  useEffect(() => {
+    if (effectiveStart && destPoint) {
+      // Small timeout to allow the input to visibly populate before the sheet closes
+      const t = setTimeout(() => {
+        onRouteSubmit(effectiveStart, destPoint);
+      }, 150);
+      return () => clearTimeout(t);
+    }
+  }, [effectiveStart, destPoint, onRouteSubmit]);
+
   return (
-    <div style={{
-      position: 'absolute', inset: 0, zIndex: 30,
-      background: '#F7F7F7', display: 'flex', flexDirection: 'column'
-    }}>
-      {/* Header */}
-      <div style={{
-        background: '#FFFFFF', padding: '48px 16px 16px',
-        boxShadow: '0 4px 16px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: 16
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1A1A1A', margin: 0 }}>Plan your ride</h2>
-          <button onClick={onClose} style={{
-            background: '#F0F0F0', border: 'none', borderRadius: '50%',
-            width: 32, height: 32, cursor: 'pointer', fontSize: 16
-          }}>✕</button>
+    <div className={`fixed inset-0 z-[60] bg-[#F8F9FA] flex flex-col transition-all duration-500 ease-in-out ${isVisible ? 'opacity-100 pointer-events-auto translate-y-0' : 'opacity-0 pointer-events-none translate-y-10'}`}>
+      {/* Premium Header Container */}
+      <div className="bg-white px-6 pt-16 pb-8 shadow-sheet z-10">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={onClose} 
+              className="w-10 h-10 glass rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+            >
+              <ArrowLeftOutlined className="text-black" />
+            </button>
+            <h2 className="text-xl font-black text-black tracking-tight">Plan Journey</h2>
+          </div>
+          <div className="px-3 py-1 bg-yellow-400 rounded-lg">
+            <span className="text-[10px] font-black uppercase tracking-widest text-black">Precision GPS</span>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, position: 'relative' }}>
-          {/* Timline graphic */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 12 }}>
-            <div style={{ width: 8, height: 8, background: '#1A1A1A', borderRadius: '50%' }} />
-            <div style={{ width: 2, height: 30, background: '#E0E0E0', margin: '4px 0' }} />
-            <div style={{ width: 8, height: 8, background: '#FFD600', borderRadius: '0' }} />
+        {/* Journey Inputs Section */}
+        <div className="flex gap-4 relative">
+          {/* Vertical Timeline Graphic */}
+          <div className="flex flex-col items-center pt-6">
+            <div className="w-2.5 h-2.5 rounded-full border-2 border-black bg-white" />
+            <div className="w-0.5 h-14 border-l-2 border-dashed border-gray-200 my-1" />
+            <div className="w-2.5 h-2.5 bg-yellow-400" />
           </div>
 
-          {/* Inputs */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ position: 'relative' }}>
-              {!isLoaded ? <LoadingOutlined style={{ position: 'absolute', right: 12, top: 12 }} /> :
-                <Autocomplete
-                  onLoad={(auto) => { startAutocompleteRef.current = auto; }}
-                  onPlaceChanged={() => handlePlaceChanged(startAutocompleteRef, setStartPoint, setStartQuery)}
-                >
-                  <input
-                    placeholder="Current Location"
-                    value={startPoint?.label ?? startQuery}
-                    onChange={handleStartChange}
-                    onBlur={handleStartBlur}
-                    style={{
-                      width: '100%', padding: '12px 16px', borderRadius: 12,
-                      background: '#F7F7F7', border: '1.5px solid transparent',
-                      outline: 'none', fontSize: 15, fontWeight: 500, color: '#1A1A1A'
-                    }}
-                  />
-                </Autocomplete>
+          <div className="flex-1 space-y-3">
+            {/* Start Point Input */}
+            <div className="relative">
+              {!isLoaded ? <LoadingOutlined className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300" /> :
+                <>
+                  <Autocomplete
+                    onLoad={(auto) => { startAutocompleteRef.current = auto; }}
+                    onPlaceChanged={() => handlePlaceChanged(startAutocompleteRef, setStartPoint, setStartQuery)}
+                  >
+                    <div className="input-container !bg-gray-50 !h-14 flex items-center justify-between pr-3">
+                      <input
+                        placeholder="Current Location"
+                        value={startPoint?.label ?? startQuery}
+                        onChange={handleStartChange}
+                        onBlur={handleStartBlur}
+                        className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black placeholder:text-gray-300"
+                      />
+                      <button 
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onPickOnMapStart?.();
+                        }}
+                        className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center active:scale-90 transition-transform flex-shrink-0 ml-2 border border-gray-100"
+                        title="Choose on Map"
+                      >
+                        <AimOutlined className="text-[#8E2DE2] text-sm" />
+                      </button>
+                    </div>
+                  </Autocomplete>
+
+                  {/* Start Custom Places Suggestions */}
+                  {customStartSuggestions.length > 0 && (
+                    <div className="absolute top-[calc(100%+8px)] left-0 right-0 bg-white rounded-2xl shadow-premium border border-gray-100 z-50 overflow-hidden animate-fade-in">
+                      <div className="px-5 py-2.5 bg-purple-50/50 border-b border-gray-50">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-[#8E2DE2]">Saved Custom Places</span>
+                      </div>
+                      {customStartSuggestions.map((s: any, i: number) => (
+                        <button 
+                          key={`custom-start-${i}`}
+                          onClick={() => {
+                            setStartQuery(s.name);
+                            setStartPoint({ lat: s.latitude, lng: s.longitude, label: s.name });
+                            setCustomStartSuggestions([]);
+                          }}
+                          className="w-full px-5 py-4 flex items-center gap-4 text-left active:bg-gray-50 border-b border-gray-100 last:border-none transition-colors"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
+                            <EnvironmentOutlined className="text-[#8E2DE2] text-sm" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-black text-black leading-none mb-1">{s.name}</p>
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">///{s.words} · {s.description || 'Saved location'}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               }
             </div>
             
-            <div style={{ position: 'relative' }}>
-              {!isLoaded ? <LoadingOutlined style={{ position: 'absolute', right: 12, top: 12 }} /> :
-                <Autocomplete
-                  onLoad={(auto) => { destAutocompleteRef.current = auto; }}
-                  onPlaceChanged={() => handlePlaceChanged(destAutocompleteRef, setDestPoint, setDestQuery)}
-                >
-                  <input
-                    autoFocus
-                    placeholder="Where to? (e.g. filled.count.soap)"
-                    value={destQuery}
-                    onChange={handleDestChange}
-                    onBlur={handleDestBlur}
-                    style={{
-                      width: '100%', padding: '12px 16px', borderRadius: 12,
-                      background: '#F7F7F7', border: '1.5px solid transparent',
-                      outline: 'none', fontSize: 15, fontWeight: 500, color: '#1A1A1A'
-                    }}
-                  />
-                </Autocomplete>
+            {/* Destination Point Input */}
+            <div className="relative">
+              {!isLoaded ? <LoadingOutlined className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300" /> :
+                <>
+                  <Autocomplete
+                    onLoad={(auto) => { destAutocompleteRef.current = auto; }}
+                    onPlaceChanged={() => handlePlaceChanged(destAutocompleteRef, setDestPoint, setDestQuery)}
+                  >
+                    <div className="input-container !bg-gray-50 !h-14 !border-yellow-400/30 flex items-center justify-between pr-3">
+                      <input
+                        autoFocus
+                        placeholder="Where to? (e.g. filled.count.soap)"
+                        value={destQuery}
+                        onChange={async (e) => {
+                          const val = e.target.value;
+                          setDestQuery(val);
+                          if (destPoint) setDestPoint(null);
+                          
+                          // Custom Places search
+                          if (val.length >= 2) {
+                            try {
+                              const res = await searchPlaces(val);
+                              setCustomDestSuggestions(res || []);
+                            } catch {
+                              setCustomDestSuggestions([]);
+                            }
+                          } else {
+                            setCustomDestSuggestions([]);
+                          }
+
+                          if (val.includes('.') || val.startsWith('///')) {
+                            try {
+                              const res = await (await import('../lib/api')).autosuggest(val, currentLocation);
+                              setW3wSuggestions(res.suggestions || []);
+                            } catch {
+                              setW3wSuggestions([]);
+                            }
+                          } else {
+                            setW3wSuggestions([]);
+                          }
+                        }}
+                        onBlur={() => {
+                          setTimeout(() => {
+                            setW3wSuggestions([]);
+                            setCustomDestSuggestions([]);
+                          }, 200);
+                          handleDestBlur();
+                        }}
+                        className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black placeholder:text-gray-300"
+                      />
+                      <button 
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onPickOnMapDest?.();
+                        }}
+                        className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center active:scale-90 transition-transform flex-shrink-0 ml-2 border border-gray-100"
+                        title="Choose on Map"
+                      >
+                        <AimOutlined className="text-yellow-400 text-sm" />
+                      </button>
+                    </div>
+                  </Autocomplete>
+
+                  {/* Suggestions Dropdown (Custom Places & W3W Suggestions) */}
+                  {(customDestSuggestions.length > 0 || w3wSuggestions.length > 0) && (
+                    <div className="absolute top-[calc(100%+8px)] left-0 right-0 bg-white rounded-2xl shadow-premium border border-gray-100 z-50 overflow-hidden animate-fade-in max-h-80 overflow-y-auto no-scroll">
+                      {customDestSuggestions.length > 0 && (
+                        <>
+                          <div className="px-5 py-2.5 bg-purple-50/50 border-b border-gray-50">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-[#8E2DE2]">Saved Custom Places</span>
+                          </div>
+                          {customDestSuggestions.map((s: any, i: number) => (
+                            <button 
+                              key={`custom-dest-${i}`}
+                              onClick={() => {
+                                setDestQuery(s.name);
+                                setDestPoint({ lat: s.latitude, lng: s.longitude, label: s.name });
+                                setCustomDestSuggestions([]);
+                              }}
+                              className="w-full px-5 py-4 flex items-center gap-4 text-left active:bg-gray-50 border-b border-gray-100 last:border-none transition-colors"
+                            >
+                              <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
+                                <EnvironmentOutlined className="text-[#8E2DE2] text-sm" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-black text-black leading-none mb-1">{s.name}</p>
+                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">///{s.words} · {s.description || 'Saved location'}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                      
+                      {w3wSuggestions.length > 0 && (
+                        <>
+                          <div className="px-5 py-2.5 bg-red-50/30 border-b border-gray-50">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-red-500">What3Words Addresses</span>
+                          </div>
+                          {w3wSuggestions.map((s: any, i: number) => (
+                            <button 
+                              key={`w3w-${i}`}
+                              onClick={async () => {
+                                setDestQuery(`///${s.words}`);
+                                setW3wSuggestions([]);
+                                setLoadingW3W(true);
+                                try {
+                                  const { latitude, longitude } = await (await import('../lib/api')).convertToCoordinates(s.words);
+                                  setDestPoint({ lat: latitude, lng: longitude, label: `///${s.words}`, isW3W: true });
+                                } finally {
+                                  setLoadingW3W(false);
+                                }
+                              }}
+                              className="w-full px-5 py-4 flex items-center gap-4 text-left active:bg-gray-50 border-b border-gray-100 last:border-none transition-colors"
+                            >
+                              <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center flex-shrink-0">
+                                <EnvironmentOutlined className="text-red-500 text-sm" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-black text-red-600 leading-none mb-1">///{s.words}</p>
+                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{s.nearestPlace}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </>
               }
-              {loadingW3W && <LoadingOutlined style={{ position: 'absolute', right: 12, top: 12, color: '#FFD600' }} />}
+              {loadingW3W && <LoadingOutlined className="absolute right-4 top-1/2 -translate-y-1/2 text-yellow-500" />}
             </div>
           </div>
           
-          <button style={{
-            position: 'absolute', right: -6, top: '50%', transform: 'translateY(-50%)',
-            background: '#FFFFFF', border: '1px solid #E0E0E0', borderRadius: '50%',
-            width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', zIndex: 10
-          }}>
-            <SwapOutlined rotate={90} style={{ color: '#888' }} />
+          <button className="absolute -right-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white border border-gray-100 rounded-full flex items-center justify-center shadow-sm active:scale-90 transition-transform z-20">
+            <SwapOutlined rotate={90} className="text-gray-400 text-xs" />
           </button>
         </div>
       </div>
 
-      {/* Helper text about w3w */}
-      <div style={{ padding: '24px 20px', background: '#F7F7F7', flex: 1 }}>
-        <p style={{ fontSize: 13, color: '#888', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <EnvironmentOutlined /> You can type regular addresses or <b>what3words</b> directly in the box to pinpoint an exact 3m square.
-        </p>
+      {/* Helper Content */}
+      <div className="flex-1 px-6 py-10 overflow-y-auto no-scroll">
+        <div className="bg-gray-100/50 p-6 rounded-[28px] border border-gray-50 mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 rounded-full bg-black flex items-center justify-center">
+              <EnvironmentOutlined className="text-yellow-400 text-sm" />
+            </div>
+            <h3 className="text-sm font-black text-black uppercase tracking-wider">Precision Picking</h3>
+          </div>
+          <p className="text-xs font-bold text-gray-500 leading-relaxed">
+            Kaalay uses <span className="text-red-500">what3words</span> to give you an exact 3m x 3m pickup and dropoff point. 
+            No more "near the shop" or "after the bridge".
+          </p>
+        </div>
       </div>
 
-      {/* Confirmation Button */}
-      {effectiveStart && destPoint && (
-        <div style={{ background: '#FFFFFF', padding: '20px', boxShadow: '0 -4px 16px rgba(0,0,0,0.05)' }}>
-          <button
-            onClick={submitRoute}
-            style={{
-              width: '100%', background: '#1A1A1A', color: '#FFF',
-              padding: '16px', borderRadius: 16, fontSize: 16, fontWeight: 700,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              border: 'none', cursor: 'pointer'
-            }}
-          >
-            <CarOutlined /> Show Route to Destination
-          </button>
-        </div>
-      )}
+      {/* Sticky Action Footer Removed for Auto-Submit Flow */}
     </div>
   );
 }

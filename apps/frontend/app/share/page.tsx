@@ -10,10 +10,10 @@ import {
 } from '@ant-design/icons';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useSocket } from '../../hooks/useSocket';
-import { createSession, updateSessionStatus, convertTo3wa } from '../../lib/api';
+import { createSession, updateSessionStatus, convertTo3wa, autosuggest, convertToCoordinates } from '../../lib/api';
 import type { MarkerData } from '../../components/MapBase';
 
-const MapBase = dynamic(() => import('../../components/MapBase'), { ssr: false });
+import MapBase from '../../components/MapBase';
 
 const TYPES = [
   { id: 'general', label: 'Share Location', sub: 'Let others see where you are',  Icon: EnvironmentOutlined, iconBg: '#F3F4F6', iconColor: '#6B7280', activeBg: '#1A1A1A', activeText: '#FFFFFF' },
@@ -29,11 +29,21 @@ const DURATIONS = [
   { label: '∞',      ms: 0 },
 ];
 
+import { useShare } from '../../context/ShareContext';
+
+function dist(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const R = 6371;
+  const dL = (b.lat - a.lat) * Math.PI / 180;
+  const dG = (b.lng - a.lng) * Math.PI / 180;
+  const h = Math.sin(dL / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dG / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
 export default function SharePage() {
   const router        = useRouter();
   const { position }  = useGeolocation(true);
+  const { startSharing, stopSharing, activeSession: globalSession, manualPosition, setManualPosition } = useShare();
   const socketRef     = useSocket();
-  const broadRef      = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [step,    setStep]    = useState<'setup' | 'live'>('setup');
   const [type,    setType]    = useState('general');
@@ -45,11 +55,22 @@ export default function SharePage() {
   const [vis,     setVis]     = useState<'link' | 'public'>('link');
   const [w3w,     setW3w]     = useState<string | null>(null);
   const [msgCopied, setMsgCopied] = useState(false);
-
+  const [urlCopied, setUrlCopied] = useState(false);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [addressText, setAddressText] = useState('');
 
   const [viewerCount, setViewerCount] = useState(0);
-  const [viewers,     setViewers]     = useState<Record<string, { lat: number; lng: number; name: string; timestamp: number }>>({});
+  const [viewers,     setViewers]     = useState<Record<string, { viewerId: string; lat: number; lng: number; name: string; timestamp: number }>>({});
   const [arrivals,    setArrivals]    = useState<{ name: string; timestamp: number }[]>([]);
+
+  // Sync with global session if it exists on mount
+  useEffect(() => {
+    if (globalSession) {
+      setSession(globalSession);
+      setStep('live');
+    }
+  }, [globalSession]);
 
   useEffect(() => {
     if (!session) return;
@@ -68,35 +89,19 @@ export default function SharePage() {
     const s = socketRef.current;
     if (!s) return;
     
-    s.emit('join', session.shareCode);
-    s.emit('new-request', {
-      code: session.shareCode, type, message: msg,
-      lat: position.lat, lng: position.lng,
-      userName: JSON.parse(localStorage.getItem('kaalay_user') ?? '{}').fullName,
-    });
-
     const onViewerCount = (d: { count: number }) => setViewerCount(d.count);
     const onViewerLoc   = (d: { viewerId: string; lat: number; lng: number; name: string; timestamp: number }) => {
       setViewers(prev => ({ ...prev, [d.viewerId]: d }));
     };
     const onArrived     = (d: { name: string; timestamp: number }) => {
       setArrivals(prev => [d, ...prev].slice(0, 5));
-      // Could add a toast here
     };
 
     s.on('viewer-count',    onViewerCount);
     s.on('viewer-location', onViewerLoc);
     s.on('member-arrived',  onArrived);
 
-    broadRef.current = setInterval(() => {
-      socketRef.current?.emit('push-location', {
-        code: session.shareCode, lat: position.lat, lng: position.lng,
-        accuracy: position.accuracy, heading: position.heading, timestamp: Date.now(),
-      });
-    }, 3000);
-
     return () => {
-      if (broadRef.current) clearInterval(broadRef.current);
       s.off('viewer-count',    onViewerCount);
       s.off('viewer-location', onViewerLoc);
       s.off('member-arrived',  onArrived);
@@ -104,26 +109,26 @@ export default function SharePage() {
   }, [step, session, position]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const start = async () => {
-    if (!position) return;
+    const p = manualPosition || position;
+    if (!p) return;
     const user = JSON.parse(localStorage.getItem('kaalay_user') ?? '{}');
-    try {
-      const s = await createSession({
-        latitude: position.lat, longitude: position.lng, accuracy: position.accuracy,
-        requestType: type, visibility: vis,
-        message: msg || undefined,
-        expiresAt: dur > 0 ? new Date(Date.now() + dur).toISOString() : undefined,
-        userId: user.id,
-      });
-      setSession(s);
-    } catch {
-      setSession({ shareCode: 'KAA-' + Math.random().toString(36).substring(2, 6).toUpperCase() });
-    }
+    const params = {
+      lat: p.lat, lng: p.lng, accuracy: manualPosition ? 0 : position?.accuracy,
+      requestType: type, visibility: vis,
+      message: msg || undefined,
+      expiresAt: dur > 0 ? new Date(Date.now() + dur).toISOString() : undefined,
+    };
+    
+    await startSharing(params);
     setStep('live');
   };
 
   const stop = async () => {
-    if (session) await updateSessionStatus(session.shareCode, 'ended').catch(() => null);
-    if (broadRef.current) clearInterval(broadRef.current);
+    await stopSharing();
+    router.push('/home');
+  };
+
+  const minimize = () => {
     router.push('/home');
   };
 
@@ -136,7 +141,7 @@ export default function SharePage() {
   const shareUrl   = () => `${window.location.origin}/track/${session!.shareCode}`;
   const shareText  = () => {
     const w = w3w ? `///${w3w}` : session!.shareCode;
-    return `Find me at ${w}\n\nTrack my live location:\n${shareUrl()}\n\nSent via Kaalay`;
+    return `Find me at ${w}\n\nTrack my live location:\n${shareUrl()}\n\nSent via Kaalay Heelay`;
   };
   const shareWhatsApp = () => window.open(`https://wa.me/?text=${encodeURIComponent(shareText())}`, '_blank');
   const shareSMS      = () => window.open(`sms:?body=${encodeURIComponent(shareText())}`, '_blank');
@@ -146,8 +151,20 @@ export default function SharePage() {
     setTimeout(() => setMsgCopied(false), 2000);
   };
 
+  const copyUrl = () => {
+    navigator.clipboard.writeText(shareUrl());
+    setUrlCopied(true);
+    setTimeout(() => setUrlCopied(false), 2000);
+  };
+
   const markers: MarkerData[] = [
-    ...(position ? [{ lat: position.lat, lng: position.lng, type: 'me' as const, accuracy: position.accuracy }] : []),
+    ...(manualPosition 
+      ? [
+          { lat: manualPosition.lat, lng: manualPosition.lng, type: 'request' as const, label: 'Broadcasting Point' },
+          ...(position ? [{ lat: position.lat, lng: position.lng, type: 'me' as const, accuracy: position.accuracy }] : [])
+        ]
+      : (position ? [{ lat: position.lat, lng: position.lng, type: 'me' as const, accuracy: position.accuracy }] : [])
+    ),
     ...Object.values(viewers).map(v => ({ lat: v.lat, lng: v.lng, type: 'tracked' as const, label: v.name })),
   ];
 
@@ -158,7 +175,24 @@ export default function SharePage() {
   if (step === 'live' && session) return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
       <div style={{ position: 'relative', flex: 1 }}>
-        <MapBase center={position ?? { lat: -1.29, lng: 36.82 }} zoom={15} markers={markers} className="w-full h-full" />
+        <MapBase 
+          center={manualPosition || position || { lat: -1.29, lng: 36.82 }} 
+          zoom={16} 
+          markers={markers} 
+          onClick={(lat, lng) => setManualPosition({ lat, lng })}
+          className="w-full h-full" 
+        />
+
+        {/* Minimize button */}
+        <button onClick={minimize} style={{
+          position: 'absolute', top: 48, left: 16, zIndex: 20,
+          width: 44, height: 44, borderRadius: 14, background: '#FFFFFF',
+          border: '1.5px solid #EBEBEB', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
+        }}>
+          <ArrowLeftOutlined style={{ fontSize: 16, color: '#1A1A1A' }} />
+        </button>
 
         {/* Viewer count pill */}
         <div style={{ position: 'absolute', top: 48, right: 16, zIndex: 20 }}>
@@ -208,7 +242,7 @@ export default function SharePage() {
       </div>
 
       {/* Code card */}
-      <div style={{ background: '#FFFFFF', padding: '20px 20px 40px', boxShadow: '0 -4px 32px rgba(0,0,0,0.10)' }}>
+      <div style={{ background: '#FFFFFF', padding: '20px 20px 100px', boxShadow: '0 -4px 32px rgba(0,0,0,0.10)' }}>
         {/* Route row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#F7F7F7', borderRadius: 16, padding: '14px 16px', border: '1.5px solid #EBEBEB', marginBottom: 16 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
@@ -262,6 +296,67 @@ export default function SharePage() {
           </div>
         )}
 
+        {/* Public Share Link Card */}
+        <div style={{
+          background: '#F9FAFB',
+          border: '1.5px dashed #E5E7EB',
+          borderRadius: 16,
+          padding: '14px 16px',
+          marginBottom: 12,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          transition: 'all 0.2s ease-in-out',
+        }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ 
+              fontSize: 10, 
+              fontWeight: 800, 
+              color: '#9CA3AF', 
+              letterSpacing: '1.5px', 
+              textTransform: 'uppercase', 
+              marginBottom: 4,
+              fontFamily: 'Inter, sans-serif'
+            }}>
+              Public Tracker URL
+            </p>
+            <p style={{ 
+              fontSize: 12, 
+              fontWeight: 700, 
+              color: '#374151', 
+              whiteSpace: 'nowrap', 
+              overflow: 'hidden', 
+              textOverflow: 'ellipsis', 
+              margin: 0,
+              fontFamily: 'Inter, sans-serif'
+            }}>
+              {shareUrl()}
+            </p>
+          </div>
+          <button onClick={copyUrl} style={{
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            gap: 6,
+            fontSize: 11, 
+            fontWeight: 800, 
+            color: urlCopied ? '#16A34A' : '#1A1A1A',
+            background: urlCopied ? '#F0FDF4' : '#FFFFFF',
+            border: `1.5px solid ${urlCopied ? '#86EFAC' : '#EBEBEB'}`,
+            borderRadius: 10, 
+            padding: '8px 12px', 
+            cursor: 'pointer',
+            fontFamily: 'Inter, sans-serif',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
+            flexShrink: 0,
+            transition: 'all 0.15s ease-in-out',
+          }}>
+            {urlCopied ? <CheckOutlined style={{ fontSize: 11 }} /> : <CopyOutlined style={{ fontSize: 11 }} />}
+            {urlCopied ? 'Copied!' : 'Copy URL'}
+          </button>
+        </div>
+
         {/* Share buttons */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
           <button onClick={shareWhatsApp} style={{
@@ -299,6 +394,47 @@ export default function SharePage() {
           <StopOutlined style={{ fontSize: 14 }} />
           Stop sharing
         </button>
+
+        {/* Viewer Details Dashboard */}
+        {Object.values(viewers).length > 0 && (
+          <div style={{ marginTop: 24 }}>
+            <p style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 12 }}>Tracking you now</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {Object.values(viewers).map((v, i) => {
+                const p = manualPosition || position;
+                const d = p ? dist(v, p) : null;
+                const eta = d ? Math.round((d / 30) * 60) : null; // Assume 30km/h city speed
+                const isFresh = Date.now() - v.timestamp < 10000;
+
+                return (
+                  <div key={v.viewerId} style={{
+                    background: '#F7F7F7', borderRadius: 18, padding: '12px 16px',
+                    border: '1.5px solid #EBEBEB', display: 'flex', alignItems: 'center', gap: 12
+                  }}>
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#1A1A1A', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                      <TeamOutlined style={{ fontSize: 18, color: '#FFFFFF' }} />
+                      {isFresh && (
+                        <div style={{ position: 'absolute', bottom: 0, right: 0, width: 10, height: 10, borderRadius: '50%', background: '#22C55E', border: '2px solid #F7F7F7' }} />
+                      )}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: 14, fontWeight: 800, color: '#1A1A1A' }}>{v.name}</p>
+                      <p style={{ fontSize: 11, color: '#888' }}>
+                        {isFresh ? 'Moving' : 'Last seen ' + new Date(v.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <p style={{ fontSize: 16, fontWeight: 900, color: '#1A1A1A' }}>{eta ?? '--'} min</p>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: '#888' }}>
+                        {d ? (d < 1 ? `${Math.round(d * 1000)}m` : `${d.toFixed(1)}km`) : '--'}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -308,7 +444,44 @@ export default function SharePage() {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
       {/* Map preview */}
       <div style={{ position: 'relative', height: 200, flexShrink: 0 }}>
-        <MapBase center={position ?? { lat: -1.29, lng: 36.82 }} zoom={15} markers={markers} className="w-full h-full" />
+        <MapBase 
+          center={manualPosition || position || { lat: -1.29, lng: 36.82 }} 
+          zoom={16} 
+          markers={markers} 
+          onClick={async (lat, lng) => {
+            setManualPosition({ lat, lng });
+            try {
+              const res = await convertTo3wa(lat, lng);
+              if (res && res.what3words) {
+                setAddressText(`///${res.what3words}`);
+              }
+            } catch (e) {}
+          }}
+          className="w-full h-full" 
+        />
+
+        {/* Floating map hint */}
+        <div style={{
+          position: 'absolute',
+          top: 48,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(26,26,26,0.85)',
+          backdropFilter: 'blur(8px)',
+          borderRadius: 20,
+          padding: '6px 14px',
+          border: '1px solid rgba(255,255,255,0.15)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+          pointerEvents: 'none',
+          zIndex: 20,
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 800, color: manualPosition ? '#FFD600' : '#FFFFFF', letterSpacing: '0.5px', textTransform: 'uppercase', fontFamily: 'Inter, sans-serif' }}>
+            {manualPosition ? '📍 Custom location set' : '🎯 Tap map to pick custom point'}
+          </span>
+        </div>
 
         {/* Back button */}
         <button onClick={() => router.back()} style={{
@@ -338,7 +511,7 @@ export default function SharePage() {
       </div>
 
       {/* Setup form */}
-      <div style={{ flex: 1, background: '#FFFFFF', borderRadius: '28px 28px 0 0', overflowY: 'auto', padding: '24px 20px 40px', marginTop: -1, boxShadow: '0 -4px 32px rgba(0,0,0,0.08)' }}>
+      <div style={{ flex: 1, background: '#FFFFFF', borderRadius: '28px 28px 0 0', overflowY: 'auto', padding: '24px 20px 100px', marginTop: -1, boxShadow: '0 -4px 32px rgba(0,0,0,0.08)' }}>
 
         {/* Type selector */}
         <p style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 12 }}>Session type</p>
@@ -366,6 +539,79 @@ export default function SharePage() {
               </button>
             );
           })}
+        </div>
+
+        {/* Preferred Location Search */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <p style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', margin: 0 }}>Current Location</p>
+          {manualPosition && (
+            <button 
+              onClick={() => {
+                setManualPosition(null);
+                setAddressText('');
+              }}
+              style={{ background: 'none', border: 'none', color: '#4285F4', fontSize: 11, fontWeight: 800, cursor: 'pointer', padding: 0 }}
+            >
+              Reset to GPS
+            </button>
+          )}
+        </div>
+        <div style={{ position: 'relative', marginBottom: 20, zIndex: 100 }}>
+          <input
+            style={{
+              width: '100%', background: '#F7F7F7', border: '1.5px solid #EBEBEB',
+              borderRadius: 16, padding: '14px 16px 14px 44px', fontSize: 14, color: '#1A1A1A',
+              outline: 'none', fontFamily: 'Inter, sans-serif'
+            }}
+            placeholder="Type address or ///words..."
+            value={addressText}
+            onChange={async (e) => {
+              const val = e.target.value;
+              setAddressText(val);
+              if (val.length > 2) {
+                setIsSearching(true);
+                const res = await autosuggest(val, position ?? undefined);
+                setSuggestions(res.suggestions || []);
+                setIsSearching(false);
+              } else {
+                setSuggestions([]);
+              }
+            }}
+          />
+          <EnvironmentOutlined style={{ position: 'absolute', left: 16, top: '18px', color: '#888', fontSize: 16 }} />
+          
+          {/* Suggestions Dropdown */}
+          {suggestions.length > 0 && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, right: 0,
+              background: '#FFFFFF', borderRadius: 16, marginTop: 8,
+              border: '1.5px solid #EBEBEB', boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+              maxHeight: 240, overflowY: 'auto', zIndex: 101,
+            }}>
+              {suggestions.map((s, i) => (
+                <div 
+                  key={i} 
+                  onClick={async () => {
+                    const coords = await convertToCoordinates(s.words);
+                    if (coords) {
+                      setManualPosition({ lat: coords.coordinates.lat, lng: coords.coordinates.lng });
+                      setAddressText(`///${s.words}`);
+                      setSuggestions([]);
+                    }
+                  }}
+                  style={{
+                    padding: '12px 16px', borderBottom: i < suggestions.length - 1 ? '1px solid #F0F0F0' : 'none',
+                    cursor: 'pointer', transition: 'background 0.2s'
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = '#F7F7F7')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <p style={{ fontSize: 14, fontWeight: 800, color: '#FFD600', letterSpacing: '0.5px' }}>///{s.words}</p>
+                  <p style={{ fontSize: 11, color: '#888' }}>{s.nearestPlace}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Route row */}

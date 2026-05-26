@@ -3,253 +3,134 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   UserOutlined,
-  PhoneOutlined,
+  MailOutlined,
   CompassOutlined,
   CarOutlined,
   ArrowRightOutlined,
-  CheckCircleFilled,
+  LoadingOutlined,
+  LockOutlined,
+  PhoneOutlined,
 } from '@ant-design/icons';
-import { createUser } from '../../lib/api';
-
-const ROLES = [
-  {
-    id: 'user',
-    Icon: CompassOutlined,
-    label: 'Standard',
-    desc: 'Share location, meet friends, request help',
-  },
-  {
-    id: 'helper',
-    Icon: CarOutlined,
-    label: 'Driver / Helper',
-    desc: 'Accept requests, assist people nearby',
-  },
-];
+import { loginUser } from '../../lib/api';
+import { useAuth } from '../../context/AuthContext';
 
 export default function AuthPage() {
   const router = useRouter();
-  const [name,    setName]    = useState('');
-  const [phone,   setPhone]   = useState('');
-  const [role,    setRole]    = useState('user');
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState('');
+  const { login: authLogin, user: existingUser } = useAuth();
+  const [identity,   setIdentity] = useState(''); // Phone or Email
+  const [password,   setPassword] = useState('');
+  const [loading,    setLoading]  = useState(false);
+  const [error,      setError]    = useState('');
 
   useEffect(() => {
-    if (localStorage.getItem('kaalay_user')) router.replace('/home');
-  }, [router]);
+    if (existingUser) router.replace('/home');
+  }, [existingUser, router]);
 
-  const submit = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !phone.trim()) { setError('Please fill in both fields'); return; }
+    if (identity.length < 5) { setError('Please enter a valid phone or email'); return; }
+    if (!password) { setError('Please enter your password'); return; }
     setLoading(true); setError('');
+    
     try {
-      const user = await createUser({ fullName: name.trim(), phoneNumber: phone.trim(), role });
-      localStorage.setItem('kaalay_user', JSON.stringify(user));
-    } catch {
-      localStorage.setItem('kaalay_user', JSON.stringify({
-        id: `local-${Date.now()}`, fullName: name.trim(), phoneNumber: phone.trim(), role,
-      }));
+      const res = await loginUser({ phoneNumber: identity, password });
+      authLogin(res.user, res.accessToken, res.refreshToken);
+    } catch (err: any) {
+      const msg = typeof err === 'string' ? err : err?.message || 'Invalid credentials. Please try again.';
+      setError(msg);
     } finally {
       setLoading(false);
-      router.push('/home');
     }
   };
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7', overflow: 'hidden' }}>
+    <div className="h-full flex flex-col bg-white overflow-y-auto no-scroll relative">
+      {/* Premium Background Decor */}
+      <div className="absolute -top-24 -right-24 w-64 h-64 bg-yellow-400/10 rounded-full blur-[80px]" />
+      <div className="absolute -bottom-12 -left-12 w-48 h-48 bg-black/5 rounded-full blur-[60px]" />
 
-      {/* ── Hero ── */}
-      <div style={{
-        flex: 1, display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        background: '#F7F7F7', position: 'relative', overflow: 'hidden',
-        minHeight: 0,
-      }}>
-        {/* Decorative circles */}
-        {[80, 130, 60, 100, 50, 90].map((s, i) => (
-          <div key={i} style={{
-            position: 'absolute',
-            width: s, height: s, borderRadius: '50%',
-            background: 'rgba(0,0,0,0.045)',
-            top: `${[12, 8, 55, 5, 65, 35][i]}%`,
-            left: `${[5, 68, 75, 38, 15, 82][i]}%`,
-          }} />
-        ))}
-
-        {/* Wordmark */}
-        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
-          <div style={{
-            fontSize: 52, fontWeight: 900, letterSpacing: '-2px',
-            color: '#1A1A1A', lineHeight: 1, fontFamily: 'Inter, sans-serif',
-          }}>
+      <div className="flex-1 flex flex-col px-6 pt-24 pb-10 z-10">
+        {/* Cinematic Branding */}
+        <div className="mb-16 animate-fade-in">
+          <h1 className="text-[64px] font-black tracking-[-4px] text-black leading-none mb-4">
             kaalay
-          </div>
-          <div style={{
-            display: 'inline-block', marginTop: 10,
-            background: '#FFD600', borderRadius: 50,
-            padding: '6px 20px',
-            fontSize: 11, fontWeight: 800, letterSpacing: '3px',
-            color: '#1A1A1A', textTransform: 'uppercase',
-          }}>
-            Find · Meet · Move
+          </h1>
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-yellow-400 rounded-lg">
+            <span className="text-[10px] font-black uppercase tracking-widest text-black">
+              Find · Meet · Move
+            </span>
           </div>
         </div>
-      </div>
 
-      {/* ── Form card ── */}
-      <div style={{
-        background: '#FFFFFF',
-        borderRadius: '28px 28px 0 0',
-        padding: '32px 24px 48px',
-        boxShadow: '0 -4px 32px rgba(0,0,0,0.08)',
-        flexShrink: 0,
-      }}>
-        <h2 style={{ fontSize: 26, fontWeight: 900, color: '#1A1A1A', marginBottom: 6 }}>
-          Get started
-        </h2>
-        <p style={{ fontSize: 14, color: '#888', marginBottom: 24 }}>
-          Tell us who you are and how you'll use Kaalay
-        </p>
-
-        {/* Role selector */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
-          {ROLES.map(r => {
-            const selected = role === r.id;
-            return (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => setRole(r.id)}
-                style={{
-                  background: selected ? '#1A1A1A' : '#F7F7F7',
-                  border: selected ? '2px solid #1A1A1A' : '2px solid #EBEBEB',
-                  borderRadius: 18,
-                  padding: '18px 16px',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  transition: 'all 0.18s ease',
-                }}
-              >
-                {/* Check badge */}
-                {selected && (
-                  <CheckCircleFilled style={{
-                    position: 'absolute', top: 10, right: 10,
-                    fontSize: 16, color: '#FFD600',
-                  }} />
-                )}
-
-                {/* Icon circle */}
-                <div style={{
-                  width: 40, height: 40, borderRadius: 12,
-                  background: selected ? 'rgba(255,214,0,0.15)' : '#FFFFFF',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  marginBottom: 12,
-                  border: selected ? '1.5px solid rgba(255,214,0,0.3)' : '1.5px solid #EBEBEB',
-                }}>
-                  <r.Icon style={{
-                    fontSize: 18,
-                    color: selected ? '#FFD600' : '#888',
-                  }} />
-                </div>
-
-                <div style={{
-                  fontSize: 14, fontWeight: 800,
-                  color: selected ? '#FFFFFF' : '#1A1A1A',
-                  marginBottom: 4,
-                }}>
-                  {r.label}
-                </div>
-                <div style={{
-                  fontSize: 11, lineHeight: 1.4,
-                  color: selected ? 'rgba(255,255,255,0.55)' : '#999',
-                }}>
-                  {r.desc}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Inputs */}
-        <form onSubmit={submit}>
-          {/* Name */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            background: '#F7F7F7', border: '1.5px solid #EBEBEB',
-            borderRadius: 14, padding: '14px 16px', marginBottom: 12,
-          }}>
-            <UserOutlined style={{ fontSize: 17, color: '#BBBBBB', flexShrink: 0 }} />
-            <input
-              style={{
-                flex: 1, background: 'transparent', border: 'none',
-                outline: 'none', fontSize: 15, color: '#1A1A1A',
-                fontFamily: 'Inter, sans-serif',
-              }}
-              placeholder="Your full name"
-              value={name}
-              onChange={e => setName(e.target.value)}
-            />
+        {/* Login Form */}
+        <div className="flex-1 flex flex-col justify-center animate-slide-up-spring">
+          <div className="mb-10">
+            <h2 className="text-3xl font-black text-black tracking-tight mb-2">Welcome Back</h2>
+            <p className="text-gray-400 font-medium">Sign in to continue your journey.</p>
           </div>
 
-          {/* Phone */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            background: '#F7F7F7', border: '1.5px solid #EBEBEB',
-            borderRadius: 14, padding: '14px 16px', marginBottom: error ? 12 : 20,
-          }}>
-            <PhoneOutlined style={{ fontSize: 17, color: '#BBBBBB', flexShrink: 0 }} />
-            <input
-              style={{
-                flex: 1, background: 'transparent', border: 'none',
-                outline: 'none', fontSize: 15, color: '#1A1A1A',
-                fontFamily: 'Inter, sans-serif',
-              }}
-              placeholder="Phone number"
-              type="tel"
-              value={phone}
-              onChange={e => setPhone(e.target.value)}
-            />
-          </div>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="input-container">
+              <PhoneOutlined className="text-xl text-gray-300" />
+              <input 
+                type="text"
+                placeholder="Phone or Email"
+                className="flex-1 bg-transparent border-none outline-none text-base font-bold text-black placeholder:text-gray-300"
+                value={identity}
+                onChange={e => setIdentity(e.target.value)}
+              />
+            </div>
 
-          {/* Error */}
-          {error && (
-            <p style={{ fontSize: 13, color: '#E5383B', fontWeight: 600, marginBottom: 16 }}>
-              {error}
-            </p>
-          )}
+            <div className="input-container">
+              <LockOutlined className="text-xl text-gray-300" />
+              <input 
+                type="password"
+                placeholder="Password"
+                className="flex-1 bg-transparent border-none outline-none text-base font-bold text-black placeholder:text-gray-300"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+              />
+            </div>
 
-          {/* CTA */}
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%', padding: '17px 24px',
-              background: loading ? '#555' : '#1A1A1A',
-              color: '#FFFFFF', border: 'none', borderRadius: 16,
-              fontSize: 16, fontWeight: 800, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-              fontFamily: 'Inter, sans-serif',
-              transition: 'background 0.15s',
-            }}
-          >
-            {loading ? (
-              <>
-                <div style={{
-                  width: 18, height: 18, border: '2.5px solid rgba(255,255,255,0.3)',
-                  borderTopColor: '#FFD600', borderRadius: '50%',
-                  animation: 'spin 0.9s linear infinite',
-                }} />
-                Please wait…
-              </>
-            ) : (
-              <>
-                Continue
-                <ArrowRightOutlined style={{ fontSize: 15 }} />
-              </>
+            {error && (
+              <div className="px-4 py-3 bg-red-50 rounded-2xl border border-red-100">
+                <p className="text-red-500 text-xs font-bold leading-relaxed">{error}</p>
+              </div>
             )}
-          </button>
-        </form>
+
+            <button 
+              disabled={identity.length < 5 || loading}
+              className="btn btn-black w-full h-16 shadow-premium mt-4"
+            >
+              {loading ? <LoadingOutlined className="text-xl" /> : (
+                <>
+                  <span>Sign In</span>
+                  <ArrowRightOutlined className="text-sm" />
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="mt-8 text-center">
+            <p className="text-sm font-semibold text-gray-400">
+              New to Kaalay? {' '}
+              <button 
+                onClick={() => router.push('/register')} 
+                className="text-black font-black underline underline-offset-4 decoration-yellow-400"
+              >
+                Create Account
+              </button>
+            </p>
+          </div>
+        </div>
+
+        {/* Footer info */}
+        <div className="mt-auto pt-8 border-t border-gray-50 text-center">
+          <p className="text-[10px] text-gray-300 font-bold uppercase tracking-widest leading-relaxed">
+            By continuing, you agree to Kaalay's <br />
+            <span className="text-gray-400">Terms of Service</span> & <span className="text-gray-400">Privacy Policy</span>
+          </p>
+        </div>
       </div>
     </div>
   );
