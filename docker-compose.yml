@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:15-alpine
+    image: docker.io/library/postgres:15-alpine
     container_name: kaalay-postgres
     restart: always
     environment:
@@ -13,7 +13,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   redis:
-    image: redis:7-alpine
+    image: docker.io/library/redis:7-alpine
     container_name: kaalay-redis
     restart: always
     ports:
@@ -22,21 +22,21 @@ services:
       - redis_data:/data
 
   adminer:
-    image: adminer
+    image: docker.io/library/adminer
     container_name: kaalay-adminer
     restart: always
     ports:
       - "8080:8080"
 
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.4.0
+    image: docker.io/confluentinc/cp-zookeeper:7.4.0
     container_name: kaalay-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
 
   kafka:
-    image: confluentinc/cp-kafka:7.4.0
+    image: docker.io/confluentinc/cp-kafka:7.4.0
     container_name: kaalay-kafka
     depends_on:
       - zookeeper
