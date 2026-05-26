@@ -35,7 +35,14 @@ app.add_middleware(
         "http://localhost:3001",
         "http://127.0.0.1:3001",
         "http://localhost:3000",
+        # Production origins
+        "https://kaalay.vercel.app",
+        "https://app.suqafuran.com",
+        "https://suqafuran.com",
+        # Allow all vercel preview deployments
+        "https://kaalay-git-main-bellonbits.vercel.app",
     ],
+    allow_origin_regex=r"https://kaalay.*\.vercel\.app",  # covers all Vercel preview URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
