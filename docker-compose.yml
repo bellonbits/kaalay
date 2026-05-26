@@ -57,7 +57,7 @@ services:
     container_name: kaalay-backend
     restart: always
     ports:
-      - "3000:3000"
+      - "80:3000"
     environment:
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
