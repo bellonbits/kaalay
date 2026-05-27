@@ -362,7 +362,7 @@ const MapBase = forwardRef<MapHandle, Props>(({
   }, [directions, memoizedRouteFrom]);
 
   useEffect(() => {
-    if (!mapRef.current || !isLoaded || !memoizedRouteTo) {
+    if (!mapInstance || !isLoaded || !memoizedRouteTo) {
       setDirections(null);
       return;
     }
@@ -394,13 +394,13 @@ const MapBase = forwardRef<MapHandle, Props>(({
         ]);
       }
     });
-  }, [isLoaded, memoizedRouteTo, memoizedRouteFrom, memoizedCenter, travelMode, forceDirect]);
+  }, [mapInstance, isLoaded, memoizedRouteTo, memoizedRouteFrom, memoizedCenter, travelMode, forceDirect]);
 
   // Handle programmatically Zoom States
   useEffect(() => {
-    if (!mapRef.current || !zoomState) return;
+    if (!mapInstance || !zoomState) return;
     if (userHasInteracted) return;
-    const m = mapRef.current;
+    const m = mapInstance;
 
     isProgrammaticRef.current = true;
     const timer = setTimeout(() => {
@@ -441,11 +441,11 @@ const MapBase = forwardRef<MapHandle, Props>(({
     }
 
     return () => clearTimeout(timer);
-  }, [zoomState, markers, userHasInteracted]);
+  }, [mapInstance, zoomState, markers, userHasInteracted]);
 
   // Handle follow mode positioning
   useEffect(() => {
-    if (followMode && mapRef.current) {
+    if (followMode && mapInstance) {
       if (userHasInteracted) return;
       const meMarker = markers.find(m => m.type === 'me');
       if (meMarker) {
@@ -454,16 +454,16 @@ const MapBase = forwardRef<MapHandle, Props>(({
           isProgrammaticRef.current = false;
         }, 600);
 
-        mapRef.current.panTo({ lat: meMarker.lat, lng: meMarker.lng });
-        mapRef.current.setTilt(45);
+        mapInstance.panTo({ lat: meMarker.lat, lng: meMarker.lng });
+        mapInstance.setTilt(45);
         if (meMarker.heading !== undefined) {
-          mapRef.current.setHeading(meMarker.heading);
+          mapInstance.setHeading(meMarker.heading);
         }
 
         return () => clearTimeout(timer);
       }
     }
-  }, [followMode, markers, userHasInteracted]);
+  }, [followMode, mapInstance, markers, userHasInteracted]);
 
   if (!isLoaded) return (
     <div className={className} style={{ background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
