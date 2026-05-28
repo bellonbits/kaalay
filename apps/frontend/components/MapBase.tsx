@@ -1,5 +1,5 @@
 'use client';
-import { GoogleMap, Circle, MarkerF, Polyline } from '@react-google-maps/api';
+import { GoogleMap, Circle, MarkerF } from '@react-google-maps/api';
 import { useRef, useCallback, useEffect, forwardRef, useImperativeHandle, useMemo, useState } from 'react';
 import { useGoogleMaps } from './GoogleMapsProvider';
 import { getGridSection } from '../lib/api';
@@ -88,7 +88,6 @@ const MapBase = forwardRef<MapHandle, Props>(({
   const { isLoaded } = useGoogleMaps();
   const mapRef = useRef<google.maps.Map | null>(null);
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
-  const [drawCoords, setDrawCoords] = useState<google.maps.LatLng[]>([]);
   const gridFeatures = useRef<google.maps.Data.Feature[]>([]);
   const gridTimeoutRef = useRef<any>(null);
 
@@ -224,7 +223,15 @@ const MapBase = forwardRef<MapHandle, Props>(({
 
   const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
 
+  // Native polyline refs — draw directly on map, bypasses React wrapper race condition
+  const glowPolyRef = useRef<google.maps.Polyline | null>(null);
+  const mainPolyRef = useRef<google.maps.Polyline | null>(null);
+
   const onUnmount = useCallback(() => {
+    glowPolyRef.current?.setMap(null);
+    mainPolyRef.current?.setMap(null);
+    glowPolyRef.current = null;
+    mainPolyRef.current = null;
     mapRef.current = null;
     setMapInstance(null);
   }, []);
@@ -330,76 +337,90 @@ const MapBase = forwardRef<MapHandle, Props>(({
     };
   }, [mapInstance, isSelectingPickup, onCenterPinChange]);
 
-  // Route drawing animation
+  // ── NATIVE POLYLINE DRAWING ──────────────────────────────────────────────────
+  // Draws directly on the Google Maps instance (bypasses React wrapper race condition).
+  // Sky-blue route line — always visible: uses direct bearing when directions unavailable.
   useEffect(() => {
-    if (!directions) {
-      if (!memoizedRouteTo) {
-        setDrawCoords([]);
-      }
-      return;
-    }
-    let path = [...directions.routes[0].overview_path];
-    if (memoizedRouteFrom && path.length > 0) {
-      const startLatLng = new google.maps.LatLng(memoizedRouteFrom.lat, memoizedRouteFrom.lng);
-      const firstPoint = path[0];
-      const isDifferent = Math.abs(startLatLng.lat() - firstPoint.lat()) > 0.0001 || 
-                          Math.abs(startLatLng.lng() - firstPoint.lng()) > 0.0001;
-      if (isDifferent) {
-        path = [startLatLng, ...path];
-      }
-    }
-    let progress = 0;
-    const totalPoints = path.length;
-    let animId: number;
+    // Clear existing native polylines on every re-run
+    glowPolyRef.current?.setMap(null);
+    mainPolyRef.current?.setMap(null);
+    glowPolyRef.current = null;
+    mainPolyRef.current = null;
 
-    const drawRouteAnimation = () => {
-      progress += Math.max(1, Math.floor(totalPoints / 25)); // Smooth grow route polyline
-      if (progress >= totalPoints) {
-        setDrawCoords(path);
-        return;
+    if (!mapInstance || !isLoaded || !memoizedRouteTo) return;
+
+    const origin = memoizedRouteFrom || memoizedCenter;
+    let path: (google.maps.LatLng | google.maps.LatLngLiteral)[] = [];
+
+    if (forceDirect || !directions) {
+      // Always draw a direct bearing line: forceDirect mode OR directions API failed/pending
+      path = [
+        { lat: origin.lat, lng: origin.lng },
+        { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
+      ];
+    } else if (directions.routes[0]?.overview_path) {
+      // Use the road-mapped route from Directions API
+      path = directions.routes[0].overview_path as unknown as google.maps.LatLng[];
+      // Prepend actual origin if it differs from the first route point
+      if (memoizedRouteFrom && path.length > 0) {
+        const first = path[0] as google.maps.LatLng;
+        const fLat = typeof first.lat === 'function' ? first.lat() : (first as any).lat;
+        const fLng = typeof first.lng === 'function' ? first.lng() : (first as any).lng;
+        if (Math.abs(memoizedRouteFrom.lat - fLat) > 0.0001 || Math.abs(memoizedRouteFrom.lng - fLng) > 0.0001) {
+          path = [{ lat: memoizedRouteFrom.lat, lng: memoizedRouteFrom.lng }, ...path];
+        }
       }
-      setDrawCoords(path.slice(0, progress));
-      animId = requestAnimationFrame(drawRouteAnimation);
-    };
-    animId = requestAnimationFrame(drawRouteAnimation);
+    }
+
+    if (path.length < 2) return;
+
+    // Glow layer: wide, translucent sky blue halo
+    glowPolyRef.current = new google.maps.Polyline({
+      path,
+      map: mapInstance,
+      strokeColor: '#38bdf8',
+      strokeWeight: 14,
+      strokeOpacity: 0.22,
+      geodesic: true,
+      zIndex: 1,
+    });
+
+    // Primary layer: solid sky blue line
+    mainPolyRef.current = new google.maps.Polyline({
+      path,
+      map: mapInstance,
+      strokeColor: '#0ea5e9',
+      strokeWeight: 5,
+      strokeOpacity: 1.0,
+      geodesic: true,
+      zIndex: 2,
+    });
 
     return () => {
-      if (animId) cancelAnimationFrame(animId);
+      glowPolyRef.current?.setMap(null);
+      mainPolyRef.current?.setMap(null);
+      glowPolyRef.current = null;
+      mainPolyRef.current = null;
     };
-  }, [directions, memoizedRouteFrom, memoizedRouteTo]);
+  }, [mapInstance, isLoaded, directions, memoizedRouteTo, memoizedRouteFrom, memoizedCenter, forceDirect]);
 
+  // ── DIRECTIONS API FETCH ─────────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapInstance || !isLoaded || !memoizedRouteTo) {
+    if (!mapInstance || !isLoaded || !memoizedRouteTo || forceDirect) {
       setDirections(null);
       return;
     }
     const origin = memoizedRouteFrom || memoizedCenter;
-
-    if (forceDirect) {
-      setDirections(null);
-      setDrawCoords([
-        new google.maps.LatLng(origin.lat, origin.lng),
-        new google.maps.LatLng(memoizedRouteTo.lat, memoizedRouteTo.lng)
-      ]);
-      return;
-    }
-
     const ds = new google.maps.DirectionsService();
-    const mode = travelMode === 'WALKING' ? google.maps.TravelMode.WALKING : 
-                 travelMode === 'BICYCLING' ? google.maps.TravelMode.BICYCLING : 
-                 travelMode === 'TRANSIT' ? google.maps.TravelMode.TRANSIT : 
+    const mode = travelMode === 'WALKING' ? google.maps.TravelMode.WALKING :
+                 travelMode === 'BICYCLING' ? google.maps.TravelMode.BICYCLING :
+                 travelMode === 'TRANSIT' ? google.maps.TravelMode.TRANSIT :
                  google.maps.TravelMode.DRIVING;
     ds.route({ origin, destination: memoizedRouteTo, travelMode: mode }, (res, status) => {
-      if (status === 'OK' && res) {
-        setDirections(res);
-      } else {
-        // Fallback for off-road/remote regions: Draw a direct straight-line path!
-        setDirections(null);
-        setDrawCoords([
-          new google.maps.LatLng(origin.lat, origin.lng),
-          new google.maps.LatLng(memoizedRouteTo.lat, memoizedRouteTo.lng)
-        ]);
-      }
+      // On success upgrade to road-mapped route; on fail the native effect
+      // already shows a direct bearing line (directions stays null)
+      if (status === 'OK' && res) setDirections(res);
+      else setDirections(null);
     });
   }, [mapInstance, isLoaded, memoizedRouteTo, memoizedRouteFrom, memoizedCenter, travelMode, forceDirect]);
 
@@ -561,30 +582,7 @@ const MapBase = forwardRef<MapHandle, Props>(({
         )}
 
 
-        {drawCoords.length > 0 && (
-          <>
-            {/* Wider translucent glowing base polyline */}
-            <Polyline
-              path={drawCoords}
-              options={{
-                strokeColor: !directions ? '#16a34a' : '#FFD600',
-                strokeWeight: 10,
-                strokeOpacity: 0.25,
-                geodesic: true
-              }}
-            />
-            {/* Primary active forward route polyline */}
-            <Polyline
-              path={drawCoords}
-              options={{
-                strokeColor: !directions ? '#16a34a' : '#000000',
-                strokeWeight: 5,
-                strokeOpacity: 0.95,
-                geodesic: true
-              }}
-            />
-          </>
-        )}
+        {/* Route polylines are drawn natively on mapInstance via useRef — see glowPolyRef / mainPolyRef above */}
 
         {routeTo && (
           <>
