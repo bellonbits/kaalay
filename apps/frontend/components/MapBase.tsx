@@ -672,6 +672,7 @@ const MapBase = forwardRef<MapHandle, Props>(({
           let icon: google.maps.Icon | google.maps.Symbol;
 
           if (m.type === 'me') {
+            // Precise GPS blue dot — kept small & exact for accuracy
             icon = {
               path: google.maps.SymbolPath.CIRCLE,
               scale: 9,
@@ -683,24 +684,33 @@ const MapBase = forwardRef<MapHandle, Props>(({
           } else if (m.type === 'car') {
             icon = imgIcon(m.category === 'bike' ? '/icon-bike.png' : '/icon-taxi.png', 48);
           } else if (m.type === 'request') {
-            // High visibility host pin, styled in Dark Blue (#000080)
+            // 3D navy blue location pin for pickup / request waypoints
             icon = {
-              path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
-              fillColor: '#000080', fillOpacity: 1,
-              strokeColor: '#FFFFFF', strokeWeight: 2,
-              scale: 1.5, anchor: new google.maps.Point(12, 22),
+              url: '/icon-3d-pin-blue.png',
+              scaledSize: new google.maps.Size(52, 62),
+              anchor: new google.maps.Point(26, 58),
             };
           } else if (m.type === 'place') {
+            // 3D yellow destination pin for saved places
             icon = {
-              path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
-              fillColor: '#8E2DE2', fillOpacity: 1,
-              strokeColor: '#FFFFFF', strokeWeight: 2.5,
-              scale: 1.4, anchor: new google.maps.Point(12, 22),
+              url: '/icon-3d-dest-pin.png',
+              scaledSize: new google.maps.Size(48, 58),
+              anchor: new google.maps.Point(24, 54),
             };
           } else if (m.type === 'tracked') {
-            icon = { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#000080', fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 };
+            // 3D yellow destination pin for tracked people/destinations
+            icon = {
+              url: '/icon-3d-dest-pin.png',
+              scaledSize: new google.maps.Size(48, 58),
+              anchor: new google.maps.Point(24, 54),
+            };
           } else {
-            icon = { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#000080', fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 };
+            // Fallback 3D blue pin
+            icon = {
+              url: '/icon-3d-pin-blue.png',
+              scaledSize: new google.maps.Size(48, 58),
+              anchor: new google.maps.Point(24, 54),
+            };
           }
 
           return (
@@ -743,27 +753,40 @@ const MapBase = forwardRef<MapHandle, Props>(({
         )}
       </GoogleMap>
 
-      {/* Fixed centre pickup pin */}
+      {/* Fixed centre pickup pin — 3D icon */}
       {isSelectingPickup && (
-        <div className="absolute pointer-events-none" style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 40 }}>
-          <div className="pulse-ring-element" />
+        <div
+          className="absolute pointer-events-none"
+          style={{ left: '50%', top: '50%', transform: 'translate(-50%, -100%)', zIndex: 40 }}
+        >
+          {/* Pulsing ground shadow ring */}
           <div
-            className={`absolute left-1/2 rounded-full bg-black/35 blur-[2.5px] pointer-events-none ${isDragging ? 'shadow-active' : 'shadow-idle'}`}
-            style={{ width: 18, height: 5, bottom: -2.5, transform: 'translateX(-50%)' }}
+            className="absolute left-1/2 pointer-events-none transition-all duration-300"
+            style={{
+              bottom: isDragging ? -12 : -6,
+              transform: 'translateX(-50%)',
+              width: isDragging ? 28 : 20,
+              height: isDragging ? 10 : 6,
+              borderRadius: '50%',
+              background: 'rgba(0,0,0,0.22)',
+              filter: 'blur(3px)',
+            }}
           />
-          <div
-            className={`absolute bottom-0 left-1/2 origin-bottom pointer-events-none ${isDragging ? 'pin-active' : 'pin-idle'}`}
-            style={{ transform: 'translateX(-50%)', width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <div className="relative flex flex-col items-center">
-              <div className="w-11 h-11 rounded-full bg-[#000080] border-2 border-white flex items-center justify-center shadow-lg transform translate-y-[-2px]">
-                <div className="w-4 h-4 rounded-full bg-white flex items-center justify-center">
-                  <div className="w-1.5 h-1.5 rounded-full bg-[#000080]" />
-                </div>
-              </div>
-              <div className="w-1 h-3.5 bg-[#000080] transform translate-y-[-3px]" />
-            </div>
-          </div>
+
+          {/* 3D navy pin image — lifts on drag */}
+          <img
+            src="/icon-3d-pin-blue.png"
+            alt="Pickup location"
+            draggable={false}
+            className="pointer-events-none select-none transition-transform duration-300"
+            style={{
+              width: 60,
+              height: 72,
+              objectFit: 'contain',
+              transform: isDragging ? 'translateY(-12px) scale(1.1)' : 'translateY(0px) scale(1)',
+              filter: isDragging ? 'drop-shadow(0 16px 12px rgba(0,0,0,0.35))' : 'drop-shadow(0 8px 6px rgba(0,0,0,0.22))',
+            }}
+          />
         </div>
       )}
 

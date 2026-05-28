@@ -198,11 +198,11 @@ body {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 48px;
-  height: 48px;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
-  background: rgba(255, 214, 0, 0.35);
-  border: 1px solid rgba(255, 214, 0, 0.8);
+  background: rgba(0, 0, 128, 0.08);
+  border: 1.5px solid rgba(0, 0, 128, 0.3);
   pointer-events: none;
   animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
 }

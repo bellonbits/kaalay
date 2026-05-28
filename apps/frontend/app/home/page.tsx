@@ -429,21 +429,21 @@ export default function HomePage() {
         {pickingLocationType && (
           <>
             {/* Top Selection Instructions Card */}
-            <div className="absolute top-12 left-4 right-4 z-40 bg-black/90 backdrop-blur-md rounded-2xl border border-white/10 p-4 flex items-center justify-between shadow-premium animate-slide-down">
+            <div className="absolute top-12 left-4 right-4 z-40 bg-[#000080] backdrop-blur-md rounded-2xl border border-white/20 p-4 flex items-center justify-between shadow-premium animate-slide-down">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-yellow-400 flex items-center justify-center flex-shrink-0 animate-pulse">
+                <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center flex-shrink-0 animate-pulse shadow-sm">
                   📍
                 </div>
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-yellow-400">Map Precision Picker</p>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-white/70">Map Precision Picker</p>
                   <h3 className="text-xs font-black text-white leading-tight">
                     Aim at {pickingLocationType === 'start' ? 'Pickup' : 'Destination'}
                   </h3>
                 </div>
               </div>
-              <div className="text-[10px] font-bold text-gray-300 bg-white/10 px-3 py-1.5 rounded-lg border border-white/5 truncate max-w-[150px]">
+              <div className="text-[10px] font-bold text-white bg-white/15 px-3 py-1.5 rounded-lg border border-white/10 truncate max-w-[150px]">
                 {isPinResolving ? (
-                  <span className="flex items-center gap-1.5"><LoadingOutlined /> Locating...</span>
+                  <span className="flex items-center gap-1.5"><LoadingOutlined className="text-white" /> Locating...</span>
                 ) : (
                   centerPinAddress ? `///${centerPinAddress.words}` : 'Choose spot...'
                 )}
@@ -455,12 +455,12 @@ export default function HomePage() {
               <button 
                 disabled={isPinResolving || !centerPinAddress}
                 onClick={handleConfirmMapPinSelection}
-                className="w-full h-14 bg-[#FFD600] active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all rounded-2xl flex items-center justify-center gap-3 border border-black shadow-lg"
+                className="w-full h-14 bg-[#000080] hover:bg-[#000066] active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition-all rounded-2xl flex items-center justify-center gap-3 border border-white/20 text-white shadow-premium"
               >
                 {isPinResolving ? (
-                  <LoadingOutlined className="text-black text-lg" />
+                  <LoadingOutlined className="text-white text-lg" />
                 ) : (
-                  <span className="text-sm font-black text-black uppercase tracking-wider">Confirm {pickingLocationType === 'start' ? 'Pickup' : 'Destination'}</span>
+                  <span className="text-sm font-black uppercase tracking-wider">Confirm {pickingLocationType === 'start' ? 'Pickup' : 'Destination'}</span>
                 )}
               </button>
             </div>
