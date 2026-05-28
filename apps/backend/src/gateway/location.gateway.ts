@@ -20,6 +20,7 @@ export interface GroupMember {
   heading?: number;
   lastSeen: number;
   socketId: string;
+  isHost?: boolean;
 }
 
 export interface LocationPayload {
@@ -51,6 +52,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   private readonly logger = new Logger(LocationGateway.name);
   private readonly rooms = new Map<string, Map<string, GroupMember>>();
   private readonly viewers = new Map<string, Set<string>>(); // code → set of socket IDs
+  private readonly hosts = new Map<string, string>(); // code → host memberId
 
   constructor(
     private readonly sessionsService: SessionsService,
@@ -70,6 +72,9 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         if (member.socketId === client.id) {
           members.delete(memberId);
           this.server.to(code).emit('member-left', { memberId });
+          if (this.hosts.get(code) === memberId) {
+            this.hosts.delete(code);
+          }
         }
       });
     });
@@ -171,8 +176,23 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     const { code, memberId, name, lat, lng, accuracy, heading } = payload;
     client.join(code);
     if (!this.rooms.has(code)) this.rooms.set(code, new Map());
-    const member: GroupMember = { memberId, name, lat, lng, accuracy, heading, lastSeen: Date.now(), socketId: client.id };
+    
+    const isHost = this.hosts.get(code) === memberId;
+    const member: GroupMember = { 
+      memberId, name, lat, lng, accuracy, heading, 
+      lastSeen: Date.now(), socketId: client.id,
+      isHost: isHost || undefined
+    };
     this.rooms.get(code)!.set(memberId, member);
+
+    // Make sure other members also have their correct isHost status based on hosts map
+    const currentHostId = this.hosts.get(code);
+    if (currentHostId) {
+      this.rooms.get(code)!.forEach((m, id) => {
+        m.isHost = (id === currentHostId);
+      });
+    }
+
     client.emit('member-list', Array.from(this.rooms.get(code)!.values()));
     client.to(code).emit('member-joined', member);
     this.logger.log(`${name} joined group ${code}`);
@@ -202,7 +222,48 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     const { code, memberId } = payload;
     client.leave(code);
     this.rooms.get(code)?.delete(memberId);
+    if (this.hosts.get(code) === memberId) {
+      this.hosts.delete(code);
+    }
     this.server.to(code).emit('member-left', { memberId });
+  }
+
+  @SubscribeMessage('set-host')
+  handleSetHost(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { code: string; memberId: string; name: string },
+  ) {
+    const { code, memberId, name } = payload;
+    this.hosts.set(code, memberId);
+
+    const room = this.rooms.get(code);
+    if (room) {
+      room.forEach((member, id) => {
+        member.isHost = (id === memberId);
+      });
+    }
+
+    this.server.to(code).emit('host-changed', { hostId: memberId, name });
+    this.logger.log(`Host set for room ${code}: ${name} (${memberId})`);
+  }
+
+  @SubscribeMessage('host-location')
+  handleHostLocation(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { code: string; memberId: string; lat: number; lng: number; accuracy?: number; heading?: number },
+  ) {
+    const { code, memberId, lat, lng, accuracy, heading } = payload;
+    const currentHostId = this.hosts.get(code);
+    
+    if (currentHostId === memberId) {
+      client.to(code).emit('host-moved', { lat, lng, accuracy, heading });
+
+      const room = this.rooms.get(code);
+      if (room && room.has(memberId)) {
+        const existing = room.get(memberId)!;
+        room.set(memberId, { ...existing, lat, lng, accuracy, heading, lastSeen: Date.now() });
+      }
+    }
   }
 
   // ── Group session: set meeting point destination ──────────────────────────

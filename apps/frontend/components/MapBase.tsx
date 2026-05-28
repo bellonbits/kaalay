@@ -36,6 +36,15 @@ export interface MarkerData {
   onClick?: () => void;
 }
 
+export interface RouteInfo {
+  distanceMetres: number;
+  distanceText: string;
+  durationSeconds: number;
+  durationText: string;
+  nextStep: string;
+  straightLineMetres: number;
+}
+
 interface Props {
   center: { lat: number; lng: number };
   zoom?: number;
@@ -52,6 +61,8 @@ interface Props {
   zoomState?: 'city' | 'pickup' | 'tracking' | 'navigation';
   travelMode?: 'DRIVING' | 'WALKING' | 'BICYCLING' | 'TRANSIT';
   forceDirect?: boolean;
+  onRouteInfo?: (info: RouteInfo | null) => void;
+  showNavBanner?: boolean;
 }
 
 export interface MapHandle {
@@ -68,13 +79,108 @@ function imgIcon(url: string, size: number): google.maps.Icon {
   };
 }
 
-const MapBase = forwardRef<MapHandle, Props>(({ 
-  center, 
-  zoom = 15, 
-  markers = [], 
-  routeFrom, 
-  routeTo, 
-  className, 
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+
+/** Extract a path array from a DirectionsResult, falling back to leg-steps if
+ *  overview_path is empty (happens on very short routes or certain regions). */
+function extractPath(result: google.maps.DirectionsResult): google.maps.LatLngLiteral[] {
+  const route = result.routes[0];
+  if (!route) return [];
+
+  // Prefer overview_path (pre-simplified, fewer points)
+  if (route.overview_path && route.overview_path.length > 1) {
+    return (route.overview_path as unknown as google.maps.LatLng[]).map(p => ({
+      lat: typeof p.lat === 'function' ? p.lat() : (p as any).lat,
+      lng: typeof p.lng === 'function' ? p.lng() : (p as any).lng,
+    }));
+  }
+
+  // Fallback: reconstruct from every step's path across all legs
+  const points: google.maps.LatLngLiteral[] = [];
+  for (const leg of route.legs) {
+    for (const step of leg.steps) {
+      const stepPath = (step.path ?? []) as unknown as google.maps.LatLng[];
+      for (const p of stepPath) {
+        points.push({
+          lat: typeof p.lat === 'function' ? p.lat() : (p as any).lat,
+          lng: typeof p.lng === 'function' ? p.lng() : (p as any).lng,
+        });
+      }
+    }
+  }
+  return points;
+}
+
+/** Haversine distance in metres between two coordinates. */
+function haversineMetres(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const R = 6_371_000;
+  const dLat = (b.lat - a.lat) * (Math.PI / 180);
+  const dLon = (b.lng - a.lng) * (Math.PI / 180);
+  const sinLat = Math.sin(dLat / 2);
+  const sinLon = Math.sin(dLon / 2);
+  const aa =
+    sinLat * sinLat +
+    Math.cos(a.lat * (Math.PI / 180)) *
+      Math.cos(b.lat * (Math.PI / 180)) *
+      sinLon * sinLon;
+  return R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
+}
+
+function extractRouteInfo(result: google.maps.DirectionsResult, slm: number): RouteInfo | null {
+  const leg = result.routes[0]?.legs[0];
+  if (!leg) return null;
+  const rawStep = result.routes[0].legs[0].steps[0]?.instructions ?? '';
+  return {
+    distanceMetres:    leg.distance?.value   ?? 0,
+    distanceText:      leg.distance?.text    ?? '',
+    durationSeconds:   leg.duration?.value   ?? 0,
+    durationText:      leg.duration?.text    ?? '',
+    nextStep:          rawStep.replace(/<[^>]+>/g, '').trim(),
+    straightLineMetres: slm,
+  };
+}
+
+function NavBanner({ info, travelMode }: { info: RouteInfo; travelMode?: string }) {
+  const icon = travelMode === 'WALKING' ? '🚶' : travelMode === 'BICYCLING' ? '🚲' : travelMode === 'TRANSIT' ? '🚌' : '🚗';
+  return (
+    <div style={{
+      position: 'absolute', bottom: 24, left: 12, right: 12, zIndex: 50,
+      background: '#000080', borderRadius: 20, boxShadow: '0 8px 32px rgba(0,0,0,0.28)',
+      padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, pointerEvents: 'none',
+    }}>
+      <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#FFFFFF', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>
+        {icon}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255, 255, 255, 0.6)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 2 }}>Next</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#FFFFFF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {info.nextStep || 'Follow the route'}
+        </div>
+      </div>
+      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        <div style={{ fontSize: 20, fontWeight: 900, color: '#FFFFFF', lineHeight: 1 }}>
+          {info.distanceText || (info.straightLineMetres >= 1000 ? `${(info.straightLineMetres/1000).toFixed(1)} km` : `${Math.round(info.straightLineMetres)} m`)}
+        </div>
+        {info.durationText && (
+          <div style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.7)', marginTop: 2 }}>{info.durationText}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── COMPONENT ─────────────────────────────────────────────────────────────────
+
+const MapBase = forwardRef<MapHandle, Props>(({
+  center,
+  zoom = 15,
+  markers = [],
+  routeFrom,
+  routeTo,
+  className,
   onClick,
   isSelectingPickup = false,
   onCenterPinChange,
@@ -83,158 +189,149 @@ const MapBase = forwardRef<MapHandle, Props>(({
   onFollowModeChange,
   zoomState,
   travelMode,
-  forceDirect = false
+  forceDirect = false,
+  onRouteInfo,
+  showNavBanner = false,
 }, ref) => {
   const { isLoaded } = useGoogleMaps();
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
-  const gridFeatures = useRef<google.maps.Data.Feature[]>([]);
-  const gridTimeoutRef = useRef<any>(null);
 
+  // ── Map instance ──────────────────────────────────────────────────────────
+  const mapRef           = useRef<google.maps.Map | null>(null);
+  const mapInstanceRef   = useRef<google.maps.Map | null>(null);
+  const [mapReady, setMapReady] = useState(false);
+
+  // ── Polyline refs (drawn natively) ────────────────────────────────────────
+  const glowPolyRef = useRef<google.maps.Polyline | null>(null);
+  const mainPolyRef = useRef<google.maps.Polyline | null>(null);
+
+  // ── Directions state ──────────────────────────────────────────────────────
+  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
+  const [routeInfo,  setRouteInfo]  = useState<RouteInfo | null>(null);
+
+  // ── Stable origin ref: only update when user has moved > 15 m ────────────
+  // KEY FIX: initialise stableOriginRef from props immediately so the
+  // first polyline draw has a valid origin (was null before, causing no line).
+  const stableOriginRef = useRef<{ lat: number; lng: number }>(routeFrom ?? center);
+
+  useEffect(() => {
+    const next = routeFrom ?? center;
+    const prev = stableOriginRef.current;
+    if (haversineMetres(prev, next) > 15) {
+      stableOriginRef.current = { lat: next.lat, lng: next.lng };
+    }
+  }, [routeFrom?.lat, routeFrom?.lng, center.lat, center.lng]);
+
+  // Memo wrappers (keyed on coordinates so object refs are stable)
+  const memoizedRouteTo = useMemo(
+    () => routeTo ? { lat: routeTo.lat, lng: routeTo.lng } : undefined,
+    [routeTo?.lat, routeTo?.lng],
+  );
+
+  const memoizedCenter = useMemo(
+    () => ({ lat: center.lat, lng: center.lng }),
+    [center.lat, center.lng],
+  );
+
+  // Distance to destination (metres)
   const distToDest = useMemo(() => {
     if (!routeFrom || !routeTo) return null;
-    const R = 6371; // Earth radius in km
-    const dLat = (routeTo.lat - routeFrom.lat) * Math.PI / 180;
-    const dLon = (routeTo.lng - routeFrom.lng) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(routeFrom.lat * Math.PI / 180) * Math.cos(routeTo.lat * Math.PI / 180) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c * 1000; // Distance in meters
+    return haversineMetres(routeFrom, routeTo);
   }, [routeFrom?.lat, routeFrom?.lng, routeTo?.lat, routeTo?.lng]);
 
-  const memoizedRouteFrom = useMemo(() => {
-    if (!routeFrom) return undefined;
-    return { lat: routeFrom.lat, lng: routeFrom.lng };
-  }, [routeFrom?.lat, routeFrom?.lng]);
+  // ── Grid ──────────────────────────────────────────────────────────────────
+  const gridFeatures    = useRef<google.maps.Data.Feature[]>([]);
+  const gridTimeoutRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const memoizedRouteTo = useMemo(() => {
-    if (!routeTo) return undefined;
-    return { lat: routeTo.lat, lng: routeTo.lng };
-  }, [routeTo?.lat, routeTo?.lng]);
-
-  const memoizedCenter = useMemo(() => {
-    return { lat: center.lat, lng: center.lng };
-  }, [center?.lat, center?.lng]);
-
-  // Fixed pin animation dragging state
-  const [isDragging, setIsDragging] = useState(false);
-
-  // User interaction lock states & refs to prevent programmatic updates from resetting manual zooms/pans
+  // ── Drag / user-interaction locks ─────────────────────────────────────────
+  const [isDragging, setIsDragging]               = useState(false);
   const [userHasInteracted, setUserHasInteracted] = useState(false);
-  const [currentMapCenter, setCurrentMapCenter] = useState<{ lat: number; lng: number }>(center);
-  const [currentMapZoom, setCurrentMapZoom] = useState<number>(zoom);
+  const [currentMapCenter, setCurrentMapCenter]   = useState(center);
+  const [currentMapZoom, setCurrentMapZoom]       = useState(zoom);
+  const isProgrammaticRef    = useRef(false);
+  const lastZoomStateRef     = useRef<string | undefined>(undefined);
+  const lastFollowModeRef    = useRef<boolean>(false);
 
-  const isProgrammaticRef = useRef(false);
-  const lastZoomStateRef = useRef<string | undefined>(undefined);
-  const lastFollowModeRef = useRef<boolean>(false);
-
-  // Synchronize center and zoom props if user has not interacted
   useEffect(() => {
-    if (!userHasInteracted) {
-      setCurrentMapCenter({ lat: center.lat, lng: center.lng });
-    }
+    if (!userHasInteracted) setCurrentMapCenter({ lat: center.lat, lng: center.lng });
   }, [center.lat, center.lng, userHasInteracted]);
 
   useEffect(() => {
-    if (!userHasInteracted) {
-      setCurrentMapZoom(zoom);
-    }
+    if (!userHasInteracted) setCurrentMapZoom(zoom);
   }, [zoom, userHasInteracted]);
 
-  // Reset interaction lock on prop changes/transitions
   useEffect(() => {
     if (zoomState !== lastZoomStateRef.current || followMode !== lastFollowModeRef.current) {
-      lastZoomStateRef.current = zoomState;
+      lastZoomStateRef.current  = zoomState;
       lastFollowModeRef.current = followMode;
       setUserHasInteracted(false);
     }
   }, [zoomState, followMode]);
 
-  // Linear Interpolation (LERP) for driver movement
-  const [liveCars, setLiveCars] = useState<MarkerData[]>([]);
-  const targetCarsRef = useRef<MarkerData[]>([]);
-  const interpolationLoopRef = useRef<number | null>(null);
+  // ── Car LERP animation ────────────────────────────────────────────────────
+  const [liveCars, setLiveCars]       = useState<MarkerData[]>([]);
+  const targetCarsRef                 = useRef<MarkerData[]>([]);
+  const interpolationLoopRef          = useRef<number | null>(null);
 
   useEffect(() => {
     const cars = markers.filter(m => m.type === 'car');
     targetCarsRef.current = cars;
-    if (liveCars.length === 0 && cars.length > 0) {
-      setLiveCars(cars);
-    }
+    if (liveCars.length === 0 && cars.length > 0) setLiveCars(cars);
   }, [markers]);
 
   useEffect(() => {
-    const lerp = (start: number, end: number, amt: number) => (1 - amt) * start + amt * end;
+    const lerp = (s: number, e: number, t: number) => (1 - t) * s + t * e;
 
-    const animateDriverMovement = () => {
-      setLiveCars(prevCars => {
-        if (targetCarsRef.current.length === 0) {
-          return prevCars.length === 0 ? prevCars : [];
-        }
-
+    const animate = () => {
+      setLiveCars(prev => {
+        if (targetCarsRef.current.length === 0) return prev.length === 0 ? prev : [];
         let changed = false;
-        const nextCars = targetCarsRef.current.map(target => {
-          const prev = prevCars.find(p => p.label === target.label) || 
-                       prevCars.find(p => Math.abs(p.lat - target.lat) < 0.1 && Math.abs(p.lng - target.lng) < 0.1);
-          if (!prev) {
-            changed = true;
-            return target;
-          }
+        const next = targetCarsRef.current.map(target => {
+          const p = prev.find(x => x.label === target.label)
+                  ?? prev.find(x => Math.abs(x.lat - target.lat) < 0.1 && Math.abs(x.lng - target.lng) < 0.1);
+          if (!p) { changed = true; return target; }
 
-          const lerpFactor = 0.08; // High-frequency smoothing factor
-          const lat = lerp(prev.lat, target.lat, lerpFactor);
-          const lng = lerp(prev.lng, target.lng, lerpFactor);
+          const f = 0.08;
+          const lat = lerp(p.lat, target.lat, f);
+          const lng = lerp(p.lng, target.lng, f);
 
-          // Angle LERP wrapping around 360 degrees
-          let heading = prev.heading ?? 0;
-          const targetHeading = target.heading ?? 0;
-          let diff = targetHeading - heading;
+          let heading = p.heading ?? 0;
+          let diff = (target.heading ?? 0) - heading;
           while (diff < -180) diff += 360;
-          while (diff > 180) diff -= 360;
-          heading = (heading + diff * lerpFactor + 360) % 360;
+          while (diff >  180) diff -= 360;
+          heading = (heading + diff * f + 360) % 360;
 
-          // Check if vehicle has moved significantly
-          const latDiff = Math.abs(lat - prev.lat);
-          const lngDiff = Math.abs(lng - prev.lng);
-          const headDiff = Math.abs(heading - (prev.heading ?? 0));
-          if (latDiff > 0.00001 || lngDiff > 0.00001 || headDiff > 0.1) {
-            changed = true;
-          }
+          if (
+            Math.abs(lat - p.lat) > 0.00001 ||
+            Math.abs(lng - p.lng) > 0.00001 ||
+            Math.abs(heading - (p.heading ?? 0)) > 0.1
+          ) changed = true;
 
           return { ...target, lat, lng, heading };
         });
-
-        if (prevCars.length !== targetCarsRef.current.length) {
-          changed = true;
-        }
-
-        return changed ? nextCars : prevCars;
+        if (prev.length !== targetCarsRef.current.length) changed = true;
+        return changed ? next : prev;
       });
-      interpolationLoopRef.current = requestAnimationFrame(animateDriverMovement);
+      interpolationLoopRef.current = requestAnimationFrame(animate);
     };
 
-    interpolationLoopRef.current = requestAnimationFrame(animateDriverMovement);
-    return () => {
-      if (interpolationLoopRef.current) cancelAnimationFrame(interpolationLoopRef.current);
-    };
+    interpolationLoopRef.current = requestAnimationFrame(animate);
+    return () => { if (interpolationLoopRef.current) cancelAnimationFrame(interpolationLoopRef.current); };
   }, []);
 
-  const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const [mapReady, setMapReady] = useState(false);
-
-  // Native polyline refs — draw directly on map, bypasses React wrapper race condition
-  const glowPolyRef = useRef<google.maps.Polyline | null>(null);
-  const mainPolyRef = useRef<google.maps.Polyline | null>(null);
+  // ── Map callbacks ─────────────────────────────────────────────────────────
+  const onLoad = useCallback((m: google.maps.Map) => {
+    mapRef.current         = m;
+    mapInstanceRef.current = m;
+    setMapReady(true);
+  }, []);
 
   const onUnmount = useCallback(() => {
     glowPolyRef.current?.setMap(null);
     mainPolyRef.current?.setMap(null);
-    glowPolyRef.current = null;
-    mainPolyRef.current = null;
-    mapRef.current = null;
-    mapInstanceRef.current = null;
+    glowPolyRef.current        = null;
+    mainPolyRef.current        = null;
+    mapRef.current             = null;
+    mapInstanceRef.current     = null;
     setMapReady(false);
   }, []);
 
@@ -243,112 +340,169 @@ const MapBase = forwardRef<MapHandle, Props>(({
     disableDefaultUI: true,
     gestureHandling: 'greedy',
     clickableIcons: false,
-    preventGoogleFontsLoading: true
+    preventGoogleFontsLoading: true,
   }), []);
 
   useImperativeHandle(ref, () => ({
-    panTo: (lat: number, lng: number) => {
+    panTo: (lat, lng) => {
       setUserHasInteracted(false);
       isProgrammaticRef.current = true;
       mapRef.current?.panTo({ lat, lng });
-      setTimeout(() => {
-        isProgrammaticRef.current = false;
-      }, 600);
+      setTimeout(() => { isProgrammaticRef.current = false; }, 600);
     },
-    setZoom: (z: number) => {
+    setZoom: (z) => {
       setUserHasInteracted(false);
       isProgrammaticRef.current = true;
       mapRef.current?.setZoom(z);
-      setTimeout(() => {
-        isProgrammaticRef.current = false;
-      }, 600);
+      setTimeout(() => { isProgrammaticRef.current = false; }, 600);
     },
     getMap: () => mapRef.current,
   }));
 
-  const onLoad = useCallback((m: google.maps.Map) => {
-    mapRef.current = m;
-    mapInstanceRef.current = m;
-    setMapReady(true);
-  }, []);
-
-  // Safe listener registration for map dragging and zoom interactions
+  // ── Drag / zoom listeners ─────────────────────────────────────────────────
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || !mapReady) return;
 
-    const dragStartListener = map.addListener('dragstart', () => {
+    const ds = map.addListener('dragstart', () => {
       setIsDragging(true);
       setUserHasInteracted(true);
-      if (onDraggingStateChange) onDraggingStateChange(true);
-      if (onFollowModeChange) onFollowModeChange(false);
+      onDraggingStateChange?.(true);
+      onFollowModeChange?.(false);
     });
-
-    const dragEndListener = map.addListener('dragend', () => {
+    const de = map.addListener('dragend', () => {
       setIsDragging(false);
-      if (onDraggingStateChange) onDraggingStateChange(false);
+      onDraggingStateChange?.(false);
     });
-
-    const zoomListener = map.addListener('zoom_changed', () => {
+    const zl = map.addListener('zoom_changed', () => {
       if (!isProgrammaticRef.current) {
         setUserHasInteracted(true);
-        if (onFollowModeChange) onFollowModeChange(false);
+        onFollowModeChange?.(false);
       }
     });
 
-    return () => {
-      dragStartListener.remove();
-      dragEndListener.remove();
-      zoomListener.remove();
-    };
+    return () => { ds.remove(); de.remove(); zl.remove(); };
   }, [mapReady, onDraggingStateChange, onFollowModeChange]);
 
-  // Safe listener registration for idle event to handle coordinate resolution and grid loading dynamically
+  // ── Idle listener (grid + center pin) ────────────────────────────────────
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || !mapReady) return;
 
-    const idleListener = map.addListener('idle', async () => {
-      const z = map.getZoom() || 0;
+    const il = map.addListener('idle', async () => {
+      const z = map.getZoom() ?? 0;
       const loadGrid = z >= 17.5;
       map.data.setStyle({ visible: loadGrid, strokeColor: '#777777', strokeWeight: 0.5 });
 
-      // Notify parent of central position update when selection is active
-      const mapCenter = map.getCenter();
-      if (mapCenter && isSelectingPickup && onCenterPinChange) {
-        onCenterPinChange(mapCenter.lat(), mapCenter.lng());
+      const mc = map.getCenter();
+      if (mc && isSelectingPickup && onCenterPinChange) {
+        onCenterPinChange(mc.lat(), mc.lng());
       }
 
       if (!loadGrid) return;
-      if (gridTimeoutRef.current) {
-        clearTimeout(gridTimeoutRef.current);
-      }
+      if (gridTimeoutRef.current) clearTimeout(gridTimeoutRef.current);
       gridTimeoutRef.current = setTimeout(async () => {
-         const bounds = map.getBounds();
+        const bounds = map.getBounds();
         if (!bounds) return;
         try {
           const geoJson = await getGridSection(
             bounds.getSouthWest().lat(), bounds.getSouthWest().lng(),
-            bounds.getNorthEast().lat(), bounds.getNorthEast().lng()
+            bounds.getNorthEast().lat(), bounds.getNorthEast().lng(),
           );
           gridFeatures.current.forEach(f => map.data.remove(f));
           if (geoJson?.features) gridFeatures.current = map.data.addGeoJson(geoJson);
-        } catch (e) {}
+        } catch { /* ignore */ }
       }, 350);
     });
 
-    return () => {
-      idleListener.remove();
-    };
+    return () => { il.remove(); };
   }, [mapReady, isSelectingPickup, onCenterPinChange]);
 
-  // ── NATIVE POLYLINE DRAWING ──────────────────────────────────────────────────
-  // Draws directly on the Google Maps instance (bypasses React wrapper race condition).
-  // Sky-blue route line — always visible: uses direct bearing when directions unavailable.
+  // ── DIRECTIONS FETCH (debounced 800 ms, no re-fetch if dest unchanged) ────
+  //
+  // KEY FIX: We use a dedicated debounce ref so that rapid GPS position
+  // updates (every 1-3 s) don't fire a Directions API call each time.
+  // Only the DESTINATION change triggers a real fetch; origin drift < 50 m
+  // just redraws the stitched polyline on the existing result.
+  const dirFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastFetchedDestRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  useEffect(() => {
+    if (!mapReady || !isLoaded || !memoizedRouteTo || forceDirect) {
+      setDirections(null);
+      setRouteInfo(null);
+      onRouteInfo?.(null);
+      lastFetchedDestRef.current = null;
+      return;
+    }
+
+    // Skip re-fetch if destination hasn't moved more than 5 m
+    const prev = lastFetchedDestRef.current;
+    if (prev && haversineMetres(prev, memoizedRouteTo) < 5) return;
+
+    if (dirFetchTimerRef.current) clearTimeout(dirFetchTimerRef.current);
+
+    dirFetchTimerRef.current = setTimeout(() => {
+      const origin = stableOriginRef.current ?? memoizedCenter;
+
+      const mode =
+        travelMode === 'WALKING'   ? google.maps.TravelMode.WALKING   :
+        travelMode === 'BICYCLING' ? google.maps.TravelMode.BICYCLING :
+        travelMode === 'TRANSIT'   ? google.maps.TravelMode.TRANSIT   :
+        google.maps.TravelMode.DRIVING;
+
+      new google.maps.DirectionsService().route(
+        {
+          origin: { lat: origin.lat, lng: origin.lng },
+          destination: { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
+          travelMode: mode,
+          optimizeWaypoints: false,
+          provideRouteAlternatives: false,
+        },
+        (res, status) => {
+          if (status === 'OK' && res) {
+            setDirections(res);
+            lastFetchedDestRef.current = { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng };
+            const slm = distToDest ?? haversineMetres(origin, memoizedRouteTo);
+            const info = extractRouteInfo(res, slm);
+            setRouteInfo(info);
+            onRouteInfo?.(info);
+          } else {
+            setDirections(null);
+            const slm = distToDest;
+            if (slm !== null) {
+              const fb: RouteInfo = {
+                distanceMetres: slm,
+                distanceText: slm >= 1000 ? `${(slm/1000).toFixed(1)} km` : `${Math.round(slm)} m`,
+                durationSeconds: 0,
+                durationText: '',
+                nextStep: 'Head towards destination',
+                straightLineMetres: slm,
+              };
+              setRouteInfo(fb);
+              onRouteInfo?.(fb);
+            } else {
+              setRouteInfo(null);
+              onRouteInfo?.(null);
+            }
+          }
+        },
+      );
+    }, 800); // 800 ms debounce — prevents hammering the API on every GPS tick
+
+    return () => { if (dirFetchTimerRef.current) clearTimeout(dirFetchTimerRef.current); };
+  // Note: stableOriginRef is a ref, intentionally NOT in deps — we don't want
+  // origin drift to trigger re-fetches. Only destination + mode changes do.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, isLoaded, memoizedRouteTo?.lat, memoizedRouteTo?.lng, travelMode, forceDirect, distToDest]);
+
+  // ── NATIVE POLYLINE DRAWING ───────────────────────────────────────────────
+  //
+  // Redraws whenever position updates (smooth live tracking) but re-uses the
+  // cached directions result so no extra API call is made.
   useEffect(() => {
     const map = mapInstanceRef.current;
 
-    // Clear existing native polylines on every re-run
     glowPolyRef.current?.setMap(null);
     mainPolyRef.current?.setMap(null);
     glowPolyRef.current = null;
@@ -356,51 +510,51 @@ const MapBase = forwardRef<MapHandle, Props>(({
 
     if (!map || !mapReady || !isLoaded || !memoizedRouteTo) return;
 
-    const origin = memoizedRouteFrom || memoizedCenter;
+    const origin = stableOriginRef.current;  // always valid now
     let path: google.maps.LatLngLiteral[] = [];
 
     if (forceDirect || !directions) {
-      // Direct bearing line — exact start to exact end
+      // Straight-line bearing (used when Directions API fails or is disabled)
       path = [
         { lat: origin.lat, lng: origin.lng },
         { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
       ];
-    } else if (directions.routes[0]?.overview_path) {
-      const routePath = directions.routes[0].overview_path as unknown as google.maps.LatLng[];
+    } else {
+      const middle = extractPath(directions); // uses overview_path with legs fallback
 
-      // Convert to plain literals
-      const middle = routePath.map(p => ({
-        lat: typeof p.lat === 'function' ? p.lat() : (p as any).lat,
-        lng: typeof p.lng === 'function' ? p.lng() : (p as any).lng,
-      }));
-
-      // Always stitch: exact origin → road path → exact destination
-      // This closes BOTH gaps regardless of API snapping
-      path = [
-        { lat: origin.lat, lng: origin.lng },   // ← exact GPS/w3w start
-        ...middle,
-        { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng }, // ← exact w3w end pin
-      ];
+      if (middle.length < 2) {
+        // Safety: fall back to direct line if extraction returned nothing
+        path = [
+          { lat: origin.lat, lng: origin.lng },
+          { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
+        ];
+      } else {
+        // Stitch exact GPS origin → road path → exact destination pin
+        // This eliminates the "floating gap" between GPS point and road snap
+        path = [
+          { lat: origin.lat, lng: origin.lng },
+          ...middle,
+          { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
+        ];
+      }
     }
 
     if (path.length < 2) return;
 
-    // Glow layer: wide, translucent sky blue halo
+    // Glow layer - Translucent Dark Blue
     glowPolyRef.current = new google.maps.Polyline({
-      path,
-      map,
-      strokeColor: '#38bdf8',
+      path, map,
+      strokeColor: '#000080',
       strokeWeight: 14,
       strokeOpacity: 0.22,
       geodesic: true,
       zIndex: 1,
     });
 
-    // Primary layer: solid sky blue line
+    // Primary line - Solid Dark Blue (#000080)
     mainPolyRef.current = new google.maps.Polyline({
-      path,
-      map,
-      strokeColor: '#0ea5e9',
+      path, map,
+      strokeColor: '#000080',
       strokeWeight: 5,
       strokeOpacity: 1.0,
       geodesic: true,
@@ -413,122 +567,76 @@ const MapBase = forwardRef<MapHandle, Props>(({
       glowPolyRef.current = null;
       mainPolyRef.current = null;
     };
-  }, [mapReady, isLoaded, directions, memoizedRouteTo, memoizedRouteFrom, memoizedCenter, forceDirect]);
+  // stableOriginRef is a ref — we pass routeFrom coords directly to trigger
+  // redraws when position actually moves, without re-fetching directions.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, isLoaded, directions, memoizedRouteTo, routeFrom?.lat, routeFrom?.lng, memoizedCenter, forceDirect]);
 
-  // ── DIRECTIONS API FETCH ─────────────────────────────────────────────────────
+  // ── ZOOM STATE ────────────────────────────────────────────────────────────
   useEffect(() => {
     const map = mapInstanceRef.current;
-    if (!map || !mapReady || !isLoaded || !memoizedRouteTo || forceDirect) {
-      setDirections(null);
-      return;
-    }
-
-    const origin = memoizedRouteFrom || memoizedCenter;
-    const ds = new google.maps.DirectionsService();
-
-    const mode = travelMode === 'WALKING' ? google.maps.TravelMode.WALKING :
-                 travelMode === 'BICYCLING' ? google.maps.TravelMode.BICYCLING :
-                 travelMode === 'TRANSIT' ? google.maps.TravelMode.TRANSIT :
-                 google.maps.TravelMode.DRIVING;
-
-    ds.route(
-      {
-        origin: { lat: origin.lat, lng: origin.lng },
-        destination: { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
-        travelMode: mode,
-        optimizeWaypoints: false,
-        provideRouteAlternatives: false,
-      },
-      (res, status) => {
-        // On success upgrade to road-mapped route; on fail the native effect
-        // already shows a direct bearing line (directions stays null)
-        if (status === 'OK' && res) setDirections(res);
-        else setDirections(null);
-      }
-    );
-  }, [mapReady, isLoaded, memoizedRouteTo, memoizedRouteFrom, memoizedCenter, travelMode, forceDirect]);
-
-  // Handle programmatically Zoom States
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map || !mapReady || !zoomState) return;
-    if (userHasInteracted) return;
+    if (!map || !mapReady || !zoomState || userHasInteracted) return;
 
     isProgrammaticRef.current = true;
-    const timer = setTimeout(() => {
-      isProgrammaticRef.current = false;
-    }, 600);
+    const timer = setTimeout(() => { isProgrammaticRef.current = false; }, 600);
 
     if (zoomState === 'city') {
-      map.setZoom(12);
-      map.setTilt(0);
-      map.setHeading(0);
+      map.setZoom(12); map.setTilt(0); map.setHeading(0);
     } else if (zoomState === 'pickup') {
-      map.setZoom(17.5);
-      map.setTilt(30);
+      map.setZoom(17.5); map.setTilt(30);
     } else if (zoomState === 'tracking') {
-      map.setTilt(0);
-      map.setHeading(0);
-      const meMarker = markers.find(mark => mark.type === 'me');
-      const targetMarker = markers.find(mark => mark.type === 'tracked' || mark.type === 'car');
-      if (meMarker && targetMarker) {
-        const bounds = new google.maps.LatLngBounds();
-        bounds.extend({ lat: meMarker.lat, lng: meMarker.lng });
-        bounds.extend({ lat: targetMarker.lat, lng: targetMarker.lng });
-        map.fitBounds(bounds, { top: 120, bottom: 280, left: 60, right: 60 });
-      } else if (meMarker) {
-        map.panTo({ lat: meMarker.lat, lng: meMarker.lng });
-        map.setZoom(15);
-      } else if (targetMarker) {
-        map.panTo({ lat: targetMarker.lat, lng: targetMarker.lng });
-        map.setZoom(15);
+      map.setTilt(0); map.setHeading(0);
+      const me  = markers.find(m => m.type === 'me');
+      const tgt = markers.find(m => m.type === 'tracked' || m.type === 'car' || m.type === 'request');
+      if (me && tgt) {
+        const b = new google.maps.LatLngBounds();
+        b.extend({ lat: me.lat,  lng: me.lng  });
+        b.extend({ lat: tgt.lat, lng: tgt.lng });
+        map.fitBounds(b, { top: 120, bottom: 280, left: 60, right: 60 });
+      } else if (me) {
+        map.panTo({ lat: me.lat, lng: me.lng }); map.setZoom(15);
+      } else if (tgt) {
+        map.panTo({ lat: tgt.lat, lng: tgt.lng }); map.setZoom(15);
       }
     } else if (zoomState === 'navigation') {
-      map.setZoom(18);
-      map.setTilt(45);
-      const meMarker = markers.find(mark => mark.type === 'me');
-      if (meMarker && meMarker.heading !== undefined) {
-        map.setHeading(meMarker.heading);
-      }
+      map.setZoom(18); map.setTilt(45);
+      const me = markers.find(m => m.type === 'me');
+      if (me?.heading !== undefined) map.setHeading(me.heading);
     }
 
     return () => clearTimeout(timer);
   }, [mapReady, zoomState, markers, userHasInteracted]);
 
-  // Handle follow mode positioning
+  // ── FOLLOW MODE ───────────────────────────────────────────────────────────
   useEffect(() => {
     const map = mapInstanceRef.current;
-    if (followMode && map && mapReady) {
-      if (userHasInteracted) return;
-      const meMarker = markers.find(m => m.type === 'me');
-      if (meMarker) {
-        isProgrammaticRef.current = true;
-        const timer = setTimeout(() => {
-          isProgrammaticRef.current = false;
-        }, 600);
+    if (!followMode || !map || !mapReady || userHasInteracted) return;
 
-        map.panTo({ lat: meMarker.lat, lng: meMarker.lng });
-        map.setTilt(45);
-        if (meMarker.heading !== undefined) {
-          map.setHeading(meMarker.heading);
-        }
+    const me = markers.find(m => m.type === 'me');
+    if (!me) return;
 
-        return () => clearTimeout(timer);
-      }
-    }
+    isProgrammaticRef.current = true;
+    const timer = setTimeout(() => { isProgrammaticRef.current = false; }, 600);
+
+    map.panTo({ lat: me.lat, lng: me.lng });
+    map.setTilt(45);
+    if (me.heading !== undefined) map.setHeading(me.heading);
+
+    return () => clearTimeout(timer);
   }, [followMode, mapReady, markers, userHasInteracted]);
 
+  // ── RENDER ────────────────────────────────────────────────────────────────
   if (!isLoaded) return (
     <div className={className} style={{ background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 rounded-full border-4 border-yellow-400 border-t-transparent animate-spin" />
-        <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Loading Premium Radar...</span>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+        <div style={{ width: 32, height: 32, borderRadius: '50%', border: '4px solid #FFD600', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+        <span style={{ fontSize: 11, fontWeight: 800, color: '#9ca3af', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Loading map…</span>
       </div>
     </div>
   );
 
-  const me = markers.find(m => m.type === 'me');
-  const otherMarkers = markers.filter(m => m.type !== 'car');
+  const me             = markers.find(m => m.type === 'me');
+  const otherMarkers   = markers.filter(m => m.type !== 'car');
   const allRenderedMarkers = [...otherMarkers, ...liveCars];
 
   return (
@@ -555,45 +663,36 @@ const MapBase = forwardRef<MapHandle, Props>(({
               strokeWeight: 3.5,
             };
           } else if (m.type === 'car') {
-            // Check category if it exists
-            const iconUrl = m.category === 'bike' ? '/icon-bike.png' : '/icon-taxi.png';
-            icon = imgIcon(iconUrl, 48);
+            icon = imgIcon(m.category === 'bike' ? '/icon-bike.png' : '/icon-taxi.png', 48);
           } else if (m.type === 'request') {
+            // High visibility host pin, styled in Dark Blue (#000080)
             icon = {
               path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
-              fillColor: '#32B259',
-              fillOpacity: 1,
-              strokeColor: '#FFFFFF',
-              strokeWeight: 2,
-              scale: 1.5,
-              anchor: new google.maps.Point(12, 22),
+              fillColor: '#000080', fillOpacity: 1,
+              strokeColor: '#FFFFFF', strokeWeight: 2,
+              scale: 1.5, anchor: new google.maps.Point(12, 22),
             };
           } else if (m.type === 'place') {
             icon = {
               path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
-              fillColor: '#8E2DE2', // Premium Neon Violet
-              fillOpacity: 1,
-              strokeColor: '#FFFFFF',
-              strokeWeight: 2.5,
-              scale: 1.4,
-              anchor: new google.maps.Point(12, 22),
+              fillColor: '#8E2DE2', fillOpacity: 1,
+              strokeColor: '#FFFFFF', strokeWeight: 2.5,
+              scale: 1.4, anchor: new google.maps.Point(12, 22),
             };
           } else if (m.type === 'tracked') {
-            icon = { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#02CCFE', fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 };
+            icon = { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#000080', fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 };
           } else {
-            icon = { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#FFD600', fillOpacity: 1, strokeColor: '#000000', strokeWeight: 2 };
+            icon = { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#000080', fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 };
           }
-
-          const stableKey = `marker-${m.type}-${m.label ? m.label.replace(/\s+/g, '-') : idx}`;
 
           return (
             <MarkerF
-              key={stableKey}
+              key={`marker-${m.type}-${m.label ? m.label.replace(/\s+/g, '-') : idx}`}
               position={{ lat: m.lat, lng: m.lng }}
               icon={icon}
               title={m.label}
               zIndex={m.type === 'me' ? 20 : m.type === 'car' ? 15 : 10}
-              onClick={() => m.onClick && m.onClick()}
+              onClick={() => m.onClick?.()}
             />
           );
         })}
@@ -606,106 +705,59 @@ const MapBase = forwardRef<MapHandle, Props>(({
           />
         )}
 
-
-        {/* Route polylines are drawn natively on mapInstance via useRef — see glowPolyRef / mainPolyRef above */}
-
         {routeTo && (
           <>
-            {/* Wider glowing target accuracy ring that shrinks as the user gets closer */}
             <Circle
               center={{ lat: routeTo.lat, lng: routeTo.lng }}
-              radius={
-                distToDest !== null
-                  ? Math.min(60, Math.max(10, distToDest))
-                  : 30
-              }
-              options={{
-                fillColor: '#10b981', // Emerald green
-                fillOpacity: 0.08,
-                strokeColor: '#10b981',
-                strokeOpacity: 0.35,
-                strokeWeight: 1.5,
-              }}
+              radius={distToDest !== null ? Math.min(60, Math.max(10, distToDest)) : 30}
+              options={{ fillColor: '#000080', fillOpacity: 0.08, strokeColor: '#000080', strokeOpacity: 0.35, strokeWeight: 1.5 }}
             />
-            {/* Inner lock core ring */}
             <Circle
               center={{ lat: routeTo.lat, lng: routeTo.lng }}
               radius={10}
               options={{
-                fillColor: '#10b981',
-                fillOpacity: 0.18,
-                strokeColor: '#10b981',
-                strokeOpacity: 0.75,
-                strokeWeight: 2,
-                visible: distToDest !== null && distToDest <= 50
+                fillColor: '#000080', fillOpacity: 0.18,
+                strokeColor: '#000080', strokeOpacity: 0.75, strokeWeight: 2,
+                visible: distToDest !== null && distToDest <= 50,
               }}
             />
           </>
         )}
       </GoogleMap>
 
-      {/* 1. FIXED CENTER PICKUP PIN OVERLAY */}
+      {/* Fixed centre pickup pin */}
       {isSelectingPickup && (
-        <div 
-          className="absolute pointer-events-none"
-          style={{
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-            zIndex: 40
-          }}
-        >
-          {/* Animated radar pulsing ring */}
+        <div className="absolute pointer-events-none" style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 40 }}>
           <div className="pulse-ring-element" />
-
-          {/* Scaling bottom drop shadow */}
-          <div 
-            className={`absolute left-1/2 rounded-full bg-black/35 blur-[2.5px] pointer-events-none ${
-              isDragging ? 'shadow-active' : 'shadow-idle'
-            }`}
-            style={{
-              width: 18,
-              height: 5,
-              bottom: -2.5,
-              transform: 'translateX(-50%)'
-            }}
+          <div
+            className={`absolute left-1/2 rounded-full bg-black/35 blur-[2.5px] pointer-events-none ${isDragging ? 'shadow-active' : 'shadow-idle'}`}
+            style={{ width: 18, height: 5, bottom: -2.5, transform: 'translateX(-50%)' }}
           />
-
-          {/* Premium customized visual pin component */}
-          <div 
-            className={`absolute bottom-0 left-1/2 origin-bottom pointer-events-none ${
-              isDragging ? 'pin-active' : 'pin-idle'
-            }`}
-            style={{
-              transform: 'translateX(-50%)',
-              width: 48,
-              height: 48,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
+          <div
+            className={`absolute bottom-0 left-1/2 origin-bottom pointer-events-none ${isDragging ? 'pin-active' : 'pin-idle'}`}
+            style={{ transform: 'translateX(-50%)', width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <div className="relative flex flex-col items-center">
-              {/* Vibrant yellow circle with solid black borders and internal precision lock */}
-              <div className="w-11 h-11 rounded-full bg-[#FFD600] border-2 border-black flex items-center justify-center shadow-lg transform translate-y-[-2px]">
-                <div className="w-4 h-4 rounded-full bg-black flex items-center justify-center">
-                  <div className="w-1.5 h-1.5 rounded-full bg-white" />
+              <div className="w-11 h-11 rounded-full bg-[#000080] border-2 border-white flex items-center justify-center shadow-lg transform translate-y-[-2px]">
+                <div className="w-4 h-4 rounded-full bg-white flex items-center justify-center">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#000080]" />
                 </div>
               </div>
-              {/* Solid needle locking on central pixel */}
-              <div className="w-1 h-3.5 bg-black transform translate-y-[-3px]" />
+              <div className="w-1 h-3.5 bg-[#000080] transform translate-y-[-3px]" />
             </div>
           </div>
         </div>
       )}
 
-      {/* 2. LOCATION CONFIDENCE CHIP (GPS status) — bottom-left, non-intrusive */}
+      {/* GPS accuracy chip */}
       {me?.accuracy && me.accuracy > 20 && (
         <div className="absolute bottom-6 left-4 z-50 bg-black/75 text-white text-[9px] font-black uppercase tracking-[1.2px] px-3 py-1.5 rounded-full flex items-center gap-1.5 backdrop-blur border border-white/10 pointer-events-none">
           <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse flex-shrink-0" />
           <span>GPS fixing…</span>
         </div>
       )}
+
+      {showNavBanner && routeInfo && <NavBanner info={routeInfo} travelMode={travelMode} />}
     </div>
   );
 });

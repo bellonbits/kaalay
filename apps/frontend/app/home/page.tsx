@@ -388,6 +388,11 @@ export default function HomePage() {
   ], [position, sessions, routeDest, isHelper, user, savedPlaces]);
 
   const sheetTranslate = sheetH === 'peek' ? 'calc(100% - 320px)' : sheetH === 'half' ? 'calc(100% - 560px)' : sheetH === 'hidden' ? '100%' : '0px';
+  const mapControlsBottom = 
+    sheetH === 'peek' ? 335 
+    : sheetH === 'half' ? 575 
+    : sheetH === 'hidden' ? 100 
+    : 335;
 
   return (
     <div className="h-full relative overflow-hidden bg-white font-outfit">
@@ -455,7 +460,21 @@ export default function HomePage() {
       </div>
 
       {/* Premium Floating Circular Map Controls */}
-      <div className="absolute right-6 bottom-[335px] z-20 flex flex-col gap-3 pointer-events-none">
+      <div 
+        className="absolute right-6 z-20 flex flex-col gap-3 pointer-events-none transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
+        style={{ bottom: mapControlsBottom }}
+      >
+        {/* Restore Hub Button (Only when hidden) */}
+        {sheetH === 'hidden' && (
+          <button 
+            onClick={() => setSheetH('peek')}
+            className="w-12 h-12 bg-[#000080] text-white rounded-full flex items-center justify-center shadow-premium active:scale-90 transition-all border-none hover:bg-[#000066] pointer-events-auto animate-bounce-in mb-1"
+            title="Show Kaalay Hub"
+          >
+            <MenuOutlined className="text-lg text-white animate-pulse" />
+          </button>
+        )}
+
         {/* Compass Rotate back to North Button */}
         <button 
           onClick={() => {
@@ -505,7 +524,7 @@ export default function HomePage() {
             }
           }}
           className={`w-12 h-12 rounded-full flex items-center justify-center shadow-premium active:scale-90 transition-all border border-gray-50 pointer-events-auto ${
-            followMode ? 'bg-[#FFD600] text-black border-yellow-400 font-bold' : 'bg-white text-black hover:bg-gray-50'
+            followMode ? 'bg-[#000080] text-white border-blue-900 font-bold' : 'bg-white text-black hover:bg-gray-50'
           }`}
         >
           <AimOutlined className={`text-lg ${followMode ? 'animate-pulse' : ''}`} />
@@ -551,17 +570,10 @@ export default function HomePage() {
       )}
 
       {/* Header Overlay (Always Mounted) */}
-      <div className={`absolute top-12 left-0 right-0 px-6 flex items-center justify-between z-30 transition-opacity duration-300 ${!routeDest ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+      <div className={`absolute top-12 left-0 right-0 px-6 flex items-center justify-between z-30 transition-opacity duration-300 ${(!routeDest && !pickingLocationType) ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
         <button className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center shadow-premium active:scale-90 transition-transform">
           <MenuOutlined className="text-xl text-white" />
         </button>
-
-        <div className="px-5 py-2.5 bg-black rounded-full shadow-premium flex items-center gap-3 border border-white/10">
-          <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} />
-          <span className="text-[11px] font-black uppercase tracking-[2px] text-white">
-            {isOnline ? 'Online' : 'Offline'}
-          </span>
-        </div>
 
         <button onClick={() => { setUnreadCount(0); router.push('/notifications'); }} className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center shadow-premium active:scale-90 transition-transform">
           <Badge count={unreadCount} offset={[2, -2]} size="small" color="#FFD600">
@@ -659,13 +671,22 @@ export default function HomePage() {
                 {user?.fullName?.split(' ')[0] ?? 'Hello'}
               </h2>
             </div>
-            <div 
-              onClick={(e) => { e.stopPropagation(); router.push('/profile'); }}
-              className="w-12 h-12 rounded-2xl bg-black flex items-center justify-center shadow-premium active:scale-95 transition-transform"
-            >
-              <span className="text-lg font-black text-white">
-                {user?.fullName?.charAt(0).toUpperCase() ?? <UserOutlined className="text-white" />}
-              </span>
+            <div className="flex items-center gap-2">
+              <div 
+                onClick={(e) => { e.stopPropagation(); router.push('/profile'); }}
+                className="w-12 h-12 rounded-2xl bg-[#000080] flex items-center justify-center shadow-premium active:scale-95 transition-transform cursor-pointer"
+              >
+                <span className="text-lg font-black text-white">
+                  {user?.fullName?.charAt(0).toUpperCase() ?? <UserOutlined className="text-white" />}
+                </span>
+              </div>
+              <button 
+                onClick={(e) => { e.stopPropagation(); setSheetH('hidden'); }}
+                className="w-12 h-12 rounded-2xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center active:scale-95 transition-transform pointer-events-auto"
+                title="Hide Panel"
+              >
+                <CloseOutlined className="text-base text-gray-600 font-bold" />
+              </button>
             </div>
           </div>
         </div>
