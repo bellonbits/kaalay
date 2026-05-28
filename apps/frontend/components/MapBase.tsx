@@ -208,18 +208,15 @@ const MapBase = forwardRef<MapHandle, Props>(({
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [routeInfo,  setRouteInfo]  = useState<RouteInfo | null>(null);
 
-  // ── Stable origin ref: only update when user has moved > 15 m ────────────
-  // KEY FIX: initialise stableOriginRef from props immediately so the
-  // first polyline draw has a valid origin (was null before, causing no line).
-  const stableOriginRef = useRef<{ lat: number; lng: number }>(routeFrom ?? center);
+  // ── Stable origin state: only update when user has moved > 30 m to prevent hammering Directions API ──
+  const [stableOrigin, setStableOrigin] = useState<{ lat: number; lng: number }>(routeFrom ?? center);
 
   useEffect(() => {
     const next = routeFrom ?? center;
-    const prev = stableOriginRef.current;
-    if (haversineMetres(prev, next) > 15) {
-      stableOriginRef.current = { lat: next.lat, lng: next.lng };
+    if (haversineMetres(stableOrigin, next) > 30) {
+      setStableOrigin({ lat: next.lat, lng: next.lng });
     }
-  }, [routeFrom?.lat, routeFrom?.lng, center.lat, center.lng]);
+  }, [routeFrom?.lat, routeFrom?.lng, center.lat, center.lng, stableOrigin]);
 
   // Memo wrappers (keyed on coordinates so object refs are stable)
   const memoizedRouteTo = useMemo(
@@ -420,10 +417,8 @@ const MapBase = forwardRef<MapHandle, Props>(({
 
   // ── DIRECTIONS FETCH (debounced 800 ms, no re-fetch if dest unchanged) ────
   //
-  // KEY FIX: We use a dedicated debounce ref so that rapid GPS position
-  // updates (every 1-3 s) don't fire a Directions API call each time.
-  // Only the DESTINATION change triggers a real fetch; origin drift < 50 m
-  // just redraws the stitched polyline on the existing result.
+  // KEY FIX: Gated by stableOrigin state (updates only on > 30 m movements)
+  // and memoizedRouteTo (updates only on dest changes) to prevent infinite debouncing.
   const dirFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFetchedDestRef = useRef<{ lat: number; lng: number } | null>(null);
 
@@ -443,7 +438,7 @@ const MapBase = forwardRef<MapHandle, Props>(({
     if (dirFetchTimerRef.current) clearTimeout(dirFetchTimerRef.current);
 
     dirFetchTimerRef.current = setTimeout(() => {
-      const origin = stableOriginRef.current ?? memoizedCenter;
+      const origin = stableOrigin;
 
       const mode =
         travelMode === 'WALKING'   ? google.maps.TravelMode.WALKING   :
@@ -488,13 +483,10 @@ const MapBase = forwardRef<MapHandle, Props>(({
           }
         },
       );
-    }, 800); // 800 ms debounce — prevents hammering the API on every GPS tick
+    }, 800);
 
     return () => { if (dirFetchTimerRef.current) clearTimeout(dirFetchTimerRef.current); };
-  // Note: stableOriginRef is a ref, intentionally NOT in deps — we don't want
-  // origin drift to trigger re-fetches. Only destination + mode changes do.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapReady, isLoaded, memoizedRouteTo?.lat, memoizedRouteTo?.lng, travelMode, forceDirect, distToDest]);
+  }, [mapReady, isLoaded, memoizedRouteTo?.lat, memoizedRouteTo?.lng, travelMode, forceDirect, stableOrigin.lat, stableOrigin.lng]);
 
   // ── NATIVE POLYLINE DRAWING ───────────────────────────────────────────────
   //
@@ -510,7 +502,7 @@ const MapBase = forwardRef<MapHandle, Props>(({
 
     if (!map || !mapReady || !isLoaded || !memoizedRouteTo) return;
 
-    const origin = stableOriginRef.current;  // always valid now
+    const origin = routeFrom ?? center;
     let path: google.maps.LatLngLiteral[] = [];
 
     if (forceDirect || !directions) {
@@ -567,10 +559,7 @@ const MapBase = forwardRef<MapHandle, Props>(({
       glowPolyRef.current = null;
       mainPolyRef.current = null;
     };
-  // stableOriginRef is a ref — we pass routeFrom coords directly to trigger
-  // redraws when position actually moves, without re-fetching directions.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapReady, isLoaded, directions, memoizedRouteTo, routeFrom?.lat, routeFrom?.lng, memoizedCenter, forceDirect]);
+  }, [mapReady, isLoaded, directions, memoizedRouteTo, routeFrom?.lat, routeFrom?.lng, center.lat, center.lng, forceDirect]);
 
   // ── ZOOM STATE ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -582,37 +571,66 @@ const MapBase = forwardRef<MapHandle, Props>(({
 
     if (zoomState === 'city') {
       map.setZoom(12); map.setTilt(0); map.setHeading(0);
+      map.panTo(center);
     } else if (zoomState === 'pickup') {
       map.setZoom(17.5); map.setTilt(30);
+      map.panTo(center);
     } else if (zoomState === 'tracking') {
       map.setTilt(0); map.setHeading(0);
-      const me  = markers.find(m => m.type === 'me');
-      const tgt = markers.find(m => m.type === 'tracked' || m.type === 'car' || m.type === 'request');
-      if (me && tgt) {
+      const userMarker = markers.find(m => m.type === 'me' || m.type === 'car');
+      const origin = routeFrom || (userMarker ? { lat: userMarker.lat, lng: userMarker.lng } : center);
+      
+      const targetMarker = markers.find(m => 
+        (m.type === 'tracked' || m.type === 'request' || m.type === 'place') ||
+        (m.type === 'car' && m !== userMarker)
+      );
+      const destination = routeTo || (targetMarker ? { lat: targetMarker.lat, lng: targetMarker.lng } : null);
+
+      if (origin && destination) {
         const b = new google.maps.LatLngBounds();
-        b.extend({ lat: me.lat,  lng: me.lng  });
-        b.extend({ lat: tgt.lat, lng: tgt.lng });
+        b.extend(origin);
+        b.extend(destination);
         map.fitBounds(b, { top: 120, bottom: 280, left: 60, right: 60 });
-      } else if (me) {
-        map.panTo({ lat: me.lat, lng: me.lng }); map.setZoom(15);
-      } else if (tgt) {
-        map.panTo({ lat: tgt.lat, lng: tgt.lng }); map.setZoom(15);
+      } else if (origin) {
+        map.panTo(origin); map.setZoom(15);
+      } else if (destination) {
+        map.panTo(destination); map.setZoom(15);
       }
     } else if (zoomState === 'navigation') {
-      map.setZoom(18); map.setTilt(45);
-      const me = markers.find(m => m.type === 'me');
-      if (me?.heading !== undefined) map.setHeading(me.heading);
+      const userMarker = markers.find(m => m.type === 'me' || m.type === 'car');
+      const origin = routeFrom || (userMarker ? { lat: userMarker.lat, lng: userMarker.lng } : center);
+      const destination = routeTo;
+
+      if (followMode && origin) {
+        map.setZoom(17.5);
+        map.setTilt(45);
+        map.panTo(origin);
+        if (userMarker?.heading !== undefined) {
+          map.setHeading(userMarker.heading);
+        }
+      } else if (origin && destination) {
+        // Fit bounds to show the entire route line from one location to another
+        map.setTilt(0);
+        map.setHeading(0);
+        const b = new google.maps.LatLngBounds();
+        b.extend(origin);
+        b.extend(destination);
+        map.fitBounds(b, { top: 120, bottom: 280, left: 60, right: 60 });
+      } else if (origin) {
+        map.panTo(origin);
+        map.setZoom(16);
+      }
     }
 
     return () => clearTimeout(timer);
-  }, [mapReady, zoomState, markers, userHasInteracted]);
+  }, [mapReady, zoomState, markers, userHasInteracted, routeFrom?.lat, routeFrom?.lng, routeTo?.lat, routeTo?.lng, center.lat, center.lng, followMode]);
 
   // ── FOLLOW MODE ───────────────────────────────────────────────────────────
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!followMode || !map || !mapReady || userHasInteracted) return;
 
-    const me = markers.find(m => m.type === 'me');
+    const me = markers.find(m => m.type === 'me' || m.type === 'car');
     if (!me) return;
 
     isProgrammaticRef.current = true;

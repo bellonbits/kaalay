@@ -53,6 +53,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   private readonly rooms = new Map<string, Map<string, GroupMember>>();
   private readonly viewers = new Map<string, Set<string>>(); // code → set of socket IDs
   private readonly hosts = new Map<string, string>(); // code → host memberId
+  private readonly disconnectTimeouts = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private readonly sessionsService: SessionsService,
@@ -66,18 +67,34 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
-    // Clean up group rooms
+    
+    // Clean up group rooms with a 10-second grace period for dropouts
     this.rooms.forEach((members, code) => {
       members.forEach((member, memberId) => {
         if (member.socketId === client.id) {
-          members.delete(memberId);
-          this.server.to(code).emit('member-left', { memberId });
-          if (this.hosts.get(code) === memberId) {
-            this.hosts.delete(code);
+          const timeoutKey = `${code}:${memberId}`;
+          
+          // Clear any existing timeout first just in case
+          if (this.disconnectTimeouts.has(timeoutKey)) {
+            clearTimeout(this.disconnectTimeouts.get(timeoutKey));
           }
+          
+          const timeout = setTimeout(() => {
+            members.delete(memberId);
+            this.server.to(code).emit('member-left', { memberId });
+            if (this.hosts.get(code) === memberId) {
+              this.hosts.delete(code);
+            }
+            this.disconnectTimeouts.delete(timeoutKey);
+            this.logger.log(`Grace period expired: Member ${member.name} (${memberId}) removed from room ${code}`);
+          }, 10000); // 10 seconds grace period
+          
+          this.disconnectTimeouts.set(timeoutKey, timeout);
+          this.logger.log(`Member ${member.name} (${memberId}) disconnected from room ${code}. Scheduled grace period...`);
         }
       });
     });
+    
     // Clean up viewer counts
     this.viewers.forEach((sockets, code) => {
       if (sockets.has(client.id)) {
@@ -175,6 +192,15 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   ) {
     const { code, memberId, name, lat, lng, accuracy, heading } = payload;
     client.join(code);
+    
+    // Clear dynamic disconnect grace period timeout if active
+    const timeoutKey = `${code}:${memberId}`;
+    if (this.disconnectTimeouts.has(timeoutKey)) {
+      clearTimeout(this.disconnectTimeouts.get(timeoutKey));
+      this.disconnectTimeouts.delete(timeoutKey);
+      this.logger.log(`Member ${name} (${memberId}) reconnected within grace period. Cancelled cleanup.`);
+    }
+
     if (!this.rooms.has(code)) this.rooms.set(code, new Map());
     
     const isHost = this.hosts.get(code) === memberId;
@@ -221,6 +247,14 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   ) {
     const { code, memberId } = payload;
     client.leave(code);
+    
+    // Clear any active disconnect timeout
+    const timeoutKey = `${code}:${memberId}`;
+    if (this.disconnectTimeouts.has(timeoutKey)) {
+      clearTimeout(this.disconnectTimeouts.get(timeoutKey));
+      this.disconnectTimeouts.delete(timeoutKey);
+    }
+    
     this.rooms.get(code)?.delete(memberId);
     if (this.hosts.get(code) === memberId) {
       this.hosts.delete(code);

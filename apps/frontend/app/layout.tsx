@@ -27,7 +27,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${outfit.variable} h-full w-full overflow-hidden`}>
+    <html lang="en" suppressHydrationWarning className={`${outfit.variable} h-full w-full overflow-hidden`}>
       <head>
         <script type="module" src="https://cdn.what3words.com/javascript-components@5.0.0/dist/what3words/what3words.esm.js"></script>
         <script noModule src={`https://cdn.what3words.com/javascript-components@5.0.0/dist/what3words/what3words.js?key=${process.env.NEXT_PUBLIC_W3W_API_KEY || 'Z5Z6G74L'}`}></script>

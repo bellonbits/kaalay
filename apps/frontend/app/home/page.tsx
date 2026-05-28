@@ -106,6 +106,15 @@ export default function HomePage() {
   // Map selection mode state for Plan Journey inputs
   const [pickingLocationType, setPickingLocationType] = useState<'start' | 'dest' | null>(null);
 
+  // Hide BottomNav when pinning a location, when bottom sheet is full screen, or when hidden to reveal the full map
+  useEffect(() => {
+    const shouldHide = !!pickingLocationType || sheetH === 'full' || sheetH === 'hidden';
+    window.dispatchEvent(new CustomEvent('hide-bottom-nav', { detail: shouldHide }));
+    return () => {
+      window.dispatchEvent(new CustomEvent('hide-bottom-nav', { detail: false }));
+    };
+  }, [pickingLocationType, sheetH]);
+
   const handleConfirmMapPinSelection = () => {
     if (!centerPinAddress) return;
     const point: LocationPoint = {
@@ -389,15 +398,15 @@ export default function HomePage() {
 
   const sheetTranslate = sheetH === 'peek' ? 'calc(100% - 320px)' : sheetH === 'half' ? 'calc(100% - 560px)' : sheetH === 'hidden' ? '100%' : '0px';
   const mapControlsBottom = 
-    sheetH === 'peek' ? 335 
-    : sheetH === 'half' ? 575 
-    : sheetH === 'hidden' ? 100 
-    : 335;
+    sheetH === 'peek' ? 400 
+    : sheetH === 'half' ? 640 
+    : sheetH === 'hidden' ? 40 
+    : 400;
 
   return (
     <div className="h-full relative overflow-hidden bg-white font-outfit">
       {/* Immersive Map Background */}
-      <div className="absolute inset-x-0 top-0 bottom-[275px] z-0">
+      <div className="absolute inset-x-0 top-0 bottom-0 z-0">
         <MapBase 
           forwardedRef={mapRef}
           center={center} 
@@ -656,8 +665,8 @@ export default function HomePage() {
 
       {/* Main Bottom Sheet (Always Mounted) */}
       <div 
-        className={`fixed bottom-0 left-0 right-0 z-30 bg-white rounded-t-[32px] shadow-sheet transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${routeDest ? 'translate-y-full pointer-events-none' : ''}`}
-        style={!routeDest ? { height: '92%', transform: `translateY(${sheetTranslate})` } : { height: '92%' }}
+        className={`fixed bottom-16 left-0 right-0 z-30 bg-white rounded-t-[32px] shadow-sheet transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${routeDest ? 'translate-y-full pointer-events-none' : ''}`}
+        style={!routeDest ? { height: 'calc(92% - 64px)', transform: `translateY(${sheetTranslate})` } : { height: 'calc(92% - 64px)' }}
       >
         <div 
           className="cursor-pointer pb-2"

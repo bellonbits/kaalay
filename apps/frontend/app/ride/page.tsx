@@ -637,7 +637,7 @@ function RidePageContent() {
           onCenterPinChange={handleCenterPinChange}
           travelMode={step === 'walking' ? 'WALKING' : 'DRIVING'}
           zoomState={step === 'walking' ? 'navigation' : undefined}
-          forceDirect={step === 'walking' || isPrecisionActive}
+          forceDirect={isPrecisionActive}
         />
 
         {/* Premium Floating Controls */}

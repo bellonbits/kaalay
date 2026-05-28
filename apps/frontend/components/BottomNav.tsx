@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import {
   Compass,        // Navigate — main map
@@ -7,8 +7,6 @@ import {
   HelpCircle,     // I'm Lost
   Radio,          // Share Location
   User,           // Profile
-  Menu,
-  X,
 } from 'lucide-react';
 
 const ITEMS = [
@@ -54,13 +52,30 @@ const ITEMS = [
 export default function BottomNav() {
   const router = useRouter();
   const pathname = usePathname();
+  const [eventHide, setEventHide] = useState(false);
 
-  // Hide on auth, register, and tracking screens
-  if (['/auth', '/register', '/track'].some(p => pathname.startsWith(p)) || pathname === '/') return null;
+  useEffect(() => {
+    const handleHide = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      setEventHide(!!customEvent.detail);
+    };
+    window.addEventListener('hide-bottom-nav', handleHide);
+    return () => window.removeEventListener('hide-bottom-nav', handleHide);
+  }, []);
+
+  // Hard hide on root, auth, and register
+  if (['/auth', '/register'].some(p => pathname.startsWith(p)) || pathname === '/') {
+    return null;
+  }
+
+  // Soft transition hide on tracking, ride, or event-driven states
+  const shouldTransitionHide = 
+    eventHide || 
+    ['/track', '/ride'].some(p => pathname.startsWith(p));
 
   return (
-    <div className="fixed bottom-6 left-4 right-4 z-[100] flex justify-center pointer-events-none">
-      <div className="pointer-events-auto bg-white/95 backdrop-blur-xl px-3 py-2 rounded-[32px] shadow-[0_8px_32px_rgba(0,0,0,0.18)] flex items-center justify-around gap-0.5 w-full max-w-sm border border-black/8 relative">
+    <div className={`fixed bottom-0 left-0 right-0 h-16 z-[100] bg-white border-t border-gray-100/90 flex items-center justify-center transition-all duration-500 ease-in-out ${shouldTransitionHide ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
+      <div className="flex items-center justify-around w-full max-w-md h-full px-2">
 
         {ITEMS.map(item => {
           const active =
@@ -75,25 +90,20 @@ export default function BottomNav() {
               key={item.path}
               id={`nav-tab-${item.label.toLowerCase().replace(/[^a-z]/g, '-')}`}
               onClick={() => router.push(item.path)}
-              className={`
-                relative flex flex-col items-center justify-center gap-1 px-3 py-2.5 rounded-[22px]
-                transition-all duration-300 active:scale-90 flex-1 min-w-0
-                ${active ? 'shadow-md scale-105' : 'hover:bg-gray-50/80'}
-              `}
-              style={active ? { backgroundColor: item.color + '18' } : {}}
+              className="relative flex flex-col items-center justify-center gap-1 py-1 transition-all duration-300 active:scale-95 flex-1 min-w-0"
             >
               {/* SOS pulse ring */}
               {item.isSOS && (
-                <span className="absolute inset-0 rounded-[22px] border-2 border-red-400/40 animate-ping pointer-events-none" />
+                <span className="absolute inset-0 rounded-full border-2 border-red-400/40 animate-ping pointer-events-none" />
               )}
 
               <Icon
                 strokeWidth={active ? 2.5 : 1.8}
-                className="w-[18px] h-[18px] transition-all duration-300 flex-shrink-0"
+                className="w-5 h-5 transition-all duration-300 flex-shrink-0"
                 style={{ color: active ? item.color : '#9ca3af' }}
               />
               <span
-                className="text-[8px] font-black uppercase tracking-[0.8px] leading-none transition-colors whitespace-nowrap"
+                className="text-[9px] font-black uppercase tracking-[0.8px] leading-none transition-colors whitespace-nowrap"
                 style={{ color: active ? item.color : '#9ca3af' }}
               >
                 {item.label}
@@ -102,7 +112,7 @@ export default function BottomNav() {
               {/* Active underline dot */}
               {active && (
                 <span
-                  className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                  className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full"
                   style={{ backgroundColor: item.color }}
                 />
               )}

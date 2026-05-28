@@ -85,6 +85,15 @@ export default function MeetPage() {
     if (c) { setJoinCode(c.toUpperCase()); setTab('join'); }
   }, []);
 
+  // Hide BottomNav when live meetup is active
+  useEffect(() => {
+    const isLive = step === 'live';
+    window.dispatchEvent(new CustomEvent('hide-bottom-nav', { detail: isLive }));
+    return () => {
+      window.dispatchEvent(new CustomEvent('hide-bottom-nav', { detail: false }));
+    };
+  }, [step]);
+
   // ── SOCKET LISTENERS ─────────────────────────────────────────────────────
   useEffect(() => {
     if (step !== 'live' || !activeCode) return;
