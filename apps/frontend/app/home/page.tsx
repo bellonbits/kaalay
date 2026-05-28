@@ -106,7 +106,7 @@ export default function HomePage() {
   // Map selection mode state for Plan Journey inputs
   const [pickingLocationType, setPickingLocationType] = useState<'start' | 'dest' | null>(null);
 
-  // Hide BottomNav when pinning a location, when bottom sheet is full screen, or when hidden to reveal the full map
+  // Hide BottomNav AND collapse sheet when pinning a location
   useEffect(() => {
     const shouldHide = !!pickingLocationType || sheetH === 'full' || sheetH === 'hidden';
     window.dispatchEvent(new CustomEvent('hide-bottom-nav', { detail: shouldHide }));
@@ -114,6 +114,19 @@ export default function HomePage() {
       window.dispatchEvent(new CustomEvent('hide-bottom-nav', { detail: false }));
     };
   }, [pickingLocationType, sheetH]);
+
+  // Collapse the bottom sheet when entering picking mode so it never covers the confirm button
+  const prevPickingRef = useRef<'start' | 'dest' | null>(null);
+  useEffect(() => {
+    if (pickingLocationType !== null && prevPickingRef.current === null) {
+      // Entering picking mode — hide the sheet
+      setSheetH('hidden');
+    } else if (pickingLocationType === null && prevPickingRef.current !== null) {
+      // Exiting picking mode — restore sheet to peek
+      setSheetH('peek');
+    }
+    prevPickingRef.current = pickingLocationType;
+  }, [pickingLocationType]);
 
   const handleConfirmMapPinSelection = () => {
     if (!centerPinAddress) return;
@@ -398,7 +411,8 @@ export default function HomePage() {
 
   const sheetTranslate = sheetH === 'peek' ? 'calc(100% - 320px)' : sheetH === 'half' ? 'calc(100% - 560px)' : sheetH === 'hidden' ? '100%' : '0px';
   const mapControlsBottom = 
-    sheetH === 'peek' ? 400 
+    pickingLocationType ? 80           // picking mode — sheet is hidden, controls stay near bottom
+    : sheetH === 'peek' ? 400 
     : sheetH === 'half' ? 640 
     : sheetH === 'hidden' ? 40 
     : 400;
@@ -450,8 +464,8 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Bottom Floating Map Confirm Pin Action */}
-            <div className="absolute bottom-6 left-6 right-6 z-40 animate-slide-up-spring">
+            {/* Bottom Confirm Pin — fixed so it always clears BottomNav and sheet */}
+            <div className="fixed bottom-8 left-6 right-6 z-[90] animate-slide-up-spring">
               <button 
                 disabled={isPinResolving || !centerPinAddress}
                 onClick={handleConfirmMapPinSelection}

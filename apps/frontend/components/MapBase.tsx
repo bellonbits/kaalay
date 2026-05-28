@@ -3,6 +3,7 @@ import { GoogleMap, Circle, MarkerF } from '@react-google-maps/api';
 import { useRef, useCallback, useEffect, forwardRef, useImperativeHandle, useMemo, useState } from 'react';
 import { useGoogleMaps } from './GoogleMapsProvider';
 import { getGridSection } from '../lib/api';
+import { computeRoute } from '../lib/routeService';
 
 const LIGHT_STYLE: google.maps.MapTypeStyle[] = [
   { elementType: 'geometry',            stylers: [{ color: '#f1f3f4' }] },
@@ -81,36 +82,6 @@ function imgIcon(url: string, size: number): google.maps.Icon {
 
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 
-/** Extract a path array from a DirectionsResult, falling back to leg-steps if
- *  overview_path is empty (happens on very short routes or certain regions). */
-function extractPath(result: google.maps.DirectionsResult): google.maps.LatLngLiteral[] {
-  const route = result.routes[0];
-  if (!route) return [];
-
-  // Prefer overview_path (pre-simplified, fewer points)
-  if (route.overview_path && route.overview_path.length > 1) {
-    return (route.overview_path as unknown as google.maps.LatLng[]).map(p => ({
-      lat: typeof p.lat === 'function' ? p.lat() : (p as any).lat,
-      lng: typeof p.lng === 'function' ? p.lng() : (p as any).lng,
-    }));
-  }
-
-  // Fallback: reconstruct from every step's path across all legs
-  const points: google.maps.LatLngLiteral[] = [];
-  for (const leg of route.legs) {
-    for (const step of leg.steps) {
-      const stepPath = (step.path ?? []) as unknown as google.maps.LatLng[];
-      for (const p of stepPath) {
-        points.push({
-          lat: typeof p.lat === 'function' ? p.lat() : (p as any).lat,
-          lng: typeof p.lng === 'function' ? p.lng() : (p as any).lng,
-        });
-      }
-    }
-  }
-  return points;
-}
-
 /** Haversine distance in metres between two coordinates. */
 function haversineMetres(
   a: { lat: number; lng: number },
@@ -129,16 +100,21 @@ function haversineMetres(
   return R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
 }
 
-function extractRouteInfo(result: google.maps.DirectionsResult, slm: number): RouteInfo | null {
-  const leg = result.routes[0]?.legs[0];
-  if (!leg) return null;
-  const rawStep = result.routes[0].legs[0].steps[0]?.instructions ?? '';
+/** Build RouteInfo from a Routes API result for the NavBanner. */
+function routeResultToInfo(
+  result: { distanceMeters: number; durationSeconds: number; firstStepInstruction?: string },
+  slm: number,
+): RouteInfo {
+  const dm = result.distanceMeters;
+  const ds = result.durationSeconds;
   return {
-    distanceMetres:    leg.distance?.value   ?? 0,
-    distanceText:      leg.distance?.text    ?? '',
-    durationSeconds:   leg.duration?.value   ?? 0,
-    durationText:      leg.duration?.text    ?? '',
-    nextStep:          rawStep.replace(/<[^>]+>/g, '').trim(),
+    distanceMetres:     dm,
+    distanceText:       dm >= 1000 ? `${(dm / 1000).toFixed(1)} km` : `${Math.round(dm)} m`,
+    durationSeconds:    ds,
+    durationText:       ds >= 3600
+      ? `${Math.floor(ds / 3600)}h ${Math.floor((ds % 3600) / 60)} min`
+      : `${Math.round(ds / 60)} min`,
+    nextStep:           result.firstStepInstruction || 'Follow the route',
     straightLineMetres: slm,
   };
 }
@@ -204,24 +180,29 @@ const MapBase = forwardRef<MapHandle, Props>(({
   const glowPolyRef = useRef<google.maps.Polyline | null>(null);
   const mainPolyRef = useRef<google.maps.Polyline | null>(null);
 
-  // ── Directions state ──────────────────────────────────────────────────────
-  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
-  const [routeInfo,  setRouteInfo]  = useState<RouteInfo | null>(null);
+  // ── Route state (Routes API replaces DirectionsService) ─────────────────
+  const [routePoints, setRoutePoints] = useState<google.maps.LatLngLiteral[] | null>(null);
+  const [routeInfo,   setRouteInfo]   = useState<RouteInfo | null>(null);
 
-  // ── Stable origin state: only update when user has moved > 30 m to prevent hammering Directions API ──
+  // ── Stable origin: debounce GPS jitter — only update after > 50 m movement ─
   const [stableOrigin, setStableOrigin] = useState<{ lat: number; lng: number }>(routeFrom ?? center);
 
   useEffect(() => {
     const next = routeFrom ?? center;
-    if (haversineMetres(stableOrigin, next) > 30) {
+    if (haversineMetres(stableOrigin, next) > 50) {
       setStableOrigin({ lat: next.lat, lng: next.lng });
     }
-  }, [routeFrom?.lat, routeFrom?.lng, center.lat, center.lng, stableOrigin]);
+  }, [routeFrom?.lat, routeFrom?.lng, center.lat, center.lng]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Memo wrappers (keyed on coordinates so object refs are stable)
   const memoizedRouteTo = useMemo(
     () => routeTo ? { lat: routeTo.lat, lng: routeTo.lng } : undefined,
     [routeTo?.lat, routeTo?.lng],
+  );
+
+  const memoizedRouteFrom = useMemo(
+    () => routeFrom ? { lat: routeFrom.lat, lng: routeFrom.lng } : undefined,
+    [routeFrom?.lat, routeFrom?.lng],
   );
 
   const memoizedCenter = useMemo(
@@ -415,83 +396,72 @@ const MapBase = forwardRef<MapHandle, Props>(({
     return () => { il.remove(); };
   }, [mapReady, isSelectingPickup, onCenterPinChange]);
 
-  // ── DIRECTIONS FETCH (debounced 800 ms, no re-fetch if dest unchanged) ────
+  // ── ROUTES API FETCH (replaces deprecated DirectionsService) ─────────────
   //
-  // KEY FIX: Gated by stableOrigin state (updates only on > 30 m movements)
-  // and memoizedRouteTo (updates only on dest changes) to prevent infinite debouncing.
-  const dirFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastFetchedDestRef = useRef<{ lat: number; lng: number } | null>(null);
+  // • BICYCLING → falls back to WALK automatically (no ZERO_RESULTS in Africa)
+  // • Debounced 800 ms + 50 m movement gate to prevent API hammering
+  // • Uses cancellation token to discard stale responses
+  const routeFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!mapReady || !isLoaded || !memoizedRouteTo || forceDirect) {
-      setDirections(null);
+      setRoutePoints(null);
       setRouteInfo(null);
       onRouteInfo?.(null);
-      lastFetchedDestRef.current = null;
       return;
     }
 
-    // Skip re-fetch if destination hasn't moved more than 5 m
-    const prev = lastFetchedDestRef.current;
-    if (prev && haversineMetres(prev, memoizedRouteTo) < 5) return;
+    const origin = stableOrigin;
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
 
-    if (dirFetchTimerRef.current) clearTimeout(dirFetchTimerRef.current);
+    if (routeFetchTimerRef.current) clearTimeout(routeFetchTimerRef.current);
 
-    dirFetchTimerRef.current = setTimeout(() => {
-      const origin = stableOrigin;
+    let cancelled = false;
 
-      const mode =
-        travelMode === 'WALKING'   ? google.maps.TravelMode.WALKING   :
-        travelMode === 'BICYCLING' ? google.maps.TravelMode.BICYCLING :
-        travelMode === 'TRANSIT'   ? google.maps.TravelMode.TRANSIT   :
-        google.maps.TravelMode.DRIVING;
+    routeFetchTimerRef.current = setTimeout(() => {
+      computeRoute(origin, memoizedRouteTo, travelMode ?? 'DRIVING', apiKey).then(result => {
+        if (cancelled) return;
 
-      new google.maps.DirectionsService().route(
-        {
-          origin: { lat: origin.lat, lng: origin.lng },
-          destination: { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
-          travelMode: mode,
-          optimizeWaypoints: false,
-          provideRouteAlternatives: false,
-        },
-        (res, status) => {
-          if (status === 'OK' && res) {
-            setDirections(res);
-            lastFetchedDestRef.current = { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng };
-            const slm = distToDest ?? haversineMetres(origin, memoizedRouteTo);
-            const info = extractRouteInfo(res, slm);
-            setRouteInfo(info);
-            onRouteInfo?.(info);
-          } else {
-            setDirections(null);
-            const slm = distToDest;
-            if (slm !== null) {
-              const fb: RouteInfo = {
-                distanceMetres: slm,
-                distanceText: slm >= 1000 ? `${(slm/1000).toFixed(1)} km` : `${Math.round(slm)} m`,
-                durationSeconds: 0,
-                durationText: '',
-                nextStep: 'Head towards destination',
-                straightLineMetres: slm,
-              };
-              setRouteInfo(fb);
-              onRouteInfo?.(fb);
-            } else {
-              setRouteInfo(null);
-              onRouteInfo?.(null);
-            }
-          }
-        },
-      );
+        if (result && result.polylinePoints.length >= 2) {
+          // Stitch exact GPS origin + road path + exact destination pin
+          setRoutePoints([
+            { lat: origin.lat, lng: origin.lng },
+            ...result.polylinePoints,
+            { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
+          ]);
+          const slm = distToDest ?? haversineMetres(origin, memoizedRouteTo);
+          const info = routeResultToInfo(result, slm);
+          setRouteInfo(info);
+          onRouteInfo?.(info);
+        } else {
+          // Routes API failed → straight-line fallback with distance estimate
+          setRoutePoints(null);
+          const slm = distToDest ?? haversineMetres(origin, memoizedRouteTo);
+          const fb: RouteInfo = {
+            distanceMetres:     slm,
+            distanceText:       slm >= 1000 ? `${(slm / 1000).toFixed(1)} km` : `${Math.round(slm)} m`,
+            durationSeconds:    0,
+            durationText:       '',
+            nextStep:           'Head towards destination',
+            straightLineMetres: slm,
+          };
+          setRouteInfo(fb);
+          onRouteInfo?.(fb);
+        }
+      });
     }, 800);
 
-    return () => { if (dirFetchTimerRef.current) clearTimeout(dirFetchTimerRef.current); };
+    return () => {
+      cancelled = true;
+      if (routeFetchTimerRef.current) clearTimeout(routeFetchTimerRef.current);
+    };
   }, [mapReady, isLoaded, memoizedRouteTo?.lat, memoizedRouteTo?.lng, travelMode, forceDirect, stableOrigin.lat, stableOrigin.lng]);
 
-  // ── NATIVE POLYLINE DRAWING ───────────────────────────────────────────────
+  // ── NATIVE POLYLINE DRAWING (Uber-style: white border + blue core) ────────
   //
-  // Redraws whenever position updates (smooth live tracking) but re-uses the
-  // cached directions result so no extra API call is made.
+  // Redraws whenever routePoints changes (new Routes API fetch) OR the user
+  // position updates (live GPS tracking). No extra API call is made on position
+  // updates — routePoints is already the cached road path.
   useEffect(() => {
     const map = mapInstanceRef.current;
 
@@ -502,55 +472,33 @@ const MapBase = forwardRef<MapHandle, Props>(({
 
     if (!map || !mapReady || !isLoaded || !memoizedRouteTo) return;
 
-    const origin = routeFrom ?? center;
-    let path: google.maps.LatLngLiteral[] = [];
-
-    if (forceDirect || !directions) {
-      // Straight-line bearing (used when Directions API fails or is disabled)
-      path = [
-        { lat: origin.lat, lng: origin.lng },
-        { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
-      ];
-    } else {
-      const middle = extractPath(directions); // uses overview_path with legs fallback
-
-      if (middle.length < 2) {
-        // Safety: fall back to direct line if extraction returned nothing
-        path = [
-          { lat: origin.lat, lng: origin.lng },
-          { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
-        ];
-      } else {
-        // Stitch exact GPS origin → road path → exact destination pin
-        // This eliminates the "floating gap" between GPS point and road snap
-        path = [
-          { lat: origin.lat, lng: origin.lng },
-          ...middle,
-          { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
-        ];
-      }
-    }
+    // Use Routes API road path if available, else fall back to direct bearing
+    const origin = memoizedRouteFrom ?? memoizedCenter;
+    const path: google.maps.LatLngLiteral[] = routePoints ?? [
+      { lat: origin.lat, lng: origin.lng },
+      { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
+    ];
 
     if (path.length < 2) return;
 
-    // Glow layer - Translucent Dark Blue
+    // ── Layer 1: wide white border — gives the road-painted look ──────────
     glowPolyRef.current = new google.maps.Polyline({
       path, map,
-      strokeColor: '#000080',
-      strokeWeight: 14,
-      strokeOpacity: 0.22,
-      geodesic: true,
-      zIndex: 1,
+      strokeColor:   '#FFFFFF',
+      strokeWeight:  11,
+      strokeOpacity: 1.0,
+      geodesic:      true,
+      zIndex:        1,
     });
 
-    // Primary line - Solid Dark Blue (#000080)
+    // ── Layer 2: solid Uber-blue core ─────────────────────────────────────
     mainPolyRef.current = new google.maps.Polyline({
       path, map,
-      strokeColor: '#000080',
-      strokeWeight: 5,
+      strokeColor:   '#276EF1',   // Uber blue
+      strokeWeight:  7,
       strokeOpacity: 1.0,
-      geodesic: true,
-      zIndex: 2,
+      geodesic:      true,
+      zIndex:        2,
     });
 
     return () => {
@@ -559,7 +507,7 @@ const MapBase = forwardRef<MapHandle, Props>(({
       glowPolyRef.current = null;
       mainPolyRef.current = null;
     };
-  }, [mapReady, isLoaded, directions, memoizedRouteTo, routeFrom?.lat, routeFrom?.lng, center.lat, center.lng, forceDirect]);
+  }, [mapReady, isLoaded, routePoints, memoizedRouteTo, memoizedRouteFrom, memoizedCenter, forceDirect]);
 
   // ── ZOOM STATE ────────────────────────────────────────────────────────────
   useEffect(() => {
