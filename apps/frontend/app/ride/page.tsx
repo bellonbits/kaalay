@@ -622,14 +622,22 @@ function RidePageContent() {
           center={center} 
           zoom={17.5} 
           markers={markers} 
-          routeFrom={pickup ? { lat: pickup.lat, lng: pickup.lng } : (position ? { lat: position.lat, lng: position.lng } : undefined)}
+          routeFrom={
+            step === 'walking' && position
+              ? { lat: position.lat, lng: position.lng }   // live bearing from current GPS
+              : pickup
+                ? { lat: pickup.lat, lng: pickup.lng }
+                : position
+                  ? { lat: position.lat, lng: position.lng }
+                  : undefined
+          }
           routeTo={dest ? { lat: dest.lat, lng: dest.lng } : undefined}
           className="w-full h-full" 
           isSelectingPickup={!!pickingOnMap}
           onCenterPinChange={handleCenterPinChange}
           travelMode={step === 'walking' ? 'WALKING' : 'DRIVING'}
           zoomState={step === 'walking' ? 'navigation' : undefined}
-          forceDirect={isPrecisionActive}
+          forceDirect={step === 'walking' || isPrecisionActive}
         />
 
         {/* Premium Floating Controls */}

@@ -333,7 +333,9 @@ const MapBase = forwardRef<MapHandle, Props>(({
   // Route drawing animation
   useEffect(() => {
     if (!directions) {
-      setDrawCoords([]);
+      if (!memoizedRouteTo) {
+        setDrawCoords([]);
+      }
       return;
     }
     let path = [...directions.routes[0].overview_path];
@@ -348,6 +350,7 @@ const MapBase = forwardRef<MapHandle, Props>(({
     }
     let progress = 0;
     const totalPoints = path.length;
+    let animId: number;
 
     const drawRouteAnimation = () => {
       progress += Math.max(1, Math.floor(totalPoints / 25)); // Smooth grow route polyline
@@ -356,10 +359,14 @@ const MapBase = forwardRef<MapHandle, Props>(({
         return;
       }
       setDrawCoords(path.slice(0, progress));
-      requestAnimationFrame(drawRouteAnimation);
+      animId = requestAnimationFrame(drawRouteAnimation);
     };
-    requestAnimationFrame(drawRouteAnimation);
-  }, [directions, memoizedRouteFrom]);
+    animId = requestAnimationFrame(drawRouteAnimation);
+
+    return () => {
+      if (animId) cancelAnimationFrame(animId);
+    };
+  }, [directions, memoizedRouteFrom, memoizedRouteTo]);
 
   useEffect(() => {
     if (!mapInstance || !isLoaded || !memoizedRouteTo) {
@@ -669,11 +676,11 @@ const MapBase = forwardRef<MapHandle, Props>(({
         </div>
       )}
 
-      {/* 2. LOCATION CONFIDENCE BANNER (GPS status) */}
+      {/* 2. LOCATION CONFIDENCE CHIP (GPS status) — bottom-left, non-intrusive */}
       {me?.accuracy && me.accuracy > 20 && (
-        <div className="absolute top-16 left-1/2 transform -translate-x-1/2 z-50 bg-black/85 text-white text-[10px] font-black uppercase tracking-[1.5px] px-4 py-2.5 rounded-full flex items-center gap-2 shadow-premium backdrop-blur border border-white/10 animate-bounce-in glow-active">
-          <div className="w-2.5 h-2.5 rounded-full bg-yellow-400 animate-pulse" />
-          <span>Improving GPS accuracy...</span>
+        <div className="absolute bottom-6 left-4 z-50 bg-black/75 text-white text-[9px] font-black uppercase tracking-[1.2px] px-3 py-1.5 rounded-full flex items-center gap-1.5 backdrop-blur border border-white/10 pointer-events-none">
+          <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse flex-shrink-0" />
+          <span>GPS fixing…</span>
         </div>
       )}
     </div>

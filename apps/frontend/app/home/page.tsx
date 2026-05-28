@@ -398,7 +398,7 @@ export default function HomePage() {
           center={center} 
           zoom={16} 
           markers={markers} 
-          routeFrom={routeStart ? { lat: routeStart.lat, lng: routeStart.lng } : undefined}
+          routeFrom={position ? { lat: position.lat, lng: position.lng } : (routeStart ? { lat: routeStart.lat, lng: routeStart.lng } : undefined)}
           routeTo={routeDest ? { lat: routeDest.lat, lng: routeDest.lng } : undefined} 
           isSelectingPickup={(!routeDest || !!pickingLocationType) && !isHelper}
           onCenterPinChange={handleCenterPinChange}
