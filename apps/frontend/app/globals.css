@@ -5,7 +5,7 @@
 :root {
   --yellow: #FFD600;
   --yellow-light: #FFF9DB;
-  --black:  #000000;
+  --black:  #02CCFE;
   --white:  #FFFFFF;
   --bg:     #FFFFFF;
   --card:   #FFFFFF;
@@ -118,14 +118,14 @@ body {
 
 .btn-black {
   background: var(--black);
-  color: #FFFFFF;
+  color: #000000;
   border-radius: var(--radius-xl);
-  box-shadow: 0 12px 24px -8px rgba(0,0,0,0.3);
+  box-shadow: 0 12px 24px -8px rgba(2, 204, 254, 0.35);
 }
 
 .btn-yellow {
   background: var(--yellow);
-  color: var(--black);
+  color: #000000;
   border-radius: var(--radius-xl);
   box-shadow: 0 12px 24px -8px rgba(255,214,0,0.25);
 }
@@ -136,7 +136,7 @@ body {
   height: 64px; border: 2px solid transparent; transition: all 0.3s;
 }
 .input-container:focus-within {
-  background: white; border-color: var(--black); box-shadow: 0 10px 25px -10px rgba(0,0,0,0.05);
+  background: white; border-color: #02CCFE; box-shadow: 0 10px 25px -10px rgba(0,0,0,0.05);
 }
 
 .sheet-handle {
@@ -228,4 +228,52 @@ body {
 
 .glow-active {
   animation: glow-pulse 2s infinite;
+}
+
+/* ── Global Theme Overrides: Convert Brand Black to #02CCFE (Bright Sky Blue) ── */
+.bg-black {
+  background-color: #02CCFE !important;
+}
+.bg-black\/95 {
+  background-color: rgba(2, 204, 254, 0.95) !important;
+}
+.bg-black\/90 {
+  background-color: rgba(2, 204, 254, 0.9) !important;
+}
+.bg-black\/75 {
+  background-color: rgba(2, 204, 254, 0.75) !important;
+}
+
+/* Ensure text inside converted bright sky blue elements has dark high contrast */
+.bg-black, .bg-black\/95, .bg-black\/90, .bg-black\/75 {
+  color: #000000 !important;
+}
+
+.bg-black .text-white, .bg-black\/95 .text-white, .bg-black\/90 .text-white, .bg-black\/75 .text-white,
+.bg-black [class*="text-white"], .bg-black\/95 [class*="text-white"], .bg-black\/90 [class*="text-white"], .bg-black\/75 [class*="text-white"],
+.bg-black [class*="text-gray"], .bg-black\/95 [class*="text-gray"], .bg-black\/90 [class*="text-gray"], .bg-black\/75 [class*="text-gray"],
+.bg-black [class*="text-neutral"], .bg-black\/95 [class*="text-neutral"], .bg-black\/90 [class*="text-neutral"], .bg-black\/75 [class*="text-neutral"] {
+  color: #000000 !important;
+}
+
+/* Also target specific elements (icons, borders, etc.) for high contrast inside converted containers */
+.bg-black .anticon, .bg-black\/95 .anticon, .bg-black\/90 .anticon, .bg-black\/75 .anticon,
+.bg-black svg, .bg-black\/95 svg, .bg-black\/90 svg, .bg-black\/75 svg {
+  color: #000000 !important;
+}
+
+.bg-black .border-white\/10, .bg-black\/95 .border-white\/10, .bg-black\/90 .border-white\/10, .bg-black\/75 .border-white\/10,
+.bg-black .border-white\/15, .bg-black\/95 .border-white\/15, .bg-black\/90 .border-white\/15, .bg-black\/75 .border-white\/15 {
+  border-color: rgba(0, 0, 0, 0.15) !important;
+}
+
+.bg-black .bg-white\/5, .bg-black\/95 .bg-white\/5, .bg-black\/90 .bg-white\/5, .bg-black\/75 .bg-white\/5,
+.bg-black .bg-white\/10, .bg-black\/95 .bg-white\/10, .bg-black\/90 .bg-white\/10, .bg-black\/75 .bg-white\/10 {
+  background-color: rgba(0, 0, 0, 0.08) !important;
+  color: #000000 !important;
+}
+
+.bg-black .bg-white\/5 *, .bg-black\/95 .bg-white\/5 *, .bg-black\/90 .bg-white\/5 *, .bg-black\/75 .bg-white\/5 *,
+.bg-black .bg-white\/10 *, .bg-black\/95 .bg-white\/10 *, .bg-black\/90 .bg-white\/10 *, .bg-black\/75 .bg-white\/10 * {
+  color: #000000 !important;
 }

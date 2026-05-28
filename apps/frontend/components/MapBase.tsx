@@ -221,7 +221,8 @@ const MapBase = forwardRef<MapHandle, Props>(({
     };
   }, []);
 
-  const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
+  const mapInstanceRef = useRef<google.maps.Map | null>(null);
+  const [mapReady, setMapReady] = useState(false);
 
   // Native polyline refs — draw directly on map, bypasses React wrapper race condition
   const glowPolyRef = useRef<google.maps.Polyline | null>(null);
@@ -233,7 +234,8 @@ const MapBase = forwardRef<MapHandle, Props>(({
     glowPolyRef.current = null;
     mainPolyRef.current = null;
     mapRef.current = null;
-    setMapInstance(null);
+    mapInstanceRef.current = null;
+    setMapReady(false);
   }, []);
 
   const options = useMemo(() => ({
@@ -266,26 +268,28 @@ const MapBase = forwardRef<MapHandle, Props>(({
 
   const onLoad = useCallback((m: google.maps.Map) => {
     mapRef.current = m;
-    setMapInstance(m);
+    mapInstanceRef.current = m;
+    setMapReady(true);
   }, []);
 
   // Safe listener registration for map dragging and zoom interactions
   useEffect(() => {
-    if (!mapInstance) return;
+    const map = mapInstanceRef.current;
+    if (!map || !mapReady) return;
 
-    const dragStartListener = mapInstance.addListener('dragstart', () => {
+    const dragStartListener = map.addListener('dragstart', () => {
       setIsDragging(true);
       setUserHasInteracted(true);
       if (onDraggingStateChange) onDraggingStateChange(true);
       if (onFollowModeChange) onFollowModeChange(false);
     });
 
-    const dragEndListener = mapInstance.addListener('dragend', () => {
+    const dragEndListener = map.addListener('dragend', () => {
       setIsDragging(false);
       if (onDraggingStateChange) onDraggingStateChange(false);
     });
 
-    const zoomListener = mapInstance.addListener('zoom_changed', () => {
+    const zoomListener = map.addListener('zoom_changed', () => {
       if (!isProgrammaticRef.current) {
         setUserHasInteracted(true);
         if (onFollowModeChange) onFollowModeChange(false);
@@ -297,19 +301,20 @@ const MapBase = forwardRef<MapHandle, Props>(({
       dragEndListener.remove();
       zoomListener.remove();
     };
-  }, [mapInstance, onDraggingStateChange, onFollowModeChange]);
+  }, [mapReady, onDraggingStateChange, onFollowModeChange]);
 
   // Safe listener registration for idle event to handle coordinate resolution and grid loading dynamically
   useEffect(() => {
-    if (!mapInstance) return;
+    const map = mapInstanceRef.current;
+    if (!map || !mapReady) return;
 
-    const idleListener = mapInstance.addListener('idle', async () => {
-      const z = mapInstance.getZoom() || 0;
+    const idleListener = map.addListener('idle', async () => {
+      const z = map.getZoom() || 0;
       const loadGrid = z >= 17.5;
-      mapInstance.data.setStyle({ visible: loadGrid, strokeColor: '#777777', strokeWeight: 0.5 });
+      map.data.setStyle({ visible: loadGrid, strokeColor: '#777777', strokeWeight: 0.5 });
 
       // Notify parent of central position update when selection is active
-      const mapCenter = mapInstance.getCenter();
+      const mapCenter = map.getCenter();
       if (mapCenter && isSelectingPickup && onCenterPinChange) {
         onCenterPinChange(mapCenter.lat(), mapCenter.lng());
       }
@@ -319,15 +324,15 @@ const MapBase = forwardRef<MapHandle, Props>(({
         clearTimeout(gridTimeoutRef.current);
       }
       gridTimeoutRef.current = setTimeout(async () => {
-        const bounds = mapInstance.getBounds();
+         const bounds = map.getBounds();
         if (!bounds) return;
         try {
           const geoJson = await getGridSection(
             bounds.getSouthWest().lat(), bounds.getSouthWest().lng(),
             bounds.getNorthEast().lat(), bounds.getNorthEast().lng()
           );
-          gridFeatures.current.forEach(f => mapInstance.data.remove(f));
-          if (geoJson?.features) gridFeatures.current = mapInstance.data.addGeoJson(geoJson);
+          gridFeatures.current.forEach(f => map.data.remove(f));
+          if (geoJson?.features) gridFeatures.current = map.data.addGeoJson(geoJson);
         } catch (e) {}
       }, 350);
     });
@@ -335,41 +340,47 @@ const MapBase = forwardRef<MapHandle, Props>(({
     return () => {
       idleListener.remove();
     };
-  }, [mapInstance, isSelectingPickup, onCenterPinChange]);
+  }, [mapReady, isSelectingPickup, onCenterPinChange]);
 
   // ── NATIVE POLYLINE DRAWING ──────────────────────────────────────────────────
   // Draws directly on the Google Maps instance (bypasses React wrapper race condition).
   // Sky-blue route line — always visible: uses direct bearing when directions unavailable.
   useEffect(() => {
+    const map = mapInstanceRef.current;
+
     // Clear existing native polylines on every re-run
     glowPolyRef.current?.setMap(null);
     mainPolyRef.current?.setMap(null);
     glowPolyRef.current = null;
     mainPolyRef.current = null;
 
-    if (!mapInstance || !isLoaded || !memoizedRouteTo) return;
+    if (!map || !mapReady || !isLoaded || !memoizedRouteTo) return;
 
     const origin = memoizedRouteFrom || memoizedCenter;
-    let path: (google.maps.LatLng | google.maps.LatLngLiteral)[] = [];
+    let path: google.maps.LatLngLiteral[] = [];
 
     if (forceDirect || !directions) {
-      // Always draw a direct bearing line: forceDirect mode OR directions API failed/pending
+      // Direct bearing line — exact start to exact end
       path = [
         { lat: origin.lat, lng: origin.lng },
         { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
       ];
     } else if (directions.routes[0]?.overview_path) {
-      // Use the road-mapped route from Directions API
-      path = directions.routes[0].overview_path as unknown as google.maps.LatLng[];
-      // Prepend actual origin if it differs from the first route point
-      if (memoizedRouteFrom && path.length > 0) {
-        const first = path[0] as google.maps.LatLng;
-        const fLat = typeof first.lat === 'function' ? first.lat() : (first as any).lat;
-        const fLng = typeof first.lng === 'function' ? first.lng() : (first as any).lng;
-        if (Math.abs(memoizedRouteFrom.lat - fLat) > 0.0001 || Math.abs(memoizedRouteFrom.lng - fLng) > 0.0001) {
-          path = [{ lat: memoizedRouteFrom.lat, lng: memoizedRouteFrom.lng }, ...path];
-        }
-      }
+      const routePath = directions.routes[0].overview_path as unknown as google.maps.LatLng[];
+
+      // Convert to plain literals
+      const middle = routePath.map(p => ({
+        lat: typeof p.lat === 'function' ? p.lat() : (p as any).lat,
+        lng: typeof p.lng === 'function' ? p.lng() : (p as any).lng,
+      }));
+
+      // Always stitch: exact origin → road path → exact destination
+      // This closes BOTH gaps regardless of API snapping
+      path = [
+        { lat: origin.lat, lng: origin.lng },   // ← exact GPS/w3w start
+        ...middle,
+        { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng }, // ← exact w3w end pin
+      ];
     }
 
     if (path.length < 2) return;
@@ -377,7 +388,7 @@ const MapBase = forwardRef<MapHandle, Props>(({
     // Glow layer: wide, translucent sky blue halo
     glowPolyRef.current = new google.maps.Polyline({
       path,
-      map: mapInstance,
+      map,
       strokeColor: '#38bdf8',
       strokeWeight: 14,
       strokeOpacity: 0.22,
@@ -388,7 +399,7 @@ const MapBase = forwardRef<MapHandle, Props>(({
     // Primary layer: solid sky blue line
     mainPolyRef.current = new google.maps.Polyline({
       path,
-      map: mapInstance,
+      map,
       strokeColor: '#0ea5e9',
       strokeWeight: 5,
       strokeOpacity: 1.0,
@@ -402,33 +413,46 @@ const MapBase = forwardRef<MapHandle, Props>(({
       glowPolyRef.current = null;
       mainPolyRef.current = null;
     };
-  }, [mapInstance, isLoaded, directions, memoizedRouteTo, memoizedRouteFrom, memoizedCenter, forceDirect]);
+  }, [mapReady, isLoaded, directions, memoizedRouteTo, memoizedRouteFrom, memoizedCenter, forceDirect]);
 
   // ── DIRECTIONS API FETCH ─────────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapInstance || !isLoaded || !memoizedRouteTo || forceDirect) {
+    const map = mapInstanceRef.current;
+    if (!map || !mapReady || !isLoaded || !memoizedRouteTo || forceDirect) {
       setDirections(null);
       return;
     }
+
     const origin = memoizedRouteFrom || memoizedCenter;
     const ds = new google.maps.DirectionsService();
+
     const mode = travelMode === 'WALKING' ? google.maps.TravelMode.WALKING :
                  travelMode === 'BICYCLING' ? google.maps.TravelMode.BICYCLING :
                  travelMode === 'TRANSIT' ? google.maps.TravelMode.TRANSIT :
                  google.maps.TravelMode.DRIVING;
-    ds.route({ origin, destination: memoizedRouteTo, travelMode: mode }, (res, status) => {
-      // On success upgrade to road-mapped route; on fail the native effect
-      // already shows a direct bearing line (directions stays null)
-      if (status === 'OK' && res) setDirections(res);
-      else setDirections(null);
-    });
-  }, [mapInstance, isLoaded, memoizedRouteTo, memoizedRouteFrom, memoizedCenter, travelMode, forceDirect]);
+
+    ds.route(
+      {
+        origin: { lat: origin.lat, lng: origin.lng },
+        destination: { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
+        travelMode: mode,
+        optimizeWaypoints: false,
+        provideRouteAlternatives: false,
+      },
+      (res, status) => {
+        // On success upgrade to road-mapped route; on fail the native effect
+        // already shows a direct bearing line (directions stays null)
+        if (status === 'OK' && res) setDirections(res);
+        else setDirections(null);
+      }
+    );
+  }, [mapReady, isLoaded, memoizedRouteTo, memoizedRouteFrom, memoizedCenter, travelMode, forceDirect]);
 
   // Handle programmatically Zoom States
   useEffect(() => {
-    if (!mapInstance || !zoomState) return;
+    const map = mapInstanceRef.current;
+    if (!map || !mapReady || !zoomState) return;
     if (userHasInteracted) return;
-    const m = mapInstance;
 
     isProgrammaticRef.current = true;
     const timer = setTimeout(() => {
@@ -436,44 +460,45 @@ const MapBase = forwardRef<MapHandle, Props>(({
     }, 600);
 
     if (zoomState === 'city') {
-      m.setZoom(12);
-      m.setTilt(0);
-      m.setHeading(0);
+      map.setZoom(12);
+      map.setTilt(0);
+      map.setHeading(0);
     } else if (zoomState === 'pickup') {
-      m.setZoom(17.5);
-      m.setTilt(30);
+      map.setZoom(17.5);
+      map.setTilt(30);
     } else if (zoomState === 'tracking') {
-      m.setTilt(0);
-      m.setHeading(0);
+      map.setTilt(0);
+      map.setHeading(0);
       const meMarker = markers.find(mark => mark.type === 'me');
       const targetMarker = markers.find(mark => mark.type === 'tracked' || mark.type === 'car');
       if (meMarker && targetMarker) {
         const bounds = new google.maps.LatLngBounds();
         bounds.extend({ lat: meMarker.lat, lng: meMarker.lng });
         bounds.extend({ lat: targetMarker.lat, lng: targetMarker.lng });
-        m.fitBounds(bounds, { top: 120, bottom: 280, left: 60, right: 60 });
+        map.fitBounds(bounds, { top: 120, bottom: 280, left: 60, right: 60 });
       } else if (meMarker) {
-        m.panTo({ lat: meMarker.lat, lng: meMarker.lng });
-        m.setZoom(15);
+        map.panTo({ lat: meMarker.lat, lng: meMarker.lng });
+        map.setZoom(15);
       } else if (targetMarker) {
-        m.panTo({ lat: targetMarker.lat, lng: targetMarker.lng });
-        m.setZoom(15);
+        map.panTo({ lat: targetMarker.lat, lng: targetMarker.lng });
+        map.setZoom(15);
       }
     } else if (zoomState === 'navigation') {
-      m.setZoom(18);
-      m.setTilt(45);
+      map.setZoom(18);
+      map.setTilt(45);
       const meMarker = markers.find(mark => mark.type === 'me');
       if (meMarker && meMarker.heading !== undefined) {
-        m.setHeading(meMarker.heading);
+        map.setHeading(meMarker.heading);
       }
     }
 
     return () => clearTimeout(timer);
-  }, [mapInstance, zoomState, markers, userHasInteracted]);
+  }, [mapReady, zoomState, markers, userHasInteracted]);
 
   // Handle follow mode positioning
   useEffect(() => {
-    if (followMode && mapInstance) {
+    const map = mapInstanceRef.current;
+    if (followMode && map && mapReady) {
       if (userHasInteracted) return;
       const meMarker = markers.find(m => m.type === 'me');
       if (meMarker) {
@@ -482,16 +507,16 @@ const MapBase = forwardRef<MapHandle, Props>(({
           isProgrammaticRef.current = false;
         }, 600);
 
-        mapInstance.panTo({ lat: meMarker.lat, lng: meMarker.lng });
-        mapInstance.setTilt(45);
+        map.panTo({ lat: meMarker.lat, lng: meMarker.lng });
+        map.setTilt(45);
         if (meMarker.heading !== undefined) {
-          mapInstance.setHeading(meMarker.heading);
+          map.setHeading(meMarker.heading);
         }
 
         return () => clearTimeout(timer);
       }
     }
-  }, [followMode, mapInstance, markers, userHasInteracted]);
+  }, [followMode, mapReady, markers, userHasInteracted]);
 
   if (!isLoaded) return (
     <div className={className} style={{ background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -554,7 +579,7 @@ const MapBase = forwardRef<MapHandle, Props>(({
               anchor: new google.maps.Point(12, 22),
             };
           } else if (m.type === 'tracked') {
-            icon = { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#111111', fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 };
+            icon = { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#02CCFE', fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 };
           } else {
             icon = { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#FFD600', fillOpacity: 1, strokeColor: '#000000', strokeWeight: 2 };
           }
