@@ -18,7 +18,7 @@ import MapBase from '../../components/MapBase';
 const TYPES = [
   { id: 'general', label: 'Share Location', sub: 'Let others see where you are',  Icon: EnvironmentOutlined, iconBg: '#F3F4F6', iconColor: '#6B7280', activeBg: '#1A1A1A', activeText: '#FFFFFF' },
   { id: 'meetup',  label: 'Meet Friends',   sub: 'Invite friends to find you',    Icon: TeamOutlined,        iconBg: '#DCFCE7', iconColor: '#16A34A', activeBg: '#1A1A1A', activeText: '#FFFFFF' },
-  { id: 'pickup',  label: 'Need Pickup',    sub: 'Ask a driver to come to you',   Icon: CarOutlined,         iconBg: '#EDE9FE', iconColor: '#7C3AED', activeBg: '#1A1A1A', activeText: '#FFFFFF' },
+  { id: 'pickup',  label: 'I Need a Pickup', sub: 'Ask a driver to come to you',   Icon: CarOutlined,         iconBg: '#EDE9FE', iconColor: '#7C3AED', activeBg: '#1A1A1A', activeText: '#FFFFFF' },
   { id: 'lost',    label: "I'm Lost",       sub: 'Alert the community to help',   Icon: AlertOutlined,       iconBg: '#FEE2E2', iconColor: '#DC2626', activeBg: '#1A1A1A', activeText: '#FFFFFF' },
 ];
 

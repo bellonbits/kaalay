@@ -45,7 +45,7 @@ function dist(a: { lat: number; lng: number }, b: { lat: number; lng: number }) 
 
 const TYPE_META: Record<string, { Icon: React.ComponentType<any>; bg: string; color: string; label: string }> = {
   lost:    { Icon: AlertOutlined,       bg: '#FFF5F5', color: '#E03131', label: 'Lost' },
-  pickup:  { Icon: CarOutlined,         bg: '#F3F0FF', color: '#7048E8', label: 'Pickup' },
+  pickup:  { Icon: CarOutlined,         bg: '#F3F0FF', color: '#7048E8', label: 'I Need a Pickup' },
   meetup:  { Icon: TeamOutlined,        bg: '#EBFBEE', color: '#2B8A3E', label: 'Meetup' },
   general: { Icon: EnvironmentOutlined, bg: '#F8F9FA', color: '#495057', label: 'Live' },
 };

@@ -22,7 +22,7 @@ const TYPES = [
   {
     id: 'pickup',
     Icon: CarOutlined,
-    label: 'Need a Ride',
+    label: 'I Need a Pickup',
     sub: 'Request a driver or helper to pick you up',
     iconBg: '#EDE9FE', iconColor: '#7C3AED',
     activeBorder: '#C4B5FD', activeBg: '#FAF5FF',
