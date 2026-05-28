@@ -120,7 +120,7 @@ function LiveTracker({ code }: { code: string }) {
   const [sharingBack, setSharingBack] = useState(false);
   const [activeRouteFrom, setActiveRouteFrom] = useState<{ lat: number; lng: number } | null>(null);
   const [activeRouteTo, setActiveRouteTo] = useState<{ lat: number; lng: number } | null>(null);
-  const { position: me } = useGeolocation(sharingBack || isNavigating);
+  const { position: me } = useGeolocation(true);
   const [tracked,  setTracked]  = useState<LivePos | null>(null);
   const [session,  setSession]  = useState<Session | null>(null);
   const [ended,    setEnded]    = useState(false);
@@ -307,8 +307,8 @@ function LiveTracker({ code }: { code: string }) {
               center={tracked ?? me ?? { lat: -1.29, lng: 36.82 }} 
               zoom={15} 
               markers={markers}
-              routeFrom={isNavigating && activeRouteFrom ? activeRouteFrom : undefined}
-              routeTo={isNavigating && activeRouteTo ? activeRouteTo : (isHelper && tracked ? tracked : undefined)}
+              routeFrom={isNavigating && activeRouteFrom ? activeRouteFrom : (me ? { lat: me.lat, lng: me.lng } : undefined)}
+              routeTo={isNavigating && activeRouteTo ? activeRouteTo : (tracked ? { lat: tracked.lat, lng: tracked.lng } : undefined)}
               travelMode={isNavigating ? 'WALKING' : undefined}
               zoomState={isNavigating ? (mapMode === 'overview' ? 'tracking' : 'navigation') : undefined}
               followMode={isNavigating && mapMode === 'focus'}

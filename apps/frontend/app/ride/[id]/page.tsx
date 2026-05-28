@@ -56,7 +56,7 @@ export default function RideTrackingPage() {
   const params    = useParams();
   const rideId    = params?.id as string;
   const router    = useRouter();
-  const { position: me } = useGeolocation(false);
+  const { position: me } = useGeolocation(true);
   const socketRef = useSocket();
 
   const [ride,       setRide]       = useState<RideData | null>(null);
@@ -129,11 +129,24 @@ export default function RideTrackingPage() {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
       {/* Map */}
       <div style={{ position: 'relative', flex: 1 }}>
-        <MapBase center={center} zoom={14} markers={markers}
-          routeTo={status === 'driver_assigned' || status === 'driver_arriving'
-            ? { lat: Number(ride?.pickupLat), lng: Number(ride?.pickupLng) }
-            : undefined}
-          className="w-full h-full" />
+        <MapBase 
+          center={center} 
+          zoom={14} 
+          markers={markers}
+          routeFrom={
+            status === 'in_progress'
+              ? (driverPos ? { lat: driverPos.lat, lng: driverPos.lng } : (me ? { lat: me.lat, lng: me.lng } : undefined))
+              : (driverPos ? { lat: driverPos.lat, lng: driverPos.lng } : undefined)
+          }
+          routeTo={
+            status === 'in_progress'
+              ? (ride ? { lat: Number(ride.destinationLat), lng: Number(ride.destinationLng) } : undefined)
+              : (status === 'driver_assigned' || status === 'driver_arriving')
+                ? (ride ? { lat: Number(ride.pickupLat), lng: Number(ride.pickupLng) } : undefined)
+                : undefined
+          }
+          className="w-full h-full" 
+        />
 
         <button onClick={() => router.push('/home')} style={{
           position: 'absolute', top: 48, left: 16, zIndex: 10,
