@@ -4,42 +4,89 @@ A ride-hailing and logistics platform optimised for Africa, using what3words for
 
 ---
 
+## Bottom Navigation & Screen Flow
+
+```mermaid
+stateDiagram-v2
+    [*] --> Onboarding/Auth : Launch App
+    Onboarding/Auth --> Navigate : Sign In / Register
+    
+    state Navigate {
+        [*] --> MapHome : Enter home screen
+        MapHome --> PlanJourney : Tap "Where to?"
+        PlanJourney --> ConfirmPinSelection : Choose on Map
+        ConfirmPinSelection --> RideSelect : Route Calculated
+        RideSelect --> FindingDriver : Tap "Book Ride"
+        FindingDriver --> ActiveRideTracking : Driver Assigned
+        ActiveRideTracking --> Rating : Ride Completed
+        Rating --> MapHome : Submit Review
+    }
+
+    state Meet {
+        [*] --> SetupMeet : Create / Join Code
+        SetupMeet --> LiveCoordinationMap : Session Active
+        LiveCoordinationMap --> WalkToMeetingPoint : Dynamic Walking Route
+    }
+
+    state Share {
+        [*] --> CreateShareSession : Set Expiry
+        CreateShareSession --> LiveBroadcast : Broadcast Token
+    }
+
+    state SOS {
+        [*] --> TriggerSOS : Tap "I'm Lost"
+        TriggerSOS --> EmergencyBroadcasting : Pulse coordinates & alerts
+    }
+
+    state Profile {
+        [*] --> ProfileSettings : Edit Details
+        ProfileSettings --> GoOnlineOffline : Toggle Driver/Helper Status
+    }
+
+    Navigate --> Meet : Tapping bottom tabs
+    Navigate --> Share : Tapping bottom tabs
+    Navigate --> SOS : Tapping bottom tabs
+    Navigate --> Profile : Tapping bottom tabs
+    
+    Meet --> Navigate : Switch Tab
+    Share --> Navigate : Switch Tab
+    SOS --> Navigate : Switch Tab
+    Profile --> Navigate : Switch Tab
+```
+
+---
+
 ## Architecture Overview
 
 ```mermaid
 graph TB
-    subgraph Mobile["📱 Mobile App (Capacitor)"]
+    subgraph Mobile["📱 Next.js Mobile Hub"]
         direction TB
-        OB[Onboarding]
-        HS[Home / Map]
-        RS[Ride Select]
-        FD[Finding Driver]
-        DR[Driver Arriving]
-        PY[Payment]
-        RT[Rating]
-        OB --> HS --> RS --> FD --> DR --> RT
-        RS --> PY
+        TAB1[Navigate Tab\nMap · Ride Booking]
+        TAB2[Meet Tab\nGroup Coordination]
+        TAB3[SOS Tab\nUrgent Help]
+        TAB4[Share Tab\nBroadcast Coordinates]
+        TAB5[Profile Tab\nAccount & Driver Mode]
     end
 
-    subgraph Frontend["🖥️ Frontend — React + Vite"]
+    subgraph Frontend["🖥️ Frontend — Next.js 15"]
         direction TB
-        AppRouter[App.tsx — Screen Router]
-        MapView[MapView — google-map-react]
-        APIClient[api/client.ts — Axios]
+        AppRouter[Next.js App Router]
+        MapView[MapBase — Google Maps API]
+        APIClient[Axios API Client]
         SocketClient[socket.io-client]
-        GPS[useGPS — Capacitor Geolocation]
+        GPS[useGeolocation Hook]
     end
 
-    subgraph Backend["⚙️ Backend — NestJS"]
+    subgraph Backend["⚙️ Backend — FastAPI (Python)"]
         direction TB
-        AuthMod[Auth Module\nJWT · Phone Login]
-        UsersMod[Users Module]
-        DriversMod[Drivers Module]
-        RidesMod[Rides Module]
-        LocationMod[Location Module\nwhat3words API]
-        DispatchMod[Dispatch Module\nBest-driver matching]
-        WS[WebSocket Gateway\nSocket.IO]
-        RedisMod[Redis Module\nGEO queries]
+        AuthMod[Auth Router\nJWT · Phone Login]
+        RidesMod[Rides Router\nRide lifecycle]
+        DriversMod[Drivers Router\nDriver statuses]
+        LocationMod[Location Router\nwhat3words live API]
+        DispatchMod[Assignment Worker\nDistributed matching]
+        WS[Socket.IO Gateway\nReal-time events]
+        KafkaMod[Kafka Producer/Consumer\nLocation pipeline]
     end
 
     subgraph Storage["🗄️ Storage"]
@@ -49,7 +96,7 @@ graph TB
 
     subgraph External["🌐 External APIs"]
         W3W[what3words API\nPrecise addressing]
-        GM[Google Maps API\nRouting · Geocoding]
+        GM[Google Maps API\nRoutes API]
     end
 
     Mobile -->|renders| Frontend
@@ -58,15 +105,15 @@ graph TB
     APIClient -->|requests| Backend
     SocketClient <-->|ws| WS
 
-    AuthMod --> UsersMod
-    RidesMod --> LocationMod
-    RidesMod --> DispatchMod
-    DispatchMod --> RedisMod
-    WS --> RedisMod
-
-    Backend --> PG
-    RedisMod --> RD
+    AuthMod --> PG
+    RidesMod --> PG
+    DriversMod --> PG
     LocationMod -->|HTTPS| W3W
+    DispatchMod --> RD
+    WS --> RD
+    WS --> KafkaMod
+    KafkaMod --> RD
+
     MapView -->|HTTPS| GM
 ```
 
@@ -77,15 +124,15 @@ graph TB
 ```mermaid
 sequenceDiagram
     actor Rider
-    participant App as React App
-    participant API as NestJS API
+    participant App as Next.js App
+    participant API as FastAPI API
     participant W3W as what3words
     participant DB as PostgreSQL
     participant Redis
-    participant WS as WebSocket
+    participant WS as Socket.IO
     actor Driver
 
-    Rider->>App: Enter destination
+    Rider->>App: Enter destination / select grid
     App->>API: GET /location/convert-to-coordinates?words=xxx
     API->>W3W: Convert w3w → lat/lng
     W3W-->>API: {lat, lng}
@@ -103,7 +150,7 @@ sequenceDiagram
     API->>WS: Emit ride:assigned → Driver
     WS-->>Driver: New ride notification
 
-    loop Every 5s
+    loop Every 3s
         Driver->>WS: Emit driver:update_location {lat, lng}
         WS->>Redis: GEOADD driver_locations
         WS-->>App: Emit driver:location_changed
@@ -137,6 +184,7 @@ erDiagram
         string vehicleModel
         string vehicleColor
         string licensePlate UK
+        string vehicleCategory "economy | pro | help"
         enum status "online | offline | busy"
         float rating
     }
@@ -184,48 +232,23 @@ flowchart TD
 
 ---
 
-## Screen Flow
-
-```mermaid
-stateDiagram-v2
-    [*] --> Onboarding
-    Onboarding --> Home : Swipe through slides
-
-    Home --> RideSelect : Select destination
-    RideSelect --> Home : Back
-
-    RideSelect --> Payment : Tap payment method
-    Payment --> RideSelect : Confirm / Back
-
-    RideSelect --> FindingDriver : Book Taxi
-
-    FindingDriver --> Home : Cancel
-    FindingDriver --> DriverFound : Driver matched (auto ~5s)
-
-    DriverFound --> Home : Cancel ride
-    DriverFound --> Rating : Ride completed (auto ~8s)
-
-    Rating --> Home : Submit & Done
-```
-
----
-
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Mobile shell | Capacitor (iOS + Android) |
-| Frontend | React 19, Vite 8, TypeScript |
-| UI components | Ant Design 6, @ant-design/icons |
-| Maps | google-map-react, Google Maps API |
-| Location | what3words API |
-| Real-time | Socket.IO (client + server) |
-| Backend | NestJS, TypeScript |
-| Auth | JWT, phone-number login |
-| ORM | TypeORM |
+| Mobile Shell | Capacitor (iOS + Android) |
+| Frontend Framework | Next.js 15, React 19, TypeScript |
+| UI Styling | TailwindCSS, Ant Design 6, @ant-design/icons |
+| Maps & Routes | Google Maps JavaScript API, Google Routes API |
+| Addressing | what3words live grid & geocoding API |
+| Real-time | Socket.IO (client + python-socketio backend) |
+| Backend Framework | FastAPI (Python 3.9), Uvicorn |
+| Auth | JWT, stateless password hashing (bcrypt) |
+| ORM | SQLAlchemy (v2.0) |
+| Messaging Pipeline | Apache Kafka (aiokafka) |
 | Database | PostgreSQL 15 |
-| Cache / GEO | Redis 7 (GEOADD / GEORADIUS) |
-| Infra | Podman Compose |
+| Cache & GEO Index | Redis 7 (GEOADD / GEORADIUS) |
+| Infrastructure | Docker / Podman Compose |
 
 ---
 
@@ -233,62 +256,76 @@ stateDiagram-v2
 
 ```
 kaalay/
-├── docker-compose.yml          # PostgreSQL + Redis + Adminer (Podman Compose)
+├── docker-compose.yml          # PostgreSQL + Redis + Kafka + Zookeeper + Adminer
 ├── apps/
-│   ├── backend/                # NestJS API
-│   │   └── src/
-│   │       ├── auth/           # JWT · phone login
-│   │       ├── users/          # User entity + CRUD
-│   │       ├── drivers/        # Driver entity + status
-│   │       ├── rides/          # Ride lifecycle + WebSocket gateway
-│   │       ├── dispatch/       # GEO-based driver matching
-│   │       ├── location/       # what3words integration
-│   │       └── redis/          # Redis GEO service
-│   └── frontend/               # React + Vite + Capacitor
-│       └── src/
-│           ├── screens/        # 7 mobile screens
-│           ├── components/     # MapView, LocationPicker
-│           ├── hooks/          # useGPS
-│           └── api/            # Axios client
+│   ├── backend/                # FastAPI Application
+│   │   ├── app/
+│   │   │   ├── core/           # Config, DB, Security, Socket.io, Kafka
+│   │   │   ├── models/         # SQLAlchemy all models
+│   │   │   ├── schemas/        # Pydantic schemas
+│   │   │   ├── services/       # Location services, assignment worker
+│   │   │   ├── routers/        # Auth, Location, Rides, Drivers APIs
+│   │   │   └── main.py         # Entrypoint
+│   │   ├── venv/               # Python Virtual Environment
+│   │   └── requirements.txt    # Python dependencies
+│   └── frontend/               # Next.js 15 Web Application
+│       ├── app/                # App Router screens (home, meet, ride, track, profile)
+│       ├── components/         # MapBase, W3WMapOverlay, NavigationSheet
+│       ├── context/            # AuthContext, ShareContext, LocationContext
+│       ├── hooks/              # useGeolocation, useSocket
+│       └── lib/                # api client, routeService
 ```
 
 ---
 
 ## How to Run
 
-### 1. Start Infrastructure (PostgreSQL & Redis)
-You need [Podman](https://podman.io/docs/installation) and [podman-compose](https://github.com/containers/podman-compose) installed. Run the following command from the root `kaalay` folder:
+### 1. Start Infrastructure (PostgreSQL, Redis & Kafka)
+Start the containers using [Podman](https://podman.io/docs/installation) or [Docker](https://docs.docker.com/engine/install/) from the root `kaalay` folder:
 ```bash
 podman-compose up -d
+# or
+docker-compose up -d
 ```
 
 ### 2. Configure Environment Variables
-Inside `apps/backend/.env`, ensure you have your API keys set:
+
+**Backend (`apps/backend/.env`)**:
 ```env
+PORT=3000
+DATABASE_URL=postgresql://admin:password@localhost:5432/kaalay
+REDIS_HOST=localhost
+REDIS_PORT=6379
 W3W_API_KEY=YOUR_WHAT3WORDS_API_KEY
-GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
+```
+
+**Frontend (`apps/frontend/.env.local`)**:
+```env
+NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1
+NEXT_PUBLIC_WS_URL=http://localhost:3000
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
+NEXT_PUBLIC_W3W_API_KEY=YOUR_WHAT3WORDS_API_KEY
 ```
 
 ### 3. Start the Backend API
-In a new terminal:
+From a new terminal:
 ```bash
 cd apps/backend
-npm install
-npm run start:dev
+./venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 3000 --reload
 ```
-The NestJS server will start on `http://localhost:3000`.
+The FastAPI server will start on `http://localhost:3000` with Swagger docs available at `http://localhost:3000/docs`.
 
-### 4. Start the Frontend (Web)
-In a new terminal:
+### 4. Start the Frontend (Next.js Dev Server)
+From another terminal:
 ```bash
 cd apps/frontend
-npm install
 npm run dev
 ```
-The Vite development server will start. Open the provided `localhost` link to use the web application.
+The Next.js development server will start on `http://localhost:3001`. Open the link in your browser.
 
 ### 5. Run the Mobile App (Capacitor)
-If you want to run the project as a native mobile app on a simulator or physical device:
+If you want to run the project as a native mobile app:
 ```bash
 cd apps/frontend
 npm run build

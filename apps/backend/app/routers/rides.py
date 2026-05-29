@@ -110,7 +110,7 @@ async def create_ride(
             "category": category,
             "fare": calculated_fare
         }
-        publish_ride_request(str(ride.id), payload)
+        await publish_ride_request(str(ride.id), payload)
     except Exception as e:
         print(f"Queue Publishing Error: {e}")
         

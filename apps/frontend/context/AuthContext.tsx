@@ -1,5 +1,5 @@
 'use client';
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { getMe } from '../lib/api';
 
@@ -27,6 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
+  const checkAuthRef = useRef(false);
 
   const login = (user: User, token: string, refreshToken: string) => {
     localStorage.setItem('kaalay_token', token);
@@ -45,6 +46,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const checkAuth = async () => {
+    if (checkAuthRef.current) return;
+    checkAuthRef.current = true;
+
     const token = localStorage.getItem('kaalay_token');
     if (!token) {
       setUser(null);

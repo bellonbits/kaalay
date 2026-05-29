@@ -15,7 +15,14 @@ export function GoogleMapsProvider({ children }: { children: ReactNode }) {
     // Check if google is already loaded globally via layout script tag
     if (typeof window !== 'undefined') {
       const checkLoaded = () => {
-        if (window.google && window.google.maps) {
+        // Must check for google.maps.Map specifically — google.maps can exist
+        // as a partial stub before the full API is ready, causing
+        // "google.maps.Map is not a constructor" in GoogleMap.componentDidMount
+        if (
+          typeof window.google !== 'undefined' &&
+          typeof window.google.maps !== 'undefined' &&
+          typeof window.google.maps.Map === 'function'
+        ) {
           setIsLoaded(true);
           return true;
         }

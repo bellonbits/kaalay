@@ -63,17 +63,72 @@ function RidePageContent() {
   const { position } = useGeolocation(true);
   const { isLoaded } = useGoogleMaps();
   
-  const [step,     setStep]     = useState<'select' | 'confirm' | 'waiting' | 'active' | 'walking'>('select');
-  const [pickup,   setPickup]   = useState<{ w3w: string; lat: number; lng: number } | null>(null);
-  const [dest,     setDest]     = useState<{ w3w: string; lat: number; lng: number } | null>(null);
-  const [destIn,   setDestIn]   = useState('');
+  const [step, setStep] = useState<'select' | 'confirm' | 'waiting' | 'active' | 'walking'>(() => {
+    const modeParam = searchParams.get('mode');
+    const rideIdParam = searchParams.get('rideId');
+    if (rideIdParam) {
+      if (modeParam === 'walking') return 'walking';
+      return 'waiting';
+    }
+    return 'select';
+  });
+
+  const [pickup, setPickup] = useState<{ w3w: string; lat: number; lng: number } | null>(() => {
+    const pickupLat = parseFloat(searchParams.get('pickupLat') || '0');
+    const pickupLng = parseFloat(searchParams.get('pickupLng') || '0');
+    const pickupW3w = searchParams.get('pickupW3w') || '';
+    if (pickupLat && pickupLng) {
+      return { w3w: pickupW3w, lat: pickupLat, lng: pickupLng };
+    }
+    return null;
+  });
+
+  const [dest, setDest] = useState<{ w3w: string; lat: number; lng: number } | null>(() => {
+    const destLat = parseFloat(searchParams.get('destLat') || '0');
+    const destLng = parseFloat(searchParams.get('destLng') || '0');
+    const destW3w = searchParams.get('destW3w') || '';
+    if (destLat && destLng) {
+      return { w3w: destW3w, lat: destLat, lng: destLng };
+    }
+    return null;
+  });
+
+  const [destIn, setDestIn] = useState(() => {
+    return searchParams.get('destW3w') || '';
+  });
+
   const [loading,  setLoading]  = useState(false);
-  const [price, setPrice] = useState<number>(0);
-  const [distance, setDistance] = useState<string | null>(null);
-  const [duration, setDuration] = useState<string | null>(null);
+
+  const [price, setPrice] = useState<number>(() => {
+    return parseFloat(searchParams.get('price') || '0');
+  });
+
+  const [distance, setDistance] = useState<string | null>(() => {
+    return searchParams.get('distance');
+  });
+
+  const [duration, setDuration] = useState<string | null>(() => {
+    const durationParam = searchParams.get('duration');
+    if (durationParam) {
+      const rawVal = parseFloat(durationParam.replace(/[^0-9.]/g, ''));
+      if (rawVal > 100) {
+        // Param is in seconds, convert to minutes!
+        return `${Math.ceil(rawVal / 60)} min`;
+      }
+      return durationParam;
+    }
+    return null;
+  });
+
   const [estimates, setEstimates] = useState<any[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState('economy');
-  const [rideId,   setRideId]   = useState<string | null>(null);
+
+  const [selectedCategory, setSelectedCategory] = useState(() => {
+    return searchParams.get('category') || 'economy';
+  });
+
+  const [rideId, setRideId] = useState<string | null>(() => {
+    return searchParams.get('rideId');
+  });
   const [driver,   setDriver]   = useState<any>(null);
   const [acceptedNotif, setAcceptedNotif] = useState(false);
   const [multiModal, setMultiModal] = useState<{ [key: string]: { dist: string; dur: string } }>({});
@@ -89,6 +144,8 @@ function RidePageContent() {
   const [isResolving, setIsResolving] = useState(false);
   const resolveTimeoutRef = useRef<any>(null);
   const latestPickingCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+  const lastRouteDetailsKeyRef = useRef<string>('');
+  const lastRouteResultsRef = useRef<any>(null);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -157,6 +214,11 @@ function RidePageContent() {
   }, []);
 
   const getRouteDetails = useCallback(async (origin: {lat: number, lng: number}, dest: {lat: number, lng: number}) => {
+    const key = `${origin.lat.toFixed(6)},${origin.lng.toFixed(6)}-${dest.lat.toFixed(6)},${dest.lng.toFixed(6)}`;
+    if (key === lastRouteDetailsKeyRef.current && lastRouteResultsRef.current) {
+      return lastRouteResultsRef.current;
+    }
+    
     setIsOffRoad(false);
     if (!isLoaded || typeof google === 'undefined' || !google.maps) {
       // Loaders/fallback mock if Google Maps is not loaded yet (prevents DirectionsService TypeError)
@@ -184,6 +246,9 @@ function RidePageContent() {
       }]);
       setCurrentStepIndex(0);
       setMultiModal(results);
+      
+      lastRouteDetailsKeyRef.current = key;
+      lastRouteResultsRef.current = results.car;
       return results.car;
     }
 
@@ -249,6 +314,8 @@ function RidePageContent() {
     }
 
     setMultiModal(results);
+    lastRouteDetailsKeyRef.current = key;
+    lastRouteResultsRef.current = results.car;
     return results.car;
   }, [step, isLoaded]);
 
@@ -387,58 +454,19 @@ function RidePageContent() {
     setUser(JSON.parse(u));
   }, [router]);
 
+  // All URL-param state is already hydrated synchronously by the lazy useState
+  // initializers above. This effect only handles the side-effect of joining
+  // the socket room (which can't be done inside useState initializers).
+  const didSocketJoinRef = useRef(false);
   useEffect(() => {
+    if (didSocketJoinRef.current) return;
     const rideIdParam = searchParams.get('rideId');
-    const modeParam = searchParams.get('mode');
-    if (rideIdParam) {
-      setRideId(rideIdParam);
-      
-      const pickupLat = parseFloat(searchParams.get('pickupLat') || '0');
-      const pickupLng = parseFloat(searchParams.get('pickupLng') || '0');
-      const pickupW3w = searchParams.get('pickupW3w') || '';
-      if (pickupLat && pickupLng) {
-        setPickup({ w3w: pickupW3w, lat: pickupLat, lng: pickupLng });
-        setMapFocus({ lat: pickupLat, lng: pickupLng });
-        setIsPickupManual(true);
-      }
-
-      const destLat = parseFloat(searchParams.get('destLat') || '0');
-      const destLng = parseFloat(searchParams.get('destLng') || '0');
-      const destW3w = searchParams.get('destW3w') || '';
-      if (destLat && destLng) {
-        setDest({ w3w: destW3w, lat: destLat, lng: destLng });
-      }
-
-      const categoryParam = searchParams.get('category');
-      if (categoryParam) {
-        setSelectedCategory(categoryParam);
-      }
-
-      const priceParam = parseFloat(searchParams.get('price') || '0');
-      if (priceParam) {
-        setPrice(priceParam);
-      }
-
-      const distanceParam = searchParams.get('distance');
-      if (distanceParam) {
-        setDistance(distanceParam);
-      }
-
-      const durationParam = searchParams.get('duration');
-      if (durationParam) {
-        setDuration(durationParam);
-      }
-
-      if (modeParam === 'walking') {
-        setStep('walking');
-      } else {
-        // Automatically join the socket room for the ride
-        const s = getSocket();
-        s.emit('join', rideIdParam);
-        setStep('waiting');
-      }
-    }
-  }, [searchParams]);
+    const modeParam   = searchParams.get('mode');
+    if (!rideIdParam || modeParam === 'walking') return; // walking needs no socket
+    didSocketJoinRef.current = true;
+    const s = getSocket();
+    s.emit('join', rideIdParam);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleW3WSuggestionSelect = useCallback(async (words: string) => {
     if (destInputRef.current) destInputRef.current.value = `///${words}`;
@@ -663,6 +691,15 @@ function RidePageContent() {
     }
   }, [position, mapFocus]);
 
+  const isWalkingMode = step === 'walking' || selectedCategory === 'walking';
+
+  console.log('[MapBase props]', {
+    routeFrom: position ? { lat: position.lat, lng: position.lng } : pickup,
+    routeTo: dest,
+    forceDirect: isPrecisionActive,
+    travelMode: isWalkingMode ? 'WALKING' : 'DRIVING',
+  });
+
   return (
     <div className="h-full w-full bg-white font-outfit relative overflow-hidden">
       {/* Immersive Map Background */}
@@ -686,7 +723,7 @@ function RidePageContent() {
           isSelectingPickup={!!pickingOnMap}
           pickingType={pickingOnMap === 'pickup' ? 'start' : pickingOnMap === 'dest' ? 'dest' : null}
           onCenterPinChange={handleCenterPinChange}
-          travelMode={step === 'walking' ? 'WALKING' : 'DRIVING'}
+          travelMode={isWalkingMode ? 'WALKING' : 'DRIVING'}
           zoomState={step === 'walking' ? 'navigation' : undefined}
           forceDirect={isPrecisionActive}
         />

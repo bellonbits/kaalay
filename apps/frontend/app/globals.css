@@ -105,6 +105,14 @@ body {
 }
 .animate-fade-in { animation: fade-in 0.4s ease-out both; }
 
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-down {
+  animation: slide-down 0.25s ease-out;
+}
+
 /* ── UI Components ── */
 .btn {
   display: flex; align-items: center; justify-content: center;

@@ -18,7 +18,7 @@ interface Props {
   currentLocation?: { lat: number; lng: number };
   initialStartPoint?: LocationPoint | null;
   initialDestPoint?: LocationPoint | null;
-  onRouteSubmit: (start: LocationPoint, dest: LocationPoint) => void;
+  onRouteSubmit: (start: LocationPoint, dest: LocationPoint, mode?: 'WALKING' | 'DRIVING') => void;
   onClose: () => void;
   onPickOnMapStart?: () => void;
   onPickOnMapDest?: () => void;
@@ -150,14 +150,17 @@ export default function NavigationSheet({
   // Use "My Location" if `currentLocation` exists and `startPoint` is null
   const effectiveStart = startPoint ?? (currentLocation ? { ...currentLocation, label: 'Your Current Location' } : null);
 
-  const isW3W = (str: string) => /^\/{0,2}[a-z]+\.[a-z]+\.[a-z]+$/i.test(str.trim());
+  /** Strips any existing leading slashes and returns canonical `///word.word.word` */
+  const normalizeW3W = (words: string) => `///${words.replace(/^\/+/, '')}`;
+
+  const isW3W = (str: string) => /^\/{0,3}[a-z]+\.[a-z]+\.[a-z]+$/i.test(str.trim());
 
   const checkW3W = async (query: string, setPoint: (p: LocationPoint) => void) => {
     if (isW3W(query)) {
       setLoadingW3W(true);
       try {
         const { latitude, longitude, what3words } = await convertToCoordinates(query);
-        setPoint({ lat: latitude, lng: longitude, label: `///${what3words}`, isW3W: true });
+        setPoint({ lat: latitude, lng: longitude, label: normalizeW3W(what3words), isW3W: true });
       } catch (err) {
         console.error("what3words conversion failed", err);
       } finally {
@@ -202,7 +205,7 @@ export default function NavigationSheet({
   };
 
   const submitRoute = () => {
-    if (effectiveStart && destPoint) onRouteSubmit(effectiveStart, destPoint);
+    if (effectiveStart && destPoint) onRouteSubmit(effectiveStart, destPoint, 'WALKING');
   };
 
   // Auto-submit instantly when both points are ready (Uber-like flow)
@@ -210,7 +213,7 @@ export default function NavigationSheet({
     if (effectiveStart && destPoint) {
       // Small timeout to allow the input to visibly populate before the sheet closes
       const t = setTimeout(() => {
-        onRouteSubmit(effectiveStart, destPoint);
+        onRouteSubmit(effectiveStart, destPoint, 'WALKING');
       }, 150);
       return () => clearTimeout(t);
     }
@@ -294,7 +297,7 @@ export default function NavigationSheet({
                               </div>
                               <div>
                                 <p className="text-sm font-black text-black leading-none mb-1">{s.name}</p>
-                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">///{s.words} · {s.description || 'Saved location'}</p>
+                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{normalizeW3W(s.words)} · {s.description || 'Saved location'}</p>
                               </div>
                             </button>
                           ))}
@@ -418,7 +421,7 @@ export default function NavigationSheet({
                               </div>
                               <div>
                                 <p className="text-sm font-black text-black leading-none mb-1">{s.name}</p>
-                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">///{s.words} · {s.description || 'Saved location'}</p>
+                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{normalizeW3W(s.words)} · {s.description || 'Saved location'}</p>
                               </div>
                             </button>
                           ))}
@@ -450,7 +453,7 @@ export default function NavigationSheet({
                                 <EnvironmentOutlined className="text-red-500 text-sm" />
                               </div>
                               <div>
-                                <p className="text-sm font-black text-red-600 leading-none mb-1">///{s.words}</p>
+                                <p className="text-sm font-black text-red-600 leading-none mb-1">{normalizeW3W(s.words)}</p>
                                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{s.nearestPlace}</p>
                               </div>
                             </button>

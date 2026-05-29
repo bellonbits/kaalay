@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
+    KAFKA_BOOTSTRAP_SERVERS: str = "kafka:9092"
     JWT_SECRET: str = "super-secret-key"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days

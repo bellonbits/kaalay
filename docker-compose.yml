@@ -11,6 +11,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d kaalay"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: docker.io/library/redis:7-alpine
@@ -20,6 +25,11 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   adminer:
     image: docker.io/library/adminer
@@ -34,12 +44,20 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_LOG4J_ROOT_LOGLEVEL: WARN
+      ZOOKEEPER_LOG4J_PROP: WARN,CONSOLE
+    healthcheck:
+      test: ["CMD-SHELL", "/bin/bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/2181' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   kafka:
     image: docker.io/confluentinc/cp-kafka:7.4.0
     container_name: kaalay-kafka
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     ports:
       - "9092:9092"
     environment:
@@ -49,6 +67,12 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
   backend:
     build:
@@ -57,7 +81,7 @@ services:
     container_name: kaalay-backend
     restart: always
     ports:
-      - "80:3000"
+      - "3000:3000"
     environment:
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
@@ -70,9 +94,12 @@ services:
       KAFKA_BROKER_URL: kafka:9092
       JWT_SECRET: super-secret-key
     depends_on:
-      - postgres
-      - redis
-      - kafka
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     volumes:
       - ./apps/backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 3000 --reload

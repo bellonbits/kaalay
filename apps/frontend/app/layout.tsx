@@ -44,20 +44,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}&libraries=places,geometry,marker&loading=async`}
           strategy="afterInteractive"
         />
-        {/* what3words web components — loaded after hydration to avoid className mismatch */}
-        <Script
-          id="w3w-esm"
-          type="module"
-          src="https://cdn.what3words.com/javascript-components@5.0.0/dist/what3words/what3words.esm.js"
-          strategy="afterInteractive"
-          crossOrigin="anonymous"
-        />
-        <Script
-          id="w3w-nomodule"
-          src={`https://cdn.what3words.com/javascript-components@5.0.0/dist/what3words/what3words.js?key=${process.env.NEXT_PUBLIC_W3W_API_KEY || 'Z5Z6G74L'}`}
-          strategy="afterInteractive"
-          noModule
-        />
         <ClientShell>
           <div className="flex flex-col h-full w-full overflow-hidden">
             <main className="flex-1 relative overflow-hidden w-full">

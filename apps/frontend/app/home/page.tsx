@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Badge } from 'antd';
 import {
@@ -15,7 +15,7 @@ import {
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useAuth } from '../../context/AuthContext';
 import { useShare } from '../../context/ShareContext';
-import { acceptRide, requestRide, convertToWords, getPlaces, createPlace } from '../../lib/api';
+import { acceptRide, requestRide, convertToWords, getPlaces, createPlace, triggerSos, cancelSos } from '../../lib/api';
 import type { MarkerData } from '../../components/MapBase';
 import NavigationSheet, { LocationPoint } from '../../components/NavigationSheet';
 import { useSocket } from '../../hooks/useSocket';
@@ -66,6 +66,7 @@ const getHaversineDistance = (lat1: number, lon1: number, lat2: number, lon2: nu
 
 export default function HomePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { position } = useGeolocation(false);
   const { user, loading: authLoading } = useAuth();
   const { isLive } = useShare();
@@ -84,6 +85,7 @@ export default function HomePage() {
   const [routeStart, setRouteStart] = useState<LocationPoint | null>(null);
   const [routeInfo, setRouteInfo] = useState<{ distance: string; duration: string; priceBase: number } | null>(null);
   const [selectedRide, setSelectedRide] = useState('economy');
+  const [travelMode, setTravelMode] = useState<'WALKING' | 'DRIVING'>('WALKING');
   const [isRequesting, setIsRequesting] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -103,18 +105,138 @@ export default function HomePage() {
   const [savePlaceCategory, setSavePlaceCategory] = useState('other');
   const [isSavingPlace, setIsSavingPlace] = useState(false);
   const [selectedPlaceInfo, setSelectedPlaceInfo] = useState<any | null>(null);
+  const fetchPlacesRef = useRef(false);
 
   // Map selection mode state for Plan Journey inputs
   const [pickingLocationType, setPickingLocationType] = useState<'start' | 'dest' | null>(null);
 
+  // SOS Urgent State
+  const sosParam = searchParams.get('sos');
+  const [sosActive, setSosActive] = useState(false);
+  const [sosConfirmOpen, setSosConfirmOpen] = useState(false);
+  const [sosSessionCode, setSosSessionCode] = useState<string | null>(null);
+  const [sosLoading, setSosLoading] = useState(false);
+  const [sosW3w, setSosW3w] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (sosParam === '1') {
+      setSosActive(true);
+      setSheetH('hidden');
+    } else {
+      setSosActive(false);
+      setSosConfirmOpen(false);
+    }
+  }, [sosParam]);
+
+  // SOS Background location broadcast loop (1s intervals for emergency tracking)
+  const sosIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (sosActive && sosSessionCode && position && socketRef.current) {
+      if (sosIntervalRef.current) clearInterval(sosIntervalRef.current);
+      
+      // Emit initial location immediately
+      socketRef.current.emit('host-location', {
+        code: sosSessionCode,
+        memberId: user?.id || 'anon',
+        lat: position.lat,
+        lng: position.lng,
+        accuracy: position.accuracy,
+        heading: position.heading
+      });
+      
+      // Setup 1 second high-fidelity loop
+      sosIntervalRef.current = setInterval(() => {
+        socketRef.current?.emit('host-location', {
+          code: sosSessionCode,
+          memberId: user?.id || 'anon',
+          lat: position.lat,
+          lng: position.lng,
+          accuracy: position.accuracy,
+          heading: position.heading
+        });
+      }, 1000);
+    }
+    return () => {
+      if (sosIntervalRef.current) {
+        clearInterval(sosIntervalRef.current);
+        sosIntervalRef.current = null;
+      }
+    };
+  }, [sosActive, sosSessionCode, position, socketRef, user?.id]);
+
+  const handleTriggerSOS = async () => {
+    if (!position) return;
+    setSosLoading(true);
+    try {
+      const w3wData = await convertToWords(position.lat, position.lng);
+      const w3wStr = w3wData.words;
+      setSosW3w(w3wStr);
+
+      const payload = {
+        lat: position.lat,
+        lng: position.lng,
+        accuracy: position.accuracy,
+        w3w: w3wStr,
+        message: `EMERGENCY! I'm lost near ///${w3wStr}`
+      };
+
+      const res = await triggerSos(payload);
+      setSosSessionCode(res.shareCode);
+      setSosConfirmOpen(false);
+      
+      const shareUrl = `${window.location.origin}/track/${res.shareCode}`;
+      const waText = `EMERGENCY! I am lost at my what3words address: ///${w3wStr}.\n\nTrack my live location in real-time here:\n${shareUrl}\n\nSent via Kaalay SOS`;
+      window.open(`https://wa.me/?text=${encodeURIComponent(waText)}`, '_blank');
+    } catch (err) {
+      console.error("SOS trigger failed", err);
+      const coordStr = `${position.lat.toFixed(5)},${position.lng.toFixed(5)}`;
+      setSosW3w(coordStr);
+      try {
+        const res = await triggerSos({
+          lat: position.lat,
+          lng: position.lng,
+          accuracy: position.accuracy,
+          w3w: coordStr
+        });
+        setSosSessionCode(res.shareCode);
+        setSosConfirmOpen(false);
+      } catch (innerErr) {
+        console.error("SOS fallback trigger failed", innerErr);
+      }
+    } finally {
+      setSosLoading(false);
+    }
+  };
+
+  const handleCancelSOS = async () => {
+    if (!sosSessionCode) return;
+    setSosLoading(true);
+    try {
+      await cancelSos(sosSessionCode);
+      setSosSessionCode(null);
+      setSosW3w(null);
+      setSosConfirmOpen(false);
+      router.replace('/home');
+    } catch (err) {
+      console.error("SOS cancellation failed", err);
+      setSosSessionCode(null);
+      setSosW3w(null);
+      setSosConfirmOpen(false);
+      router.replace('/home');
+    } finally {
+      setSosLoading(false);
+    }
+  };
+
   // Hide BottomNav AND collapse sheet when pinning a location
   useEffect(() => {
-    const shouldHide = !!pickingLocationType || sheetH === 'full' || sheetH === 'hidden' || !!routeDest;
+    const shouldHide = !!pickingLocationType || sheetH === 'full' || sheetH === 'hidden' || !!routeDest || sosActive;
     window.dispatchEvent(new CustomEvent('hide-bottom-nav', { detail: shouldHide }));
     return () => {
       window.dispatchEvent(new CustomEvent('hide-bottom-nav', { detail: false }));
     };
-  }, [pickingLocationType, sheetH, routeDest]);
+  }, [pickingLocationType, sheetH, routeDest, sosActive]);
 
   // Collapse the bottom sheet when entering picking mode so it never covers the confirm button
   const prevPickingRef = useRef<'start' | 'dest' | null>(null);
@@ -206,9 +328,26 @@ export default function HomePage() {
     };
   }, []);
 
-  const handleCalculateRoute = useCallback(async (start: LocationPoint, dest: LocationPoint) => {
+  const handleCalculateRoute = useCallback(async (start: LocationPoint, dest: LocationPoint, mode: 'WALKING' | 'DRIVING' = 'WALKING') => {
+    setTravelMode(mode);
     setRouteStart(start);
-    setRouteDest(dest); 
+
+    // If dest label is not already a w3w address, convert it
+    let finalDest = dest;
+    if (!dest.label?.startsWith('///') && !dest.isW3W) {
+      try {
+        const w3wResult = await convertToWords(dest.lat, dest.lng);
+        finalDest = {
+          ...dest,
+          label: `///${w3wResult.words}`,
+          isW3W: true,
+        };
+      } catch {
+        // Keep original label as fallback
+      }
+    }
+
+    setRouteDest(finalDest); 
     setShowNavSheet(false); 
     setSheetH('half'); 
     setZoomState('tracking'); // Set auto zoom to tracking mode
@@ -216,8 +355,8 @@ export default function HomePage() {
       const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
       const res = await computeRoute(
         { lat: start.lat, lng: start.lng },
-        { lat: dest.lat, lng: dest.lng },
-        'DRIVING',
+        { lat: finalDest.lat, lng: finalDest.lng },
+        mode,
         apiKey
       );
       
@@ -236,7 +375,7 @@ export default function HomePage() {
       }
     } catch (err) { 
       console.error('Directions error, using off-road haversine fallback:', err); 
-      const distNum = getHaversineDistance(start.lat, start.lng, dest.lat, dest.lng);
+      const distNum = getHaversineDistance(start.lat, start.lng, finalDest.lat, finalDest.lng);
       const distanceText = `${distNum.toFixed(1)} km (direct)`;
       // Driving off-road assumes slower speed (~20-25 km/h)
       const durationMins = Math.max(1, Math.round(distNum * 2.5));
@@ -249,12 +388,22 @@ export default function HomePage() {
     }
   }, []);
 
+  const handleSheetCancel = useCallback(() => {
+    setShowNavSheet(false);
+    setRouteStart(null);
+    setRouteDest(null);
+    setTravelMode('DRIVING');
+  }, []);
+
   const fetchPlaces = useCallback(async () => {
+    if (fetchPlacesRef.current) return;
+    fetchPlacesRef.current = true;
     try {
       const places = await getPlaces();
       setSavedPlaces(places || []);
     } catch (err) {
       console.error("Failed to load saved custom places", err);
+      fetchPlacesRef.current = false;
     }
   }, []);
 
@@ -478,6 +627,7 @@ export default function HomePage() {
           followMode={followMode}
           onFollowModeChange={setFollowMode}
           zoomState={zoomState}
+          travelMode={travelMode}
           className="w-full h-full" 
           onClick={() => {
             if (routeDest) setSheetH('half');
@@ -878,7 +1028,9 @@ export default function HomePage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-black text-black truncate">{s.user?.fullName || s.rider?.fullName || 'Anonymous'}</p>
-                    <p className="text-[10px] text-yellow-600 font-black tracking-tight truncate uppercase mt-0.5">///{s.pickupWhat3words || 'active.spot'}</p>
+                    <p className="text-[10px] text-yellow-600 font-black tracking-tight truncate uppercase mt-0.5">
+                      ///{(s.pickupWhat3words || 'active.spot').replace(/^\/+/, '')}
+                    </p>
                   </div>
                   {isHelper && (
                     <button 
@@ -901,7 +1053,7 @@ export default function HomePage() {
         currentLocation={routeStart || (position ? { lat: position.lat, lng: position.lng } : undefined)} 
         initialStartPoint={routeStart}
         initialDestPoint={routeDest}
-        onClose={() => setShowNavSheet(false)} 
+        onClose={handleSheetCancel} 
         onRouteSubmit={handleCalculateRoute} 
         onPickOnMapStart={() => {
           setPickingLocationType('start');
@@ -1124,6 +1276,153 @@ export default function HomePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Immersive Fullscreen SOS Overlay */}
+      {sosActive && !sosSessionCode && (
+        <div className="fixed inset-0 z-50 bg-[#0e0c0c]/90 backdrop-blur-md flex flex-col items-center justify-center animate-fade-in">
+          {/* Top-Left Back/Cancel arrow */}
+          <button 
+            onClick={() => router.replace('/home')}
+            className="absolute top-12 left-6 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 transition-all flex items-center justify-center border border-white/10 cursor-pointer"
+            title="Exit SOS Mode"
+          >
+            <ArrowLeftOutlined className="text-white text-lg" />
+          </button>
+
+          {/* Emergency Pill */}
+          <div className="bg-red-500/10 border border-red-500/30 rounded-full px-4 py-1.5 flex items-center gap-2 mb-6">
+            <span className="w-2 h-2 bg-red-600 rounded-full animate-pulse" />
+            <span className="text-[10px] font-black uppercase tracking-widest text-red-500">Kaalay Rescue</span>
+          </div>
+
+          {/* Pulsing Centered Button */}
+          <div 
+            onClick={() => setSosConfirmOpen(true)}
+            className="w-48 h-48 bg-red-600 border-8 border-red-500/25 animate-pulse rounded-full shadow-premium flex flex-col items-center justify-center cursor-pointer hover:bg-red-700 active:scale-95 transition-all"
+          >
+            <span className="text-white text-3xl font-black uppercase tracking-widest leading-none">SOS</span>
+            <span className="text-white/80 text-[10px] font-black uppercase tracking-widest mt-2">TAP TO RESCUE</span>
+          </div>
+
+          <h2 className="text-white text-xl font-black uppercase tracking-widest mt-8 text-center px-6">
+            I'M LOST
+          </h2>
+          <p className="text-white/60 text-xs font-bold text-center mt-2 max-w-[280px] px-6 leading-relaxed">
+            Tap the button above to broadcast your live location to all online helpers and drivers.
+          </p>
+        </div>
+      )}
+
+      {/* SOS Custom Confirmation Bottom Sheet */}
+      {sosConfirmOpen && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+          {/* Backdrop click to close */}
+          <div className="absolute inset-0" onClick={() => setSosConfirmOpen(false)} />
+          
+          <div className="relative w-full max-w-md bg-white rounded-t-[32px] border-t border-gray-100 p-6 pb-10 shadow-2xl animate-slide-up">
+            <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-6" />
+            
+            <div className="flex flex-col items-center text-center">
+              <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center text-red-500 mb-4 animate-bounce">
+                <AlertOutlined className="text-2xl" />
+              </div>
+              
+              <h3 className="text-lg font-black text-black uppercase tracking-wider">Confirm SOS Broadcast</h3>
+              <p className="text-gray-500 text-xs font-bold mt-2 leading-relaxed px-4">
+                Are you sure you want to broadcast an emergency? This will share your real-time 1-second interval coordinates and what3words address with emergency responders.
+              </p>
+            </div>
+            
+            <div className="mt-8 flex flex-col gap-3">
+              <button
+                onClick={handleTriggerSOS}
+                disabled={sosLoading}
+                className="w-full h-14 bg-red-600 hover:bg-red-700 active:scale-95 disabled:opacity-50 text-white font-black text-sm uppercase tracking-wider rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2"
+              >
+                {sosLoading ? <LoadingOutlined /> : <AlertOutlined />}
+                BROADCAST SOS ALERT
+              </button>
+              
+              <button
+                onClick={() => setSosConfirmOpen(false)}
+                disabled={sosLoading}
+                className="w-full h-14 bg-gray-100 hover:bg-gray-200 active:scale-95 text-gray-500 hover:text-black font-black text-sm uppercase tracking-wider rounded-2xl transition-all"
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SOS Active Distress Dashboard & Card */}
+      {sosActive && sosSessionCode && (
+        <>
+          {/* Top Live Activity Status Pill */}
+          <div className="absolute top-12 left-0 right-0 z-40 flex justify-center pointer-events-none animate-slide-down">
+            <div className="bg-red-600/90 backdrop-blur-md rounded-full px-4 py-2 border border-red-500/20 shadow-lg flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 bg-white rounded-full animate-ping" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-white">SOS Live Broadcast</span>
+              <span className="text-[10px] font-black text-white/80 bg-black/15 px-2 py-0.5 rounded-full uppercase">1s Update</span>
+            </div>
+          </div>
+
+          {/* Bottom active distress card */}
+          <div className="fixed bottom-6 left-6 right-6 z-[95] animate-slide-up-spring">
+            <div className="glass-premium p-6 rounded-[32px] border border-red-200/50 shadow-2xl flex flex-col gap-5 bg-white/95 relative overflow-hidden">
+              {/* Red pulsing glow effect behind the card */}
+              <div className="absolute -inset-10 bg-red-500/5 blur-3xl pointer-events-none rounded-full" />
+              
+              <div className="flex gap-4 relative z-10">
+                <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center flex-shrink-0 animate-pulse">
+                  <AlertOutlined className="text-red-500 text-xl" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-base font-black text-black leading-tight">Your Location Shared</h4>
+                    <span className="px-2 py-0.5 bg-red-50 text-red-500 text-[8px] font-black uppercase rounded-md tracking-wider">
+                      Active Distress
+                    </span>
+                  </div>
+                  <p className="text-xs font-bold text-gray-500 mt-1 leading-snug">
+                    Responders are tracking you. Keep your phone on.
+                  </p>
+                  {sosW3w && (
+                    <p className="text-sm font-black text-red-600 mt-2 tracking-wide font-mono flex items-center gap-1.5">
+                      <span className="text-xs">///</span>{sosW3w}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 relative z-10">
+                {/* Share to WhatsApp Button */}
+                <button
+                  onClick={() => {
+                    const shareUrl = `${window.location.origin}/track/${sosSessionCode}`;
+                    const waText = `EMERGENCY! I am lost at my what3words address: ///${sosW3w}.\n\nTrack my live location in real-time here:\n${shareUrl}\n\nSent via Kaalay SOS`;
+                    window.open(`https://wa.me/?text=${encodeURIComponent(waText)}`, '_blank');
+                  }}
+                  className="w-full h-12 bg-[#25D366] hover:bg-[#20ba5a] active:scale-95 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+                >
+                  <ShareAltOutlined className="text-base" />
+                  Share via WhatsApp
+                </button>
+
+                {/* Stop Emergency / Cancel Button */}
+                <button
+                  onClick={handleCancelSOS}
+                  disabled={sosLoading}
+                  className="w-full h-12 border-2 border-red-600 hover:bg-red-50 active:scale-95 text-red-600 disabled:opacity-50 font-black text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
+                >
+                  {sosLoading ? <LoadingOutlined /> : <CloseOutlined />}
+                  Stop Emergency
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

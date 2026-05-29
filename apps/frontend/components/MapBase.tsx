@@ -6,6 +6,7 @@ import { getGridSection } from '../lib/api';
 import { computeRoute } from '../lib/routeService';
 import AdvancedMarker from './AdvancedMarker';
 import PinIcon from './PinIcon';
+import W3WMapOverlay from './W3WMapOverlay';
 
 const LIGHT_STYLE: google.maps.MapTypeStyle[] = [
   { elementType: 'geometry',            stylers: [{ color: '#f1f3f4' }] },
@@ -193,23 +194,28 @@ const MapBase = forwardRef<MapHandle, Props>(({
   const lastReportedLatRef = useRef<number | null>(null);
   const lastReportedLngRef = useRef<number | null>(null);
 
-  // ── Polyline refs (drawn natively) ────────────────────────────────────────
-  const glowPolyRef = useRef<google.maps.Polyline | null>(null);
-  const mainPolyRef = useRef<google.maps.Polyline | null>(null);
+  // ── Native polylines (avoids @react-google-maps/api Polyline race condition) ─
+  const polylinesRef = useRef<google.maps.Polyline[]>([]);
 
   // ── Route state (Routes API replaces DirectionsService) ─────────────────
   const [routePoints, setRoutePoints] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [routeInfo,   setRouteInfo]   = useState<RouteInfo | null>(null);
 
   // ── Stable origin: debounce GPS jitter — only update after > 50 m movement ─
-  const [stableOrigin, setStableOrigin] = useState<{ lat: number; lng: number }>(routeFrom ?? center);
+  // Seed directly from routeFrom if available, otherwise fall back to center.
+  // This ensures navigation-loaded coords (from URL params) are valid immediately.
+  const [stableOrigin, setStableOrigin] = useState<{ lat: number; lng: number }>(
+    () => routeFrom ? { lat: routeFrom.lat, lng: routeFrom.lng } : { lat: center.lat, lng: center.lng }
+  );
 
   useEffect(() => {
-    const next = routeFrom ?? center;
+    if (!routeFrom) return;
+    const next = { lat: routeFrom.lat, lng: routeFrom.lng };
+    // Only update stableOrigin when the user has physically moved >50m (suppresses GPS jitter)
     if (haversineMetres(stableOrigin, next) > 50) {
-      setStableOrigin({ lat: next.lat, lng: next.lng });
+      setStableOrigin(next);
     }
-  }, [routeFrom?.lat, routeFrom?.lng, center.lat, center.lng]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [routeFrom?.lat, routeFrom?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Memo wrappers (keyed on coordinates so object refs are stable)
   const memoizedRouteTo = useMemo(
@@ -321,24 +327,23 @@ const MapBase = forwardRef<MapHandle, Props>(({
   }, []);
 
   const onUnmount = useCallback(() => {
-    glowPolyRef.current?.setMap(null);
-    mainPolyRef.current?.setMap(null);
-    glowPolyRef.current        = null;
-    mainPolyRef.current        = null;
     mapRef.current             = null;
     mapInstanceRef.current     = null;
     setMapReady(false);
   }, []);
 
   const options = useMemo(() => ({
-    // NOTE: `styles` cannot be used together with `mapId`.
-    // When mapId is present, map styling is controlled via the Google Cloud Console.
-    // See: https://developers.google.com/maps/documentation/javascript/styling#cloud_tooling
     disableDefaultUI: true,
     gestureHandling: 'greedy',
     clickableIcons: false,
     preventGoogleFontsLoading: true,
+    // mapId is required for AdvancedMarkerElement to function.
+    // 'DEMO_MAP_ID' is Google's official placeholder for development/testing.
+    // Native google.maps.Polyline renders correctly on vector maps —
+    // the previous polyline invisibility was caused by the React <Polyline>
+    // component losing its map reference (now fixed with imperative setMap()).
     mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID',
+    // tilt is managed imperatively in zoom/follow effects via map.setTilt()
   }), []);
 
   useImperativeHandle(ref, () => ({
@@ -437,16 +442,43 @@ const MapBase = forwardRef<MapHandle, Props>(({
   // • Debounced 800 ms + 50 m movement gate to prevent API hammering
   // • Uses cancellation token to discard stale responses
   const routeFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRouteKeyRef = useRef<string>('');
 
   useEffect(() => {
+    console.log('[MapBase route effect]', {
+      hasFrom: !!routeFrom,
+      hasTo: !!memoizedRouteTo,
+      mapReady,
+      travelMode,
+      mapInstance: !!(mapInstanceRef.current ?? mapRef.current),
+    });
+
     if (!mapReady || !isLoaded || !memoizedRouteTo || forceDirect) {
-      setRoutePoints(null);
-      setRouteInfo(null);
-      onRouteInfo?.(null);
+      if (forceDirect) {
+        // forceDirect = straight line, clear the API-computed path
+        setRoutePoints(null);
+        setRouteInfo(null);
+        onRouteInfo?.(null);
+        lastRouteKeyRef.current = '';
+      }
+      // When routeTo goes null (transient reset), do NOT clear route state or the key —
+      // preserving them means the polyline stays drawn and the cache stays warm.
+      return;
+    }
+
+    const map = mapInstanceRef.current ?? mapRef.current;
+    if (!map) {
+      console.error('[MapBase] map is null when route effect fired — this is the bug');
       return;
     }
 
     const origin = stableOrigin;
+    const mode = travelMode ?? 'DRIVING';
+    const key = `${origin.lat.toFixed(6)},${origin.lng.toFixed(6)}-${memoizedRouteTo.lat.toFixed(6)},${memoizedRouteTo.lng.toFixed(6)}-${mode}`;
+
+    if (key === lastRouteKeyRef.current) return;
+    lastRouteKeyRef.current = key;
+
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
 
     if (routeFetchTimerRef.current) clearTimeout(routeFetchTimerRef.current);
@@ -454,16 +486,23 @@ const MapBase = forwardRef<MapHandle, Props>(({
     let cancelled = false;
 
     routeFetchTimerRef.current = setTimeout(() => {
-      computeRoute(origin, memoizedRouteTo, travelMode ?? 'DRIVING', apiKey).then(result => {
+      computeRoute(origin, memoizedRouteTo, mode, apiKey).then(result => {
         if (cancelled) return;
 
         if (result && result.polylinePoints.length >= 2) {
-          // Stitch exact GPS origin + road path + exact destination pin
-          setRoutePoints([
+          const stitched = [
             { lat: origin.lat, lng: origin.lng },
             ...result.polylinePoints,
             { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
-          ]);
+          ];
+          console.log('[MapBase draw]', {
+            resultPoints: result.polylinePoints.length,
+            path: stitched.length,
+            map: !!(mapInstanceRef.current ?? mapRef.current),
+            googleAvailable: typeof google !== 'undefined',
+          });
+          // Stitch exact GPS origin + road path + exact destination pin
+          setRoutePoints(stitched);
           const slm = distToDest ?? haversineMetres(origin, memoizedRouteTo);
           const info = routeResultToInfo(result, slm);
           setRouteInfo(info);
@@ -492,57 +531,68 @@ const MapBase = forwardRef<MapHandle, Props>(({
     };
   }, [mapReady, isLoaded, memoizedRouteTo?.lat, memoizedRouteTo?.lng, travelMode, forceDirect, stableOrigin.lat, stableOrigin.lng]);
 
-  // ── NATIVE POLYLINE DRAWING (Uber-style: white border + blue core) ────────
-  //
-  // Redraws whenever routePoints changes (new Routes API fetch) OR the user
-  // position updates (live GPS tracking). No extra API call is made on position
-  // updates — routePoints is already the cached road path.
-  useEffect(() => {
-    const map = mapInstanceRef.current;
+  // ── ROUTE PATH COMPUTATION ────────────────────────────────────────────────
+  const routePath = useMemo(() => {
+    if (!memoizedRouteTo) return null;
 
-    glowPolyRef.current?.setMap(null);
-    mainPolyRef.current?.setMap(null);
-    glowPolyRef.current = null;
-    mainPolyRef.current = null;
-
-    if (!map || !mapReady || !isLoaded || !memoizedRouteTo) return;
-
-    // Use Routes API road path if available, else fall back to direct bearing
     const origin = memoizedRouteFrom ?? memoizedCenter;
-    const path: google.maps.LatLngLiteral[] = routePoints ?? [
-      { lat: origin.lat, lng: origin.lng },
-      { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
-    ];
 
-    if (path.length < 2) return;
+    if (forceDirect) {
+      return [
+        { lat: origin.lat, lng: origin.lng },
+        { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
+      ];
+    }
 
-    // ── Layer 1: wide white border — gives the road-painted look ──────────
-    glowPolyRef.current = new google.maps.Polyline({
-      path, map,
-      strokeColor:   '#FFFFFF',
-      strokeWeight:  11,
+    if (routePoints && routePoints.length >= 2) {
+      return routePoints;
+    }
+
+    return null;
+  }, [forceDirect, routePoints, memoizedRouteFrom, memoizedCenter, memoizedRouteTo]);
+
+  // ── NATIVE POLYLINE DRAW ──────────────────────────────────────────────────
+  // We use imperative google.maps.Polyline instead of the declarative
+  // <Polyline> from @react-google-maps/api because the React component loses
+  // its map reference on every parent re-render (GPS ticks, prop changes, etc).
+  useEffect(() => {
+    // Always clear previous polylines first
+    polylinesRef.current.forEach(p => p.setMap(null));
+    polylinesRef.current = [];
+
+    const map = mapInstanceRef.current ?? mapRef.current;
+    if (!map || !routePath || routePath.length < 2) return;
+
+    const border = new google.maps.Polyline({
+      path: routePath,
+      strokeColor: '#FFFFFF',
+      strokeWeight: 11,
       strokeOpacity: 1.0,
-      geodesic:      true,
-      zIndex:        1,
+      geodesic: true,
+      zIndex: 1,
     });
+    border.setMap(map);
 
-    // ── Layer 2: solid Uber-blue core ─────────────────────────────────────
-    mainPolyRef.current = new google.maps.Polyline({
-      path, map,
-      strokeColor:   '#276EF1',   // Uber blue
-      strokeWeight:  7,
+    const core = new google.maps.Polyline({
+      path: routePath,
+      strokeColor: '#FFD600',
+      strokeWeight: 7,
       strokeOpacity: 1.0,
-      geodesic:      true,
-      zIndex:        2,
+      geodesic: true,
+      zIndex: 2,
     });
+    core.setMap(map);
 
+    polylinesRef.current = [border, core];
+  }, [routePath]);
+
+  // Clear polylines on unmount
+  useEffect(() => {
     return () => {
-      glowPolyRef.current?.setMap(null);
-      mainPolyRef.current?.setMap(null);
-      glowPolyRef.current = null;
-      mainPolyRef.current = null;
+      polylinesRef.current.forEach(p => p.setMap(null));
+      polylinesRef.current = [];
     };
-  }, [mapReady, isLoaded, routePoints, memoizedRouteTo, memoizedRouteFrom, memoizedCenter, forceDirect]);
+  }, []);
 
   // ── ZOOM STATE ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -627,7 +677,11 @@ const MapBase = forwardRef<MapHandle, Props>(({
   }, [followMode, mapReady, markers, userHasInteracted]);
 
   // ── RENDER ────────────────────────────────────────────────────────────────
-  if (!isLoaded) return (
+  // Belt-and-suspenders: also check at render time that google.maps.Map is a
+  // real constructor, not a stub. This catches React 18 Strict Mode double-
+  // invoke where isLoaded state is true but the API is between lifecycle calls.
+  const mapsApiReady = isLoaded && typeof google !== 'undefined' && typeof google.maps?.Map === 'function';
+  if (!mapsApiReady) return (
     <div className={className} style={{ background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
         <div style={{ width: 32, height: 32, borderRadius: '50%', border: '4px solid #FFD600', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
@@ -708,6 +762,8 @@ const MapBase = forwardRef<MapHandle, Props>(({
             />
           </>
         )}
+
+        {/* Polylines are drawn imperatively via polylinesRef — see useEffect above */}
       </GoogleMap>
 
       {/* Fixed centre pickup/dest pin — 3D icon */}
@@ -756,6 +812,16 @@ const MapBase = forwardRef<MapHandle, Props>(({
       )}
 
       {showNavBanner && routeInfo && <NavBanner info={routeInfo} travelMode={travelMode} />}
+
+      {/* w3w grid overlay + click-to-select */}
+      <W3WMapOverlay
+        map={mapInstanceRef.current ?? mapRef.current}
+        apiKey={process.env.NEXT_PUBLIC_W3W_API_KEY || 'Z5Z6G74L'}
+        visible={isSelectingPickup || !!pickingType}
+        onSquareSelect={(square) => {
+          onCenterPinChange?.(square.coordinates.lat, square.coordinates.lng);
+        }}
+      />
     </div>
   );
 });

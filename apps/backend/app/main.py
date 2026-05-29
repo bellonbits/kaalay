@@ -5,25 +5,24 @@ from .core.database import engine, Base
 from .routers import auth, rides, places, notifications, location, drivers, ws, admin
 from .core.sio import sio_app
 import asyncio
-from .services.assignment import run_assignment_worker
+from contextlib import asynccontextmanager
+from .services.assignment import start_driver_assignment_worker
+from .core.kafka import init_kafka, close_kafka
 
 # Create tables
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title=settings.PROJECT_NAME)
-
-from .core.kafka import init_kafka, close_kafka
-
-@app.on_event("startup")
-async def startup_event():
-    # Spawn the background worker for distributed driver matching
-    asyncio.create_task(run_assignment_worker())
-    # Initialize Kafka producer and consumer
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize Kafka (includes topic pre-creation, producer startup, and location consumer startup)
     await init_kafka()
-
-@app.on_event("shutdown")
-async def shutdown_event():
+    # Spawn the background worker for distributed driver matching
+    asyncio.create_task(start_driver_assignment_worker())
+    yield
+    # Shutdown
     await close_kafka()
+
+app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 
 
 # Mount Socket.io

@@ -10,30 +10,25 @@ db_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@localhos
 
 engine = create_engine(db_url)
 
-with engine.connect() as conn:
+def add_column_safe(engine, query, success_msg):
     try:
-        conn.execute(text('ALTER TABLE drivers ADD COLUMN "vehicleCategory" VARCHAR DEFAULT \'economy\';'))
-        print("Added vehicleCategory")
+        with engine.connect() as conn:
+            conn.execute(text(query))
+            conn.commit()
+            print(success_msg)
     except Exception as e:
-        print(e)
-    
-    try:
-        conn.execute(text('ALTER TABLE drivers ADD COLUMN "nationalIdUrl" VARCHAR;'))
-        print("Added nationalIdUrl")
-    except Exception as e:
-        print(e)
+        # Ignore already exists errors silently
+        if "already exists" not in str(e):
+            print(f"Error: {e}")
 
-    try:
-        conn.execute(text('ALTER TABLE drivers ADD COLUMN "drivingLicenseUrl" VARCHAR;'))
-        print("Added drivingLicenseUrl")
-    except Exception as e:
-        print(e)
+# Run migrations safely
+add_column_safe(engine, 'ALTER TABLE drivers ADD COLUMN "vehicleCategory" VARCHAR DEFAULT \'economy\';', "Added vehicleCategory")
+add_column_safe(engine, 'ALTER TABLE drivers ADD COLUMN "nationalIdUrl" VARCHAR;', "Added nationalIdUrl")
+add_column_safe(engine, 'ALTER TABLE drivers ADD COLUMN "drivingLicenseUrl" VARCHAR;', "Added drivingLicenseUrl")
+add_column_safe(engine, 'ALTER TABLE drivers ADD COLUMN "isVerified" BOOLEAN DEFAULT FALSE;', "Added isVerified")
+add_column_safe(engine, 'ALTER TABLE drivers ADD COLUMN "acceptanceRate" FLOAT DEFAULT 1.0;', "Added acceptanceRate")
+add_column_safe(engine, 'ALTER TABLE drivers ADD COLUMN "currentLat" FLOAT;', "Added currentLat")
+add_column_safe(engine, 'ALTER TABLE drivers ADD COLUMN "currentLng" FLOAT;', "Added currentLng")
+add_column_safe(engine, 'ALTER TABLE drivers ADD COLUMN "lastSeen" TIMESTAMP DEFAULT NOW();', "Added lastSeen")
 
-    try:
-        conn.execute(text('ALTER TABLE drivers ADD COLUMN "isVerified" BOOLEAN DEFAULT FALSE;'))
-        print("Added isVerified")
-    except Exception as e:
-        print(e)
-    
-    conn.commit()
 print("Migration complete!")

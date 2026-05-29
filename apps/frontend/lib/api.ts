@@ -61,24 +61,110 @@ api.interceptors.response.use(
 );
 
 // ── Auth & Users ──────────────────────────────────────────────────────────
-export const loginUser = (data: { phoneNumber: string; password?: string }) =>
-  api.post('/auth/login', data).then(r => r.data);
+export const loginUser = (phoneNumber: string) =>
+  api.post('/auth/login', { phoneNumber }).then(r => r.data);
 
-export const registerUser = (data: { fullName: string; phoneNumber: string; email?: string; password?: string; role?: string }) =>
+export const registerUser = (data: { phoneNumber: string; fullName: string; role: string; email?: string; vehicleCategory?: string; licensePlate?: string }) =>
   api.post('/auth/register', data).then(r => r.data);
 
 export const getMe = () =>
   api.get('/auth/me').then(r => r.data);
 
-export const updateProfile = (data: { fullName: string }) =>
-  api.patch('/users/me', data).then(r => r.data);
+export const updateProfile = (data: { fullName?: string; vehicleCategory?: string; licensePlate?: string }) =>
+  api.patch('/auth/me', data).then(r => r.data);
 
 // ── Location (what3words) ─────────────────────────────────────────────────
-export const convertToWords = (lat: number, lng: number) =>
-  api.get(`/location/convert-to-words?lat=${lat}&lng=${lng}`).then(r => r.data);
+export const convertToWords = async (lat: number, lng: number): Promise<{ words: string }> => {
+  try {
+    const res = await api.get(`/location/convert-to-words?lat=${lat}&lng=${lng}`);
+    return res.data;
+  } catch (err) {
+    console.warn('[w3w] API failed, falling back to Google Maps Geocoder:', err);
+    try {
+      if (typeof window !== 'undefined' && window.google?.maps?.Geocoder) {
+        const address = await new Promise<string>((resolve, reject) => {
+          const geocoder = new google.maps.Geocoder();
+          geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+            if (status === 'OK' && results && results[0]) {
+              resolve(results[0].formatted_address);
+            } else {
+              reject(new Error(`Google Geocoding status: ${status}`));
+            }
+          });
+        });
+        return { words: address };
+      }
+    } catch (gErr) {
+      console.error('[Google Geocoder] fallback failed:', gErr);
+    }
+    return { words: `${lat.toFixed(5)}, ${lng.toFixed(5)}` };
+  }
+};
 
-export const convertToCoordinates = (words: string) =>
-  api.get(`/location/convert-to-coordinates?words=${encodeURIComponent(words)}`).then(r => r.data);
+export interface ConvertToCoordinatesResponse {
+  latitude: number;
+  longitude: number;
+  what3words: string;
+  coordinates: {
+    lat: number;
+    lng: number;
+  };
+}
+
+export const convertToCoordinates = async (words: string): Promise<ConvertToCoordinatesResponse> => {
+  const isW3W = words.startsWith('///') || words.split('.').length === 3;
+  let lat = 0;
+  let lng = 0;
+  let w3w = words;
+
+  if (isW3W) {
+    try {
+      const res = await api.get(`/location/convert-to-coordinates?words=${encodeURIComponent(words)}`);
+      const data = res.data;
+      if (data && typeof data.latitude === 'number') {
+        lat = data.latitude;
+        lng = data.longitude;
+        w3w = data.what3words || words;
+        return {
+          latitude: lat,
+          longitude: lng,
+          what3words: w3w,
+          coordinates: { lat, lng }
+        };
+      }
+    } catch (err) {
+      console.warn('[w3w] convertToCoordinates failed, falling back to Google Maps Geocoder:', err);
+    }
+  }
+
+  try {
+    if (typeof window !== 'undefined' && window.google?.maps?.Geocoder) {
+      const cleanWords = words.startsWith('///') ? words.replace('///', '') : words;
+      const geoResult = await new Promise<{ lat: number, lng: number }>((resolve, reject) => {
+        const geocoder = new google.maps.Geocoder();
+        geocoder.geocode({ address: cleanWords }, (results, status) => {
+          if (status === 'OK' && results && results[0]?.geometry?.location) {
+            const loc = results[0].geometry.location;
+            resolve({ lat: loc.lat(), lng: loc.lng() });
+          } else {
+            reject(new Error(`Google Geocoding status: ${status}`));
+          }
+        });
+      });
+      lat = geoResult.lat;
+      lng = geoResult.lng;
+      return {
+        latitude: lat,
+        longitude: lng,
+        what3words: w3w,
+        coordinates: { lat, lng }
+      };
+    }
+  } catch (gErr) {
+    console.error('[Google Geocoder] coordinates fallback failed:', gErr);
+  }
+  throw new Error(`Failed to convert "${words}" to coordinates`);
+};
 
 export const getDistance = (fromWords: string, toWords: string) =>
   api.get(`/location/distance?fromWords=${encodeURIComponent(fromWords)}&toWords=${toWords}`).then(r => r.data);
@@ -102,6 +188,12 @@ export const createShareSession = (data: {
 
 export const getSharedLocation = (token: string) =>
   api.get(`/location/share/${token}`).then(r => r.data);
+
+export const triggerSos = (data: { lat: number; lng: number; w3w: string; accuracy?: number; message?: string }) =>
+  api.post('/location/sos', data).then(r => r.data);
+
+export const cancelSos = (token: string) =>
+  api.patch(`/location/share/${token}`, { status: 'ended' }).then(r => r.data);
 
 // ── Rides ─────────────────────────────────────────────────────────────────
 export const requestRide = (data: {

@@ -1,72 +1,112 @@
 import asyncio
+import logging
+import json
+from aiokafka import AIOKafkaConsumer
+from ..core.config import settings
 from ..core.redis import get_redis
-from ..core.queue import consume_ride_requests
-from ..core.sio import sio_app
+from ..core.sio import sio
 from ..core.database import SessionLocal
 from ..models.all import Driver
-import time
 
-async def run_assignment_worker():
-    print("🚀 Started Driver Assignment Service (Queue Worker)")
-    r = get_redis()
+logger = logging.getLogger(__name__)
+
+async def start_driver_assignment_worker():
+    # Wait an extra buffer after backend starts — Kafka may still be warming up
+    logger.info("⏳ Waiting for Kafka to warm up before starting Driver Assignment Service...")
+    await asyncio.sleep(5)
     
+    retries = 0
     while True:
+        consumer = None
         try:
-            # 1. Poll the Assignment Queue
-            job = consume_ride_requests(timeout=2)
-            if not job:
-                await asyncio.sleep(1)
-                continue
-                
-            ride_id = job.get("rideId")
-            payload = job.get("payload")
-            print(f"⚙️ Processing ride request event: {ride_id}")
-            
-            # 2. Distributed Lock (Prevent double-processing)
-            lock_key = f"lock:assignment:{ride_id}"
-            if not r.setnx(lock_key, "locked"):
-                print(f"🔒 Ride {ride_id} is locked by another worker instance.")
-                continue
-            r.expire(lock_key, 60) # Lock expires in 60s
-            
-            # 3. Query Driver Location Cache (Redis GEO)
-            pickup_lng = payload.get("pickupLng")
-            pickup_lat = payload.get("pickupLat")
-            
-            nearby_drivers = r.geosearch(
-                name="driver_locations",
-                longitude=pickup_lng,
-                latitude=pickup_lat,
-                radius=10,
-                unit="km",
-                withdist=True,
-                sort="ASC"
+            consumer = AIOKafkaConsumer(
+                'ride-requests',
+                bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+                group_id='driver_assignment_group',  # rename — avoid collision with old dead group
+                auto_offset_reset='earliest',
+                value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+                session_timeout_ms=45000,    # 45s — gives time if Kafka is slow
+                heartbeat_interval_ms=10000, # 10s — must be < session_timeout / 3
+                request_timeout_ms=60000,
+                max_poll_interval_ms=300000,
             )
-            
-            if not nearby_drivers:
-                print(f"⚠️ No drivers found near ride {ride_id}")
-                r.delete(lock_key)
-                continue
-                
-            # 4. Push to Notification Service (Socket.IO)
-            db = SessionLocal()
-            for driver_id, dist in nearby_drivers:
-                driver = db.query(Driver).filter(Driver.id == driver_id).first()
-                if driver:
-                    user_id = str(driver.userId)
-                    print(f"📡 Dispatching Ride {ride_id} to Driver {user_id} ({dist}km away)")
-                    
-                    await sio_app.emit('job_offer', {
-                        "rideId": ride_id,
-                        "pickup": payload.get("pickupWhat3words"),
-                        "destination": payload.get("destinationWhat3words"),
-                        "fare": payload.get("fare"),
-                        "distanceKm": round(dist, 2),
-                        "category": payload.get("category", "economy")
-                    }, room=user_id)
-            
-            db.close()
-            
+            await consumer.start()
+            logger.info("✅ Kafka consumer started successfully for Driver Assignment")
+            retries = 0
+
+            async for msg in consumer:
+                try:
+                    data = msg.value
+                    await handle_ride_request(data)
+                except Exception as e:
+                    logger.error(f"Error handling ride request: {e}", exc_info=True)
+                    # Never re-raise here — one bad message should not kill the consumer
+
+        except asyncio.CancelledError:
+            logger.info("Driver Assignment Service cancelled.")
+            break
         except Exception as e:
-            print(f"❌ Assignment worker error: {e}")
-            await asyncio.sleep(2)
+            retries += 1
+            wait = min(5 * retries, 60)  # 5s, 10s, 15s... max 60s
+            logger.error(f"Kafka consumer failed (attempt {retries}), retrying in {wait}s: {e}")
+            await asyncio.sleep(wait)
+        finally:
+            if consumer:
+                try:
+                    await consumer.stop()
+                except Exception:
+                    pass
+
+
+async def handle_ride_request(data: dict):
+    ride_id = data.get('id')
+    category = data.get('category')
+    pickup_lat = data.get('pickupLat')
+    pickup_lng = data.get('pickupLng')
+
+    if not all([ride_id, pickup_lat, pickup_lng]):
+        logger.warning(f"Incomplete ride request data: {data}")
+        return
+
+    # Find nearest online driver via Redis GEOSEARCH
+    r = get_redis()
+    nearby = r.geosearch(
+        name="driver_locations",
+        longitude=pickup_lng,
+        latitude=pickup_lat,
+        radius=10,
+        unit="km",
+        withdist=True,
+        sort="ASC"
+    )
+
+    if not nearby:
+        logger.info(f"No drivers found near ride {ride_id}")
+        return
+
+    db = SessionLocal()
+    try:
+        for driver_id, dist in nearby:
+            driver = db.query(Driver).filter(Driver.id == driver_id).first()
+            if not driver:
+                continue
+
+            driver_category = getattr(driver, 'vehicleCategory', 'economy') or 'economy'
+            if category and category != 'any' and driver_category != category:
+                continue
+
+            user_id = str(driver.userId)
+            logger.info(f"📡 Dispatching Ride {ride_id} to Driver {user_id} ({dist:.2f}km away)")
+            
+            await sio.emit('job_offer', {
+                "rideId": ride_id,
+                "pickup": data.get("pickupWhat3words"),
+                "destination": data.get("destinationWhat3words"),
+                "fare": data.get("fare"),
+                "distanceKm": round(dist, 2),
+                "category": category
+            }, room=user_id, namespace="/loc")
+    except Exception as e:
+        logger.error(f"Error dispatching ride {ride_id}: {e}", exc_info=True)
+    finally:
+        db.close()

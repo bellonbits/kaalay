@@ -5,7 +5,7 @@ const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'https://app.suqafuran.com';
 let socket: Socket | null = null;
 
 export function getSocket(): Socket {
-  if (!socket || !socket.connected) {
+  if (!socket) {
     socket = io(`${WS_URL}/loc`, {
       transports: ['websocket'],
       autoConnect: true,
@@ -15,6 +15,8 @@ export function getSocket(): Socket {
 }
 
 export function disconnectSocket() {
+  socket?.removeAllListeners();
   socket?.disconnect();
   socket = null;
 }
+

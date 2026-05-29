@@ -8,7 +8,7 @@ from ..models.all import User
 import uuid
 
 reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl="/api/v1/auth/login" # Updated to v1
+    tokenUrl="/api/v1/auth/login-swagger"
 )
 
 async def get_current_user(

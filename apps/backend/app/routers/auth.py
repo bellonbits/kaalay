@@ -3,113 +3,212 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 from ..core.database import get_db
 from ..core.security import (
-    get_password_hash, 
-    verify_password, 
     create_access_token, 
     create_refresh_token,
     decode_token
 )
 from ..core.deps import get_current_user
 from ..core.responses import success_response, error_response
-from ..models.all import User
+from ..models.all import User, Driver
 from pydantic import BaseModel, EmailStr
 import uuid
+import random
+from ..core.redis import get_redis
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-class UserResponse(BaseModel):
-    id: uuid.UUID
-    fullName: str
+class SendOtpRequest(BaseModel):
     phoneNumber: str
-    email: Optional[str]
-    role: str
-
-class TokenResponse(BaseModel):
-    accessToken: str
-    refreshToken: str
-    user: UserResponse
-
-class RegisterRequest(BaseModel):
-    fullName: str
-    phoneNumber: str
-    email: Optional[EmailStr] = None
-    password: str
-    role: str = "rider"
 
 class LoginRequest(BaseModel):
-    phoneNumber: str # Can be phone or email
-    password: str
+    phoneNumber: str
 
-@router.post("/register", response_model=None)
+class RegisterRequest(BaseModel):
+    phoneNumber: str
+    fullName: str
+    role: str = "rider"
+    email: Optional[EmailStr] = None
+    vehicleCategory: Optional[str] = None
+    licensePlate: Optional[str] = None
+
+class UpdateProfileRequest(BaseModel):
+    fullName: Optional[str] = None
+    vehicleCategory: Optional[str] = None
+    licensePlate: Optional[str] = None
+
+@router.post("/send-otp")
+async def send_otp(dto: SendOtpRequest):
+    # Dummy endpoint kept for legacy frontend calls compatibility, always bypasses
+    return success_response({"message": "OTP bypassed (Direct login active)" })
+
+@router.post("/login")
+async def login(dto: LoginRequest, db: Session = Depends(get_db)):
+    phone = dto.phoneNumber.strip()
+    user = db.query(User).filter(User.phoneNumber == phone).first()
+    
+    if user:
+        # Existing user: complete login
+        access_token = create_access_token(user.id)
+        refresh_token = create_refresh_token(user.id)
+        
+        user_data = {
+            "id": str(user.id),
+            "fullName": user.fullName,
+            "phoneNumber": user.phoneNumber,
+            "email": user.email,
+            "role": user.role,
+        }
+        if user.role in ["driver", "helper"] and user.driverProfile:
+            user_data["vehicleCategory"] = user.driverProfile.vehicleCategory
+            user_data["licensePlate"] = user.driverProfile.licensePlate
+            
+        return success_response({
+            "token": access_token,
+            "accessToken": access_token,
+            "refreshToken": refresh_token,
+            "user": user_data,
+            "isNewUser": False
+        })
+    else:
+        # New user: direct transition to registration
+        return success_response({
+            "token": None,
+            "accessToken": None,
+            "refreshToken": None,
+            "user": None,
+            "isNewUser": True
+        })
+
+@router.post("/register")
 async def register(dto: RegisterRequest, db: Session = Depends(get_db)):
-    # Check for existing user by phone or email
-    existing = db.query(User).filter(
-        (User.phoneNumber == dto.phoneNumber) | 
-        (User.email == dto.email if dto.email else False)
-    ).first()
+    phone = dto.phoneNumber.strip()
     
+    # Check if user exists
+    existing = db.query(User).filter(User.phoneNumber == phone).first()
     if existing:
-        return error_response("CONFLICT", "Phone number or email already registered", 409)
-    
+        return error_response("CONFLICT", "User is already registered", 409)
+        
+    # Check if email is already taken
+    if dto.email:
+        email_clean = dto.email.strip().lower()
+        existing_email = db.query(User).filter(User.email == email_clean).first()
+        if existing_email:
+            return error_response("CONFLICT", "Email is already taken by another account", 409)
+            
+    # Create user directly
     user = User(
         fullName=dto.fullName,
-        phoneNumber=dto.phoneNumber,
+        phoneNumber=phone,
         email=dto.email,
-        hashedPassword=get_password_hash(dto.password),
+        hashedPassword=None, # passwordless flow
         role=dto.role
     )
     db.add(user)
     db.commit()
     db.refresh(user)
     
-    access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
-    
-    return success_response({
-        "accessToken": access_token,
-        "refreshToken": refresh_token,
-        "user": user
-    })
-
-@router.post("/login")
-async def login(dto: LoginRequest, db: Session = Depends(get_db)):
-    # Support both phone and email login
-    user = db.query(User).filter(
-        (User.phoneNumber == dto.phoneNumber) | (User.email == dto.phoneNumber)
-    ).first()
-    
-    if not user or not verify_password(dto.password, user.hashedPassword):
-        return error_response("UNAUTHORIZED", "Invalid phone/email or password", 401)
-    
-    access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
-    
-    return success_response({
-        "accessToken": access_token,
-        "refreshToken": refresh_token,
-        "user": user
-    })
-
-@router.post("/refresh-token")
-async def refresh_token(refreshToken: str, db: Session = Depends(get_db)):
-    payload = decode_token(refreshToken)
-    if not payload or payload.get("type") != "refresh":
-        return error_response("INVALID_TOKEN", "Invalid refresh token", 401)
-    
-    user_id = payload.get("sub")
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        return error_response("NOT_FOUND", "User not found", 404)
+    # If driver/helper, set up driver profile
+    if dto.role in ["driver", "helper"]:
+        driver = Driver(
+            userId=user.id,
+            vehicleCategory=dto.vehicleCategory or "economy",
+            licensePlate=dto.licensePlate,
+            status="offline"
+        )
+        db.add(driver)
+        db.commit()
+        db.refresh(user) # refresh user to hook up back relation
         
-    new_access = create_access_token(user.id)
-    return success_response({"accessToken": new_access})
+    # Generate tokens
+    access_token = create_access_token(user.id)
+    refresh_token = create_refresh_token(user.id)
+    
+    user_data = {
+        "id": str(user.id),
+        "fullName": user.fullName,
+        "phoneNumber": user.phoneNumber,
+        "email": user.email,
+        "role": user.role,
+    }
+    if user.role in ["driver", "helper"] and user.driverProfile:
+        user_data["vehicleCategory"] = user.driverProfile.vehicleCategory
+        user_data["licensePlate"] = user.driverProfile.licensePlate
+        
+    return success_response({
+        "token": access_token,
+        "accessToken": access_token,
+        "refreshToken": refresh_token,
+        "user": user_data
+    })
 
 @router.get("/me")
 async def get_me(current_user: User = Depends(get_current_user)):
-    return success_response(current_user)
+    user_data = {
+        "id": str(current_user.id),
+        "fullName": current_user.fullName,
+        "phoneNumber": current_user.phoneNumber,
+        "email": current_user.email,
+        "role": current_user.role,
+    }
+    if current_user.role in ["driver", "helper"] and current_user.driverProfile:
+        user_data["vehicleCategory"] = current_user.driverProfile.vehicleCategory
+        user_data["licensePlate"] = current_user.driverProfile.licensePlate
+    return success_response(user_data)
+
+@router.patch("/me")
+async def update_me(dto: UpdateProfileRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if dto.fullName is not None:
+        current_user.fullName = dto.fullName
+        
+    if current_user.role in ["driver", "helper"]:
+        if current_user.driverProfile:
+            if dto.vehicleCategory is not None:
+                current_user.driverProfile.vehicleCategory = dto.vehicleCategory
+            if dto.licensePlate is not None:
+                current_user.driverProfile.licensePlate = dto.licensePlate
+        else:
+            # Setup new profile if it somehow doesn't exist
+            driver = Driver(
+                userId=current_user.id,
+                vehicleCategory=dto.vehicleCategory or "economy",
+                licensePlate=dto.licensePlate,
+                status="offline"
+            )
+            db.add(driver)
+            
+    db.commit()
+    db.refresh(current_user)
+    
+    user_data = {
+        "id": str(current_user.id),
+        "fullName": current_user.fullName,
+        "phoneNumber": current_user.phoneNumber,
+        "email": current_user.email,
+        "role": current_user.role,
+    }
+    if current_user.role in ["driver", "helper"] and current_user.driverProfile:
+        user_data["vehicleCategory"] = current_user.driverProfile.vehicleCategory
+        user_data["licensePlate"] = current_user.driverProfile.licensePlate
+        
+    return success_response(user_data)
 
 @router.post("/logout")
 async def logout():
-    # In JWT stateless auth, logout is handled by the client clearing the token.
-    # We could implement a blacklist in Redis here if needed.
     return success_response(message="Logged out successfully")
+
+from fastapi.security import OAuth2PasswordRequestForm
+@router.post("/login-swagger")
+async def login_swagger(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    phone = form_data.username.strip()
+    user = db.query(User).filter(User.phoneNumber == phone).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not registered. Please sign up first."
+        )
+    
+    access_token = create_access_token(user.id)
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
+    }
