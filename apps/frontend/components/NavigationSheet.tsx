@@ -1,9 +1,9 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
-import { Autocomplete } from '@react-google-maps/api';
 import { useGoogleMaps } from './GoogleMapsProvider';
 import { EnvironmentOutlined, CarOutlined, SearchOutlined, SwapOutlined, LoadingOutlined, ArrowLeftOutlined, CloseOutlined, AimOutlined } from '@ant-design/icons';
 import { convertToCoordinates, searchPlaces } from '../lib/api';
+import { useCallback } from 'react';
 
 
 export interface LocationPoint {
@@ -44,11 +44,60 @@ export default function NavigationSheet({
   const [w3wSuggestions, setW3wSuggestions] = useState<any[]>([]);
   const [customStartSuggestions, setCustomStartSuggestions] = useState<any[]>([]);
   const [customDestSuggestions, setCustomDestSuggestions] = useState<any[]>([]);
+  const [startGoogleSuggestions, setStartGoogleSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
+  const [destGoogleSuggestions, setDestGoogleSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
   
   const [loadingW3W, setLoadingW3W] = useState(false);
 
-  const startAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
-  const destAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
+
+  useEffect(() => {
+    if (isLoaded && window.google?.maps?.places) {
+      sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
+    }
+  }, [isLoaded]);
+
+  const fetchGoogleSuggestions = useCallback(async (input: string, callback: (predictions: google.maps.places.AutocompletePrediction[]) => void) => {
+    if (!input || input.length < 2 || input.includes('.') || input.startsWith('///')) {
+      callback([]);
+      return;
+    }
+    try {
+      const { suggestions } = await (google.maps.places.AutocompleteSuggestion as any).fetchAutocompleteSuggestions({
+        input,
+        sessionToken: sessionTokenRef.current || undefined,
+      });
+      const predictions = (suggestions || []).map((s: any) => s.placePrediction).filter(Boolean).map((p: any) => ({
+        place_id: p.placeId,
+        description: p.text?.text || '',
+        structured_formatting: {
+          main_text: p.structuredFormat?.mainText?.text || p.text?.text || '',
+          secondary_text: p.structuredFormat?.secondaryText?.text || '',
+        },
+      }));
+      callback(predictions);
+    } catch {
+      callback([]);
+    }
+  }, []);
+
+  const handleSelectGooglePlace = useCallback((prediction: google.maps.places.AutocompletePrediction, setPoint: (p: LocationPoint) => void, setQuery: (q: string) => void) => {
+    setQuery(prediction.description);
+    const geocoder = new google.maps.Geocoder();
+    geocoder.geocode({ placeId: prediction.place_id }, (results, status) => {
+      if (status === 'OK' && results?.[0]?.geometry?.location) {
+        const loc = results[0].geometry.location;
+        setPoint({
+          lat: loc.lat(),
+          lng: loc.lng(),
+          label: prediction.description,
+        });
+        if (window.google?.maps?.places?.AutocompleteSessionToken) {
+          sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
+        }
+      }
+    });
+  }, []);
 
   const lastStartRef = useRef<LocationPoint | null | undefined>(initialStartPoint);
   const lastDestRef = useRef<LocationPoint | null | undefined>(initialDestPoint);
@@ -103,21 +152,6 @@ export default function NavigationSheet({
 
   const isW3W = (str: string) => /^\/{0,2}[a-z]+\.[a-z]+\.[a-z]+$/i.test(str.trim());
 
-  const handlePlaceChanged = (
-    autocompleteRef: React.MutableRefObject<google.maps.places.Autocomplete | null>,
-    setPoint: (p: LocationPoint) => void,
-    setQuery: (q: string) => void
-  ) => {
-    if (!autocompleteRef.current) return;
-    const place = autocompleteRef.current.getPlace();
-    if (place?.geometry?.location) {
-      const lat = place.geometry.location.lat();
-      const lng = place.geometry.location.lng();
-      setPoint({ lat, lng, label: place.formatted_address || place.name || '' });
-      setQuery(place.name || place.formatted_address || '');
-    }
-  };
-
   const checkW3W = async (query: string, setPoint: (p: LocationPoint) => void) => {
     if (isW3W(query)) {
       setLoadingW3W(true);
@@ -143,20 +177,29 @@ export default function NavigationSheet({
       } catch {
         setCustomStartSuggestions([]);
       }
+      fetchGoogleSuggestions(val, setStartGoogleSuggestions);
     } else {
       setCustomStartSuggestions([]);
+      setStartGoogleSuggestions([]);
     }
-  };
-  const handleDestChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setDestQuery(e.target.value);
-    if (destPoint) setDestPoint(null);
   };
 
   const handleStartBlur = () => { 
-    setTimeout(() => setCustomStartSuggestions([]), 200);
+    setTimeout(() => {
+      setCustomStartSuggestions([]);
+      setStartGoogleSuggestions([]);
+    }, 200);
     checkW3W(startQuery, setStartPoint); 
   };
-  const handleDestBlur = () => { checkW3W(destQuery, setDestPoint); };
+
+  const handleDestBlur = () => { 
+    setTimeout(() => {
+      setW3wSuggestions([]);
+      setCustomDestSuggestions([]);
+      setDestGoogleSuggestions([]);
+    }, 200);
+    checkW3W(destQuery, setDestPoint); 
+  };
 
   const submitRoute = () => {
     if (effectiveStart && destPoint) onRouteSubmit(effectiveStart, destPoint);
@@ -206,58 +249,83 @@ export default function NavigationSheet({
             <div className="relative">
               {!isLoaded ? <LoadingOutlined className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300" /> :
                 <>
-                  <Autocomplete
-                    onLoad={(auto) => { startAutocompleteRef.current = auto; }}
-                    onPlaceChanged={() => handlePlaceChanged(startAutocompleteRef, setStartPoint, setStartQuery)}
-                  >
-                    <div className="input-container !bg-gray-50 !h-14 flex items-center justify-between pr-3">
-                      <input
-                        placeholder="Current Location"
-                        value={startPoint?.label ?? startQuery}
-                        onChange={handleStartChange}
-                        onBlur={handleStartBlur}
-                        className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black placeholder:text-gray-300"
-                      />
-                      <button 
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          onPickOnMapStart?.();
-                        }}
-                        className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center active:scale-90 transition-transform flex-shrink-0 ml-2 border border-gray-100"
-                        title="Choose on Map"
-                      >
-                        <AimOutlined className="text-[#8E2DE2] text-sm" />
-                      </button>
-                    </div>
-                  </Autocomplete>
+                  <div className="input-container !bg-gray-50 !h-14 flex items-center justify-between pr-3">
+                    <input
+                      placeholder="Current Location"
+                      value={startPoint?.label ?? startQuery}
+                      onChange={handleStartChange}
+                      onBlur={handleStartBlur}
+                      className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black placeholder:text-gray-300"
+                    />
+                    <button 
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onPickOnMapStart?.();
+                      }}
+                      className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center active:scale-90 transition-transform flex-shrink-0 ml-2 border border-gray-100"
+                      title="Choose on Map"
+                    >
+                      <AimOutlined className="text-[#8E2DE2] text-sm" />
+                    </button>
+                  </div>
 
-                  {/* Start Custom Places Suggestions */}
-                  {customStartSuggestions.length > 0 && (
-                    <div className="absolute top-[calc(100%+8px)] left-0 right-0 bg-white rounded-2xl shadow-premium border border-gray-100 z-50 overflow-hidden animate-fade-in">
-                      <div className="px-5 py-2.5 bg-purple-50/50 border-b border-gray-50">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-[#8E2DE2]">Saved Custom Places</span>
-                      </div>
-                      {customStartSuggestions.map((s: any, i: number) => (
-                        <button 
-                          key={`custom-start-${i}`}
-                          onClick={() => {
-                            setStartQuery(s.name);
-                            setStartPoint({ lat: s.latitude, lng: s.longitude, label: s.name });
-                            setCustomStartSuggestions([]);
-                          }}
-                          className="w-full px-5 py-4 flex items-center gap-4 text-left active:bg-gray-50 border-b border-gray-100 last:border-none transition-colors"
-                        >
-                          <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
-                            <EnvironmentOutlined className="text-[#8E2DE2] text-sm" />
+                  {/* Start Suggestions Dropdown */}
+                  {(customStartSuggestions.length > 0 || startGoogleSuggestions.length > 0) && (
+                    <div className="absolute top-[calc(100%+8px)] left-0 right-0 bg-white rounded-2xl shadow-premium border border-gray-100 z-50 overflow-hidden animate-fade-in max-h-80 overflow-y-auto no-scroll">
+                      {customStartSuggestions.length > 0 && (
+                        <>
+                          <div className="px-5 py-2.5 bg-purple-50/50 border-b border-gray-50">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-[#8E2DE2]">Saved Custom Places</span>
                           </div>
-                          <div>
-                            <p className="text-sm font-black text-black leading-none mb-1">{s.name}</p>
-                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">///{s.words} · {s.description || 'Saved location'}</p>
+                          {customStartSuggestions.map((s: any, i: number) => (
+                            <button 
+                              key={`custom-start-${i}`}
+                              onClick={() => {
+                                setStartQuery(s.name);
+                                setStartPoint({ lat: s.latitude, lng: s.longitude, label: s.name });
+                                setCustomStartSuggestions([]);
+                              }}
+                              className="w-full px-5 py-4 flex items-center gap-4 text-left active:bg-gray-50 border-b border-gray-100 last:border-none transition-colors"
+                            >
+                              <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
+                                <EnvironmentOutlined className="text-[#8E2DE2] text-sm" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-black text-black leading-none mb-1">{s.name}</p>
+                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">///{s.words} · {s.description || 'Saved location'}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </>
+                      )}
+
+                      {startGoogleSuggestions.length > 0 && (
+                        <>
+                          <div className="px-5 py-2.5 bg-blue-50/50 border-b border-gray-50">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-[#000080]">Search Results</span>
                           </div>
-                        </button>
-                      ))}
+                          {startGoogleSuggestions.map((s) => (
+                            <button 
+                              key={s.place_id}
+                              onClick={() => {
+                                handleSelectGooglePlace(s, setStartPoint, setStartQuery);
+                                setStartGoogleSuggestions([]);
+                              }}
+                              className="w-full px-5 py-4 flex items-center gap-4 text-left active:bg-gray-50 border-b border-gray-100 last:border-none transition-colors"
+                            >
+                              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                                <EnvironmentOutlined className="text-[#000080] text-sm" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-black truncate leading-tight">{s.structured_formatting.main_text}</p>
+                                <p className="text-xs text-gray-400 truncate mt-1">{s.structured_formatting.secondary_text}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </>
+                      )}
                     </div>
                   )}
                 </>
@@ -268,69 +336,67 @@ export default function NavigationSheet({
             <div className="relative">
               {!isLoaded ? <LoadingOutlined className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300" /> :
                 <>
-                  <Autocomplete
-                    onLoad={(auto) => { destAutocompleteRef.current = auto; }}
-                    onPlaceChanged={() => handlePlaceChanged(destAutocompleteRef, setDestPoint, setDestQuery)}
-                  >
-                    <div className="input-container !bg-gray-50 !h-14 !border-yellow-400/30 flex items-center justify-between pr-3">
-                      <input
-                        autoFocus
-                        placeholder="Where to? (e.g. filled.count.soap)"
-                        value={destQuery}
-                        onChange={async (e) => {
-                          const val = e.target.value;
-                          setDestQuery(val);
-                          if (destPoint) setDestPoint(null);
-                          
-                          // Custom Places search
-                          if (val.length >= 2) {
-                            try {
-                              const res = await searchPlaces(val);
-                              setCustomDestSuggestions(res || []);
-                            } catch {
-                              setCustomDestSuggestions([]);
-                            }
-                          } else {
+                  <div className="input-container !bg-gray-50 !h-14 !border-yellow-400/30 flex items-center justify-between pr-3">
+                    <input
+                      autoFocus
+                      placeholder="Where to? (e.g. filled.count.soap)"
+                      value={destQuery}
+                      onChange={async (e) => {
+                        const val = e.target.value;
+                        setDestQuery(val);
+                        if (destPoint) setDestPoint(null);
+                        
+                        // Custom Places search
+                        if (val.length >= 2) {
+                          try {
+                            const res = await searchPlaces(val);
+                            setCustomDestSuggestions(res || []);
+                          } catch {
                             setCustomDestSuggestions([]);
                           }
+                          fetchGoogleSuggestions(val, setDestGoogleSuggestions);
+                        } else {
+                          setCustomDestSuggestions([]);
+                          setDestGoogleSuggestions([]);
+                        }
 
-                          if (val.includes('.') || val.startsWith('///')) {
-                            try {
-                              const res = await (await import('../lib/api')).autosuggest(val, currentLocation);
-                              setW3wSuggestions(res.suggestions || []);
-                            } catch {
-                              setW3wSuggestions([]);
-                            }
-                          } else {
+                        if (val.includes('.') || val.startsWith('///')) {
+                          try {
+                            const res = await (await import('../lib/api')).autosuggest(val, currentLocation);
+                            setW3wSuggestions(res.suggestions || []);
+                          } catch {
                             setW3wSuggestions([]);
                           }
-                        }}
-                        onBlur={() => {
-                          setTimeout(() => {
-                            setW3wSuggestions([]);
-                            setCustomDestSuggestions([]);
-                          }, 200);
-                          handleDestBlur();
-                        }}
-                        className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black placeholder:text-gray-300"
-                      />
-                      <button 
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          onPickOnMapDest?.();
-                        }}
-                        className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center active:scale-90 transition-transform flex-shrink-0 ml-2 border border-gray-100"
-                        title="Choose on Map"
-                      >
-                        <AimOutlined className="text-yellow-400 text-sm" />
-                      </button>
-                    </div>
-                  </Autocomplete>
+                        } else {
+                          setW3wSuggestions([]);
+                        }
+                      }}
+                      onBlur={() => {
+                        setTimeout(() => {
+                          setW3wSuggestions([]);
+                          setCustomDestSuggestions([]);
+                          setDestGoogleSuggestions([]);
+                        }, 200);
+                        handleDestBlur();
+                      }}
+                      className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black placeholder:text-gray-300"
+                    />
+                    <button 
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onPickOnMapDest?.();
+                      }}
+                      className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center active:scale-90 transition-transform flex-shrink-0 ml-2 border border-gray-100"
+                      title="Choose on Map"
+                    >
+                      <AimOutlined className="text-yellow-400 text-sm" />
+                    </button>
+                  </div>
 
-                  {/* Suggestions Dropdown (Custom Places & W3W Suggestions) */}
-                  {(customDestSuggestions.length > 0 || w3wSuggestions.length > 0) && (
+                  {/* Suggestions Dropdown (Custom Places, W3W & Google Suggestions) */}
+                  {(customDestSuggestions.length > 0 || w3wSuggestions.length > 0 || destGoogleSuggestions.length > 0) && (
                     <div className="absolute top-[calc(100%+8px)] left-0 right-0 bg-white rounded-2xl shadow-premium border border-gray-100 z-50 overflow-hidden animate-fade-in max-h-80 overflow-y-auto no-scroll">
                       {customDestSuggestions.length > 0 && (
                         <>
@@ -386,6 +452,32 @@ export default function NavigationSheet({
                               <div>
                                 <p className="text-sm font-black text-red-600 leading-none mb-1">///{s.words}</p>
                                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{s.nearestPlace}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </>
+                      )}
+
+                      {destGoogleSuggestions.length > 0 && (
+                        <>
+                          <div className="px-5 py-2.5 bg-blue-50/50 border-b border-gray-50">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-[#000080]">Search Results</span>
+                          </div>
+                          {destGoogleSuggestions.map((s) => (
+                            <button 
+                              key={s.place_id}
+                              onClick={() => {
+                                handleSelectGooglePlace(s, setDestPoint, setDestQuery);
+                                destGoogleSuggestions.length = 0; // Clear
+                              }}
+                              className="w-full px-5 py-4 flex items-center gap-4 text-left active:bg-gray-50 border-b border-gray-100 last:border-none transition-colors"
+                            >
+                              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                                <EnvironmentOutlined className="text-[#000080] text-sm" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-black truncate leading-tight">{s.structured_formatting.main_text}</p>
+                                <p className="text-xs text-gray-400 truncate mt-1">{s.structured_formatting.secondary_text}</p>
                               </div>
                             </button>
                           ))}

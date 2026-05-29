@@ -12,6 +12,7 @@ import {
 import { useGeolocation } from '../../../hooks/useGeolocation';
 import { useSessionSocket } from '../../../hooks/useSocket';
 import { getSessionByCode, convertTo3wa, signalArriving, signalArrived, startRide, completeRide, submitRating } from '../../../lib/api';
+import { computeRoute, formatDistance, formatDuration } from '../../../lib/routeService';
 import { getSocket } from '../../../lib/socket';
 import type { MarkerData, MapHandle } from '../../../components/MapBase';
 import LowDataView from '../../../components/LowDataView';
@@ -184,61 +185,52 @@ function LiveTracker({ code }: { code: string }) {
   );
 
   // Manual Directions Recalculator Callback
-  const recalculateRoute = useCallback(() => {
+  const recalculateRoute = useCallback(async () => {
     if (!me || !tracked) return;
 
     // Update stable route coordinates passed to MapBase
     setActiveRouteFrom({ lat: me.lat, lng: me.lng });
     setActiveRouteTo({ lat: tracked.lat, lng: tracked.lng });
 
-    if (typeof window !== 'undefined' && window.google) {
-      const ds = new google.maps.DirectionsService();
-      ds.route(
-        {
-          origin: { lat: me.lat, lng: me.lng },
-          destination: { lat: tracked.lat, lng: tracked.lng },
-          travelMode: google.maps.TravelMode.WALKING
-        },
-        (result, status) => {
-          if (status === 'OK' && result?.routes[0]?.legs[0]) {
-            const leg = result.routes[0].legs[0];
-            setNavRouteDetails({
-              distance: leg.distance?.text || '0 m',
-              duration: leg.duration?.text || '0 mins'
-            });
-            if (leg.steps) {
-              const cleanSteps = leg.steps.map((s: any) => ({
-                instruction: s.instructions.replace(/<[^>]*>/g, ''),
-                distance: s.distance?.text || '',
-                duration: s.duration?.text || '',
-                lat: typeof s.end_location?.lat === 'function' ? s.end_location.lat() : s.end_location?.lat || tracked.lat,
-                lng: typeof s.end_location?.lng === 'function' ? s.end_location.lng() : s.end_location?.lng || tracked.lng
-              }));
-              setNavSteps(cleanSteps);
-              setCurrentStepIndex(0); // Reset to first instruction on manual refresh
-            }
-          } else {
-            // Fallback for off-road/remote regions: straight line walking guidance!
-            const dKm = dist(me, tracked);
-            const dStr = dKm < 1 ? `${Math.round(dKm * 1000)} m` : `${dKm.toFixed(1)} km`;
-            const walkMins = Math.max(1, Math.round(dKm * 12));
-            setNavRouteDetails({
-              distance: dStr + ' (direct)',
-              duration: `${walkMins} mins`
-            });
-            setNavSteps([
-              {
-                instruction: 'Walk straight towards the tracked person',
-                distance: dStr,
-                duration: `${walkMins} mins`,
-                lat: tracked.lat,
-                lng: tracked.lng
-              }
-            ]);
-            setCurrentStepIndex(0);
-          }
-        }
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
+    try {
+      const result = await computeRoute(
+        { lat: me.lat, lng: me.lng },
+        { lat: tracked.lat, lng: tracked.lng },
+        'WALKING',
+        apiKey
       );
+
+      if (result && result.steps) {
+        setNavRouteDetails({
+          distance: formatDistance(result.distanceMeters),
+          duration: formatDuration(result.durationSeconds)
+        });
+        setNavSteps(result.steps);
+        setCurrentStepIndex(0); // Reset to first instruction on manual refresh
+      } else {
+        throw new Error('No route returned by Routes API');
+      }
+    } catch (err) {
+      console.warn('Routes API failed, using off-road haversine fallback:', err);
+      // Fallback for off-road/remote regions: straight line walking guidance!
+      const dKm = dist(me, tracked);
+      const dStr = dKm < 1 ? `${Math.round(dKm * 1000)} m` : `${dKm.toFixed(1)} km`;
+      const walkMins = Math.max(1, Math.round(dKm * 12));
+      setNavRouteDetails({
+        distance: dStr + ' (direct)',
+        duration: `${walkMins} mins`
+      });
+      setNavSteps([
+        {
+          instruction: 'Walk straight towards the tracked person',
+          distance: dStr,
+          duration: `${walkMins} mins`,
+          lat: tracked.lat,
+          lng: tracked.lng
+        }
+      ]);
+      setCurrentStepIndex(0);
     }
   }, [me?.lat, me?.lng, tracked?.lat, tracked?.lng]);
 

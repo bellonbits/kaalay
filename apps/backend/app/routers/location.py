@@ -7,10 +7,28 @@ import uuid
 
 router = APIRouter(prefix="/location", tags=["location"])
 
+def latlng_to_mock_words(lat: float, lng: float) -> str:
+    mapping = {'0': 'z', '1': 'a', '2': 'b', '3': 'c', '4': 'd', '5': 'e', '6': 'f', '7': 'g', '8': 'h', '9': 'i', '.': 'p', '-': 'm'}
+    lat_str = "".join(mapping[c] for c in f"{lat:.5f}" if c in mapping)
+    lng_str = "".join(mapping[c] for c in f"{lng:.5f}" if c in mapping)
+    return f"{lat_str}.{lng_str}.kaalay"
+
+def mock_words_to_latlng(words: str) -> tuple[float, float]:
+    parts = words.strip().replace("///", "").split(".")
+    if len(parts) >= 2:
+        rev_mapping = {'z': '0', 'a': '1', 'b': '2', 'c': '3', 'd': '4', 'e': '5', 'f': '6', 'g': '7', 'h': '8', 'i': '9', 'p': '.', 'm': '-'}
+        try:
+            lat = float("".join(rev_mapping[c] for c in parts[0] if c in rev_mapping))
+            lng = float("".join(rev_mapping[c] for c in parts[1] if c in rev_mapping))
+            return lat, lng
+        except:
+            pass
+    return -1.2921, 36.8219
+
 @router.get("/convert-to-words")
 async def convert_to_words(lat: float, lng: float):
-    if not settings.W3W_API_KEY:
-        return success_response({"words": f"tripped.marching.kaalay", "lat": lat, "lng": lng})
+    if not settings.W3W_API_KEY or settings.W3W_API_KEY == "Z5Z6G74L":
+        return success_response({"words": latlng_to_mock_words(lat, lng), "lat": lat, "lng": lng})
         
     url = f"https://api.what3words.com/v3/convert-to-3wa?coordinates={lat},{lng}&key={settings.W3W_API_KEY}"
     try:
@@ -21,8 +39,41 @@ async def convert_to_words(lat: float, lng: float):
         else:
             print(f"W3W Error Response: {res}")
             # Fallback to mock format if quota exceeded or key invalid
-            mock_words = f"{abs(lat):.4f}.{abs(lng):.4f}.kaalay"
-            return success_response({"words": mock_words, "lat": lat, "lng": lng, "warning": "quota_exceeded"})
+            return success_response({"words": latlng_to_mock_words(lat, lng), "lat": lat, "lng": lng, "warning": "quota_exceeded"})
+    except Exception as e:
+        print(f"W3W Connection Error: {e}")
+        return error_response("CONNECTION_ERROR", str(e), 500)
+
+@router.get("/convert-to-coordinates")
+async def convert_to_coordinates(words: str):
+    if not settings.W3W_API_KEY or settings.W3W_API_KEY == "Z5Z6G74L" or words.endswith(".kaalay"):
+        lat, lng = mock_words_to_latlng(words)
+        return success_response({
+            "latitude": lat,
+            "longitude": lng,
+            "what3words": words
+        })
+        
+    url = f"https://api.what3words.com/v3/convert-to-coordinates?words={words}&key={settings.W3W_API_KEY}"
+    try:
+        response = requests.get(url)
+        res = response.json()
+        if "coordinates" in res:
+            return success_response({
+                "latitude": res["coordinates"]["lat"],
+                "longitude": res["coordinates"]["lng"],
+                "what3words": res["words"]
+            })
+        else:
+            print(f"W3W Error Response: {res}")
+            # Fallback if invalid mock words or error
+            lat, lng = mock_words_to_latlng(words)
+            return success_response({
+                "latitude": lat,
+                "longitude": lng,
+                "what3words": words,
+                "warning": "fallback_triggered"
+            })
     except Exception as e:
         print(f"W3W Connection Error: {e}")
         return error_response("CONNECTION_ERROR", str(e), 500)

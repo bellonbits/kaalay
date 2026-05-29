@@ -1,9 +1,11 @@
 'use client';
-import { GoogleMap, Circle, MarkerF } from '@react-google-maps/api';
+import { GoogleMap, Circle } from '@react-google-maps/api';
 import { useRef, useCallback, useEffect, forwardRef, useImperativeHandle, useMemo, useState } from 'react';
 import { useGoogleMaps } from './GoogleMapsProvider';
 import { getGridSection } from '../lib/api';
 import { computeRoute } from '../lib/routeService';
+import AdvancedMarker from './AdvancedMarker';
+import PinIcon from './PinIcon';
 
 const LIGHT_STYLE: google.maps.MapTypeStyle[] = [
   { elementType: 'geometry',            stylers: [{ color: '#f1f3f4' }] },
@@ -55,6 +57,7 @@ interface Props {
   className?: string;
   onClick?: (lat: number, lng: number) => void;
   isSelectingPickup?: boolean;
+  pickingType?: 'start' | 'dest' | null;
   onCenterPinChange?: (lat: number, lng: number) => void;
   onDraggingStateChange?: (dragging: boolean) => void;
   followMode?: boolean;
@@ -119,6 +122,17 @@ function routeResultToInfo(
   };
 }
 
+const MEMBER_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#DDA0DD', '#F7DC6F', '#82E0AA'];
+
+function getMemberColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % MEMBER_COLORS.length;
+  return MEMBER_COLORS[index];
+}
+
 function NavBanner({ info, travelMode }: { info: RouteInfo; travelMode?: string }) {
   const icon = travelMode === 'WALKING' ? '🚶' : travelMode === 'BICYCLING' ? '🚲' : travelMode === 'TRANSIT' ? '🚌' : '🚗';
   return (
@@ -159,6 +173,7 @@ const MapBase = forwardRef<MapHandle, Props>(({
   className,
   onClick,
   isSelectingPickup = false,
+  pickingType = 'start',
   onCenterPinChange,
   onDraggingStateChange,
   followMode = false,
@@ -175,6 +190,8 @@ const MapBase = forwardRef<MapHandle, Props>(({
   const mapRef           = useRef<google.maps.Map | null>(null);
   const mapInstanceRef   = useRef<google.maps.Map | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const lastReportedLatRef = useRef<number | null>(null);
+  const lastReportedLngRef = useRef<number | null>(null);
 
   // ── Polyline refs (drawn natively) ────────────────────────────────────────
   const glowPolyRef = useRef<google.maps.Polyline | null>(null);
@@ -314,11 +331,14 @@ const MapBase = forwardRef<MapHandle, Props>(({
   }, []);
 
   const options = useMemo(() => ({
-    styles: LIGHT_STYLE,
+    // NOTE: `styles` cannot be used together with `mapId`.
+    // When mapId is present, map styling is controlled via the Google Cloud Console.
+    // See: https://developers.google.com/maps/documentation/javascript/styling#cloud_tooling
     disableDefaultUI: true,
     gestureHandling: 'greedy',
     clickableIcons: false,
     preventGoogleFontsLoading: true,
+    mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID',
   }), []);
 
   useImperativeHandle(ref, () => ({
@@ -362,7 +382,7 @@ const MapBase = forwardRef<MapHandle, Props>(({
     return () => { ds.remove(); de.remove(); zl.remove(); };
   }, [mapReady, onDraggingStateChange, onFollowModeChange]);
 
-  // ── Idle listener (grid + center pin) ────────────────────────────────────
+  // ── Idle listener (grid + center pin with 1m distance threshold) ──────────
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || !mapReady) return;
@@ -373,8 +393,19 @@ const MapBase = forwardRef<MapHandle, Props>(({
       map.data.setStyle({ visible: loadGrid, strokeColor: '#777777', strokeWeight: 0.5 });
 
       const mc = map.getCenter();
-      if (mc && isSelectingPickup && onCenterPinChange) {
-        onCenterPinChange(mc.lat(), mc.lng());
+      if (!mc) return;
+
+      const lat = mc.lat();
+      const lng = mc.lng();
+
+      // Only fire if position actually changed meaningfully (>1m threshold)
+      const latChanged = lastReportedLatRef.current === null || Math.abs(lat - lastReportedLatRef.current) > 0.000009;
+      const lngChanged = lastReportedLngRef.current === null || Math.abs(lng - lastReportedLngRef.current) > 0.000009;
+
+      if ((isSelectingPickup || pickingType) && onCenterPinChange && (latChanged || lngChanged)) {
+        lastReportedLatRef.current = lat;
+        lastReportedLngRef.current = lng;
+        onCenterPinChange(lat, lng);
       }
 
       if (!loadGrid) return;
@@ -393,8 +424,12 @@ const MapBase = forwardRef<MapHandle, Props>(({
       }, 350);
     });
 
-    return () => { il.remove(); };
-  }, [mapReady, isSelectingPickup, onCenterPinChange]);
+    return () => {
+      il.remove();
+      lastReportedLatRef.current = null;
+      lastReportedLngRef.current = null;
+    };
+  }, [mapReady, isSelectingPickup, onCenterPinChange, pickingType]);
 
   // ── ROUTES API FETCH (replaces deprecated DirectionsService) ─────────────
   //
@@ -617,55 +652,29 @@ const MapBase = forwardRef<MapHandle, Props>(({
         options={options}
       >
         {allRenderedMarkers.map((m, idx) => {
-          let icon: google.maps.Icon | google.maps.Symbol;
-
+          let content: HTMLElement;
           if (m.type === 'me') {
-            // Precise GPS blue dot — kept small & exact for accuracy
-            icon = {
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: 9,
-              fillColor: '#4285F4',
-              fillOpacity: 1,
-              strokeColor: '#FFFFFF',
-              strokeWeight: 3.5,
-            };
+            content = PinIcon.me();
           } else if (m.type === 'car') {
-            icon = imgIcon(m.category === 'bike' ? '/icon-bike.png' : '/icon-taxi.png', 48);
+            content = PinIcon.car(m.category);
           } else if (m.type === 'request') {
-            // 3D navy blue location pin for pickup / request waypoints
-            icon = {
-              url: '/icon-3d-pin-blue.png',
-              scaledSize: new google.maps.Size(52, 62),
-              anchor: new google.maps.Point(26, 58),
-            };
-          } else if (m.type === 'place') {
-            // 3D yellow destination pin for saved places
-            icon = {
-              url: '/icon-3d-dest-pin.png',
-              scaledSize: new google.maps.Size(48, 58),
-              anchor: new google.maps.Point(24, 54),
-            };
-          } else if (m.type === 'tracked') {
-            // 3D yellow destination pin for tracked people/destinations
-            icon = {
-              url: '/icon-3d-dest-pin.png',
-              scaledSize: new google.maps.Size(48, 58),
-              anchor: new google.maps.Point(24, 54),
-            };
+            content = PinIcon.request();
+          } else if (m.type === 'place' || m.type === 'tracked') {
+            if (m.type === 'tracked' && m.label) {
+              content = PinIcon.member(getMemberColor(m.label), m.label);
+            } else {
+              content = PinIcon.place();
+            }
           } else {
-            // Fallback 3D blue pin
-            icon = {
-              url: '/icon-3d-pin-blue.png',
-              scaledSize: new google.maps.Size(48, 58),
-              anchor: new google.maps.Point(24, 54),
-            };
+            content = PinIcon.request();
           }
 
           return (
-            <MarkerF
+            <AdvancedMarker
               key={`marker-${m.type}-${m.label ? m.label.replace(/\s+/g, '-') : idx}`}
+              map={mapInstanceRef.current}
               position={{ lat: m.lat, lng: m.lng }}
-              icon={icon}
+              content={content}
               title={m.label}
               zIndex={m.type === 'me' ? 20 : m.type === 'car' ? 15 : 10}
               onClick={() => m.onClick?.()}
@@ -701,7 +710,7 @@ const MapBase = forwardRef<MapHandle, Props>(({
         )}
       </GoogleMap>
 
-      {/* Fixed centre pickup pin — 3D icon */}
+      {/* Fixed centre pickup/dest pin — 3D icon */}
       {isSelectingPickup && (
         <div
           className="absolute pointer-events-none"
@@ -721,10 +730,10 @@ const MapBase = forwardRef<MapHandle, Props>(({
             }}
           />
 
-          {/* 3D navy pin image — lifts on drag */}
+          {/* 3D pin image — lifts on drag */}
           <img
-            src="/icon-3d-pin-blue.png"
-            alt="Pickup location"
+            src={pickingType === 'dest' ? "/icon-3d-dest-pin.png" : "/icon-3d-pin-blue.png"}
+            alt={pickingType === 'dest' ? "Destination location" : "Pickup location"}
             draggable={false}
             className="pointer-events-none select-none transition-transform duration-300"
             style={{

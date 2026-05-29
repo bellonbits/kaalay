@@ -19,6 +19,7 @@ import { acceptRide, requestRide, convertToWords, getPlaces, createPlace } from 
 import type { MarkerData } from '../../components/MapBase';
 import NavigationSheet, { LocationPoint } from '../../components/NavigationSheet';
 import { useSocket } from '../../hooks/useSocket';
+import { computeRoute, formatDistance, formatDuration } from '../../lib/routeService';
 
 const MapBase = dynamic(() => import('../../components/MapBase').then((mod) => {
   const Component = mod.default;
@@ -108,12 +109,12 @@ export default function HomePage() {
 
   // Hide BottomNav AND collapse sheet when pinning a location
   useEffect(() => {
-    const shouldHide = !!pickingLocationType || sheetH === 'full' || sheetH === 'hidden';
+    const shouldHide = !!pickingLocationType || sheetH === 'full' || sheetH === 'hidden' || !!routeDest;
     window.dispatchEvent(new CustomEvent('hide-bottom-nav', { detail: shouldHide }));
     return () => {
       window.dispatchEvent(new CustomEvent('hide-bottom-nav', { detail: false }));
     };
-  }, [pickingLocationType, sheetH]);
+  }, [pickingLocationType, sheetH, routeDest]);
 
   // Collapse the bottom sheet when entering picking mode so it never covers the confirm button
   const prevPickingRef = useRef<'start' | 'dest' | null>(null);
@@ -145,24 +146,65 @@ export default function HomePage() {
     setShowNavSheet(true); // Re-open NavigationSheet!
   };
 
-  const handleCenterPinChange = async (lat: number, lng: number) => {
-    // Only resolve pin coordinate to what3words when not in active route routing, or when manually selecting point on map
-    if (routeDest && !pickingLocationType) return;
+  const w3wDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  const handleCenterPinChange = useCallback((lat: number, lng: number) => {
+    // Always show loading when pin is being used for selection
+    if (!pickingLocationType && routeDest) return;
+
+    // Track the LATEST coords in a ref — not state
+    latestCoordsRef.current = { lat, lng };
+
     setIsPinResolving(true);
-    try {
-      const data = await convertToWords(lat, lng);
-      setCenterPinAddress({ words: data.words, lat, lng });
-      if (pickingLocationType === 'dest') {
-        // Just resolve address for dest, do not set routeStart
-      } else {
-        setRouteStart({ lat, lng, label: `///${data.words}` });
+    
+    // Clear previous debounce
+    if (w3wDebounceRef.current) clearTimeout(w3wDebounceRef.current);
+
+    // Show immediate coordinate fallback so UI isn't blank
+    setCenterPinAddress(prev => ({ 
+      words: prev?.words ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`, 
+      lat, 
+      lng 
+    }));
+
+    w3wDebounceRef.current = setTimeout(async () => {
+      // Read from ref — always the latest value, no stale closure
+      const coords = latestCoordsRef.current;
+      if (!coords) return;
+
+      try {
+        const data = await convertToWords(coords.lat, coords.lng);
+        
+        // Only update if coordinates still match (pin hasn't moved again)
+        if (
+          latestCoordsRef.current?.lat === coords.lat &&
+          latestCoordsRef.current?.lng === coords.lng
+        ) {
+          setCenterPinAddress({ words: data.words, lat: coords.lat, lng: coords.lng });
+
+          // Update routeStart only when not picking dest specifically
+          if (pickingLocationType !== 'dest') {
+            setRouteStart({ lat: coords.lat, lng: coords.lng, label: `///${data.words}`, isW3W: true });
+          }
+        }
+      } catch (err) {
+        console.error('w3w reverse geocode failed:', err);
+        if (latestCoordsRef.current?.lat === coords.lat) {
+          setCenterPinAddress({ words: `${coords.lat.toFixed(5)},${coords.lng.toFixed(5)}`, lat: coords.lat, lng: coords.lng });
+        }
+      } finally {
+        setIsPinResolving(false);
       }
-    } catch (err) {
-      console.error('Reverse geocode failed:', err);
-    } finally {
-      setIsPinResolving(false);
-    }
-  };
+    }, 450); // 450ms debounce — resolves after pin stops
+  }, [pickingLocationType, routeDest]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (w3wDebounceRef.current) clearTimeout(w3wDebounceRef.current);
+    };
+  }, []);
 
   const handleCalculateRoute = useCallback(async (start: LocationPoint, dest: LocationPoint) => {
     setRouteStart(start);
@@ -171,24 +213,26 @@ export default function HomePage() {
     setSheetH('half'); 
     setZoomState('tracking'); // Set auto zoom to tracking mode
     try { 
-      const service = new google.maps.DirectionsService();
-      const res = await service.route({
-        origin: { lat: start.lat, lng: start.lng },
-        destination: { lat: dest.lat, lng: dest.lng },
-        travelMode: google.maps.TravelMode.DRIVING,
-      });
+      const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
+      const res = await computeRoute(
+        { lat: start.lat, lng: start.lng },
+        { lat: dest.lat, lng: dest.lng },
+        'DRIVING',
+        apiKey
+      );
       
-      if (res.routes[0]?.legs[0]) {
-        const leg = res.routes[0].legs[0];
-        const distanceText = leg.distance?.text || '0 km';
-        const durationText = leg.duration?.text || '0 min';
-        const distNum = parseFloat(distanceText.replace(/[^0-9.]/g, ''));
+      if (res) {
+        const distanceText = formatDistance(res.distanceMeters);
+        const durationText = formatDuration(res.durationSeconds);
+        const distNum = res.distanceMeters / 1000;
         
         setRouteInfo({ 
           distance: distanceText, 
           duration: durationText, 
           priceBase: distNum * 50 + 50 
         });
+      } else {
+        throw new Error('No route returned by Routes API');
       }
     } catch (err) { 
       console.error('Directions error, using off-road haversine fallback:', err); 
@@ -429,6 +473,7 @@ export default function HomePage() {
           routeFrom={position ? { lat: position.lat, lng: position.lng } : (routeStart ? { lat: routeStart.lat, lng: routeStart.lng } : undefined)}
           routeTo={routeDest ? { lat: routeDest.lat, lng: routeDest.lng } : undefined} 
           isSelectingPickup={(!routeDest || !!pickingLocationType) && !isHelper}
+          pickingType={pickingLocationType || (!routeDest ? 'start' : null)}
           onCenterPinChange={handleCenterPinChange}
           followMode={followMode}
           onFollowModeChange={setFollowMode}
@@ -457,9 +502,19 @@ export default function HomePage() {
               </div>
               <div className="text-[10px] font-bold text-white bg-white/15 px-3 py-1.5 rounded-lg border border-white/10 truncate max-w-[150px]">
                 {isPinResolving ? (
-                  <span className="flex items-center gap-1.5"><LoadingOutlined className="text-white" /> Locating...</span>
+                  <span className="flex items-center gap-1.5">
+                    <LoadingOutlined className="text-white" /> 
+                    Resolving...
+                  </span>
+                ) : centerPinAddress ? (
+                  <span>
+                    {centerPinAddress.words.includes('.')
+                      ? `///${centerPinAddress.words}` // real w3w address
+                      : centerPinAddress.words          // coordinate fallback
+                    }
+                  </span>
                 ) : (
-                  centerPinAddress ? `///${centerPinAddress.words}` : 'Choose spot...'
+                  'Move map to select'
                 )}
               </div>
             </div>

@@ -19,17 +19,19 @@ const FIELD_MASK = [
   'routes.distanceMeters',
   'routes.duration',
   'routes.legs.steps.navigationInstruction',
+  'routes.legs.steps.endLocation',
+  'routes.legs.steps.distanceMeters',
+  'routes.legs.steps.staticDuration',
 ].join(',');
 
 export type TravelModeInput = 'DRIVING' | 'WALKING' | 'BICYCLING' | 'TRANSIT';
 
-/** Map our internal travel mode to the Routes API enum. */
-function toApiMode(mode: TravelModeInput): string {
-  // BICYCLING is unsupported in Routes API for most of Africa → fall back to WALK
-  if (mode === 'BICYCLING') return 'WALK';
-  if (mode === 'WALKING')   return 'WALK';
-  if (mode === 'TRANSIT')   return 'TRANSIT';
-  return 'DRIVE';
+export interface RouteStep {
+  instruction: string;
+  distance: string;
+  duration: string;
+  lat: number;
+  lng: number;
 }
 
 export interface RouteResult {
@@ -41,6 +43,39 @@ export interface RouteResult {
   firstStepInstruction: string;
   /** Resolved travel mode after fallback (e.g. BICYCLING → WALKING). */
   resolvedMode: TravelModeInput;
+  /** Individual turn-by-turn navigation steps. */
+  steps?: RouteStep[];
+}
+
+/** Format distance in meters to a human-readable string. */
+export function formatDistance(meters: number): string {
+  if (meters < 1000) {
+    return `${meters} m`;
+  }
+  return `${(meters / 1000).toFixed(1)} km`;
+}
+
+/** Format duration in seconds to a human-readable string. */
+export function formatDuration(seconds: number): string {
+  const mins = Math.round(seconds / 60);
+  if (mins < 60) {
+    return `${mins} mins`;
+  }
+  const hrs = Math.floor(mins / 60);
+  const remainingMins = mins % 60;
+  if (remainingMins === 0) {
+    return `${hrs} ${hrs === 1 ? 'hour' : 'hours'}`;
+  }
+  return `${hrs} ${hrs === 1 ? 'hour' : 'hours'} ${remainingMins} mins`;
+}
+
+/** Map our internal travel mode to the Routes API enum. */
+function toApiMode(mode: TravelModeInput): string {
+  // BICYCLING is unsupported in Routes API for most of Africa → fall back to WALK
+  if (mode === 'BICYCLING') return 'WALK';
+  if (mode === 'WALKING')   return 'WALK';
+  if (mode === 'TRANSIT')   return 'TRANSIT';
+  return 'DRIVE';
 }
 
 /**
@@ -126,12 +161,34 @@ export async function computeRoute(
         .replace(/<[^>]+>/g, '')
         .trim();
 
+    // Map steps
+    const steps: RouteStep[] = [];
+    const rawSteps = route.legs?.[0]?.steps ?? [];
+    for (const s of rawSteps) {
+      const instruction = (s.navigationInstruction?.instructions ?? '')
+        .replace(/<[^>]+>/g, '')
+        .trim();
+      const sDist = s.distanceMeters ?? 0;
+      const sDurStr = s.staticDuration || s.duration || '0s';
+      const sDur = parseInt(sDurStr.replace(/[^0-9]/g, ''), 10) || 0;
+      const lat = s.endLocation?.latLng?.latitude ?? destination.lat;
+      const lng = s.endLocation?.latLng?.longitude ?? destination.lng;
+      steps.push({
+        instruction: instruction || 'Continue along the route',
+        distance: formatDistance(sDist),
+        duration: formatDuration(sDur),
+        lat,
+        lng,
+      });
+    }
+
     return {
       polylinePoints,
       distanceMeters: route.distanceMeters ?? 0,
       durationSeconds,
       firstStepInstruction,
       resolvedMode,
+      steps,
     };
   } catch (err) {
     console.warn('[routeService] fetch error:', err);

@@ -2,7 +2,6 @@
 import { useState, useEffect, useRef, Suspense, useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { Autocomplete } from '@react-google-maps/api';
 import { useGoogleMaps } from '../../components/GoogleMapsProvider';
 import {
   CheckOutlined, LoadingOutlined, DollarOutlined, SwapOutlined,
@@ -12,6 +11,7 @@ import {
 } from '@ant-design/icons';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { convertTo3wa, requestRide, cancelRide, getFareEstimates } from '../../lib/api';
+import { computeRoute, formatDistance, formatDuration } from '../../lib/routeService';
 import { getSocket } from '../../lib/socket';
 import type { MarkerData } from '../../components/MapBase';
 
@@ -79,8 +79,8 @@ function RidePageContent() {
   const [multiModal, setMultiModal] = useState<{ [key: string]: { dist: string; dur: string } }>({});
   const [mapFocus, setMapFocus] = useState<{ lat: number; lng: number } | null>(null);
   const [pickingOnMap, setPickingOnMap] = useState<'pickup' | 'dest' | null>(null);
-  const startAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
-  const destAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const [startGoogleSuggestions, setStartGoogleSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
+  const [destGoogleSuggestions, setDestGoogleSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
   const pickupInputRef = useRef<HTMLInputElement>(null);
   const destInputRef = useRef<HTMLInputElement>(null);
   const w3wAutoRef = useRef<HTMLElement>(null);
@@ -88,6 +88,14 @@ function RidePageContent() {
   const [tempCoords, setTempCoords] = useState<{ w3w: string; lat: number; lng: number } | null>(null);
   const [isResolving, setIsResolving] = useState(false);
   const resolveTimeoutRef = useRef<any>(null);
+  const latestPickingCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (resolveTimeoutRef.current) clearTimeout(resolveTimeoutRef.current);
+    };
+  }, []);
   const [isPickupManual, setIsPickupManual] = useState(false);
   const [navSteps, setNavSteps] = useState<{ instruction: string; distance: string; duration: string; lat: number; lng: number }[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -95,6 +103,39 @@ function RidePageContent() {
   const [w3wSuggestions, setW3wSuggestions] = useState<any[]>([]);
   const [navMode, setNavMode] = useState<'smart' | 'hybrid' | 'precision'>('smart');
   const [isOffRoad, setIsOffRoad] = useState(false);
+
+  const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
+
+  useEffect(() => {
+    if (isLoaded && window.google?.maps?.places) {
+      sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
+    }
+  }, [isLoaded]);
+
+  const fetchGoogleSuggestions = useCallback(async (input: string, callback: (predictions: google.maps.places.AutocompletePrediction[]) => void) => {
+    if (!input || input.length < 2 || input.includes('.') || input.startsWith('///')) {
+      callback([]);
+      return;
+    }
+    try {
+      const { suggestions } = await (google.maps.places.AutocompleteSuggestion as any).fetchAutocompleteSuggestions({
+        input,
+        sessionToken: sessionTokenRef.current || undefined,
+      });
+      // Map new PlaceSuggestion objects to the legacy AutocompletePrediction shape
+      const predictions = (suggestions || []).map((s: any) => s.placePrediction).filter(Boolean).map((p: any) => ({
+        place_id: p.placeId,
+        description: p.text?.text || '',
+        structured_formatting: {
+          main_text: p.structuredFormat?.mainText?.text || p.text?.text || '',
+          secondary_text: p.structuredFormat?.secondaryText?.text || '',
+        },
+      }));
+      callback(predictions);
+    } catch {
+      callback([]);
+    }
+  }, []);
 
   const loadEstimates = useCallback(async (distNum: number) => {
     try {
@@ -146,39 +187,33 @@ function RidePageContent() {
       return results.car;
     }
 
-    const service = new google.maps.DirectionsService();
-    const modes = [
-      { mode: google.maps.TravelMode.DRIVING, key: 'car' },
-      { mode: google.maps.TravelMode.BICYCLING, key: 'bike' },
-      { mode: google.maps.TravelMode.WALKING, key: 'foot' }
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
+    const modes: { mode: 'DRIVING' | 'BICYCLING' | 'WALKING'; key: string }[] = [
+      { mode: 'DRIVING', key: 'car' },
+      { mode: 'BICYCLING', key: 'bike' },
+      { mode: 'WALKING', key: 'foot' }
     ];
 
     const results: any = {};
     for (const m of modes) {
       try {
-        const result = await service.route({ origin, destination: dest, travelMode: m.mode });
-        if (result.routes[0]?.legs[0]) {
-          const leg = result.routes[0].legs[0];
+        const result = await computeRoute(origin, dest, m.mode, apiKey);
+        if (result) {
+          const distStr = formatDistance(result.distanceMeters);
+          const durStr = formatDuration(result.durationSeconds);
           results[m.key] = { 
-            dist: leg.distance?.text || '0', 
-            dur: leg.duration?.text || '0',
-            distance: leg.distance?.text || '0',
-            duration: leg.duration?.text || '0'
+            dist: distStr, 
+            dur: durStr,
+            distance: distStr,
+            duration: durStr
           };
           const isActiveMode = (step === 'walking' && m.key === 'foot') || (step !== 'walking' && m.key === 'car');
           if (isActiveMode) {
-            setDistance(leg.distance?.text ?? null);
-            setDuration(leg.duration?.text ?? null);
+            setDistance(distStr);
+            setDuration(durStr);
           }
-          if (m.key === 'foot' && leg.steps) {
-            const cleanSteps = leg.steps.map((s: any) => ({
-              instruction: s.instructions.replace(/<[^>]*>/g, ''), // Strip HTML tags
-              distance: s.distance?.text || '',
-              duration: s.duration?.text || '',
-              lat: typeof s.end_location?.lat === 'function' ? s.end_location.lat() : s.end_location?.lat || dest.lat,
-              lng: typeof s.end_location?.lng === 'function' ? s.end_location.lng() : s.end_location?.lng || dest.lng
-            }));
-            setNavSteps(cleanSteps);
+          if (m.key === 'foot' && result.steps) {
+            setNavSteps(result.steps);
             setCurrentStepIndex(0);
           }
         }
@@ -217,37 +252,93 @@ function RidePageContent() {
     return results.car;
   }, [step, isLoaded]);
 
+  const handleSelectGooglePlace = useCallback(async (prediction: google.maps.places.AutocompletePrediction, isPickup: boolean) => {
+    const geocoder = new google.maps.Geocoder();
+    setLoading(true);
+    geocoder.geocode({ placeId: prediction.place_id }, async (results, status) => {
+      if (status === 'OK' && results?.[0]?.geometry?.location) {
+        const loc = results[0].geometry.location;
+        const lat = loc.lat();
+        const lng = loc.lng();
+        try {
+          const res = await convertTo3wa(lat, lng);
+          if (isPickup) {
+            setPickup({ w3w: res.what3words, lat, lng });
+            setIsPickupManual(true);
+            if (pickupInputRef.current) pickupInputRef.current.value = prediction.description;
+          } else {
+            setDest({ w3w: res.what3words, lat, lng });
+            setDestIn(prediction.description);
+            if (destInputRef.current) destInputRef.current.value = prediction.description;
+            if (pickup) {
+              const details = await getRouteDetails(pickup, { lat, lng });
+              if (details) {
+                const distNum = parseFloat(details.distance?.split(' ')[0] || '0');
+                const ests = await loadEstimates(distNum);
+                setPrice(ests?.find((e: any) => e.category === selectedCategory)?.fare || ests?.find((e: any) => e.category === 'economy')?.fare || 0);
+              }
+            }
+          }
+        } catch (err) {
+          const fallbackW3w = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+          if (isPickup) {
+            setPickup({ w3w: fallbackW3w, lat, lng });
+            setIsPickupManual(true);
+            if (pickupInputRef.current) pickupInputRef.current.value = prediction.description;
+          } else {
+            setDest({ w3w: fallbackW3w, lat, lng });
+            setDestIn(prediction.description);
+            if (destInputRef.current) destInputRef.current.value = prediction.description;
+          }
+        } finally {
+          setLoading(false);
+          if (window.google?.maps?.places?.AutocompleteSessionToken) {
+            sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
+          }
+        }
+      } else {
+        setLoading(false);
+      }
+    });
+  }, [pickup, getRouteDetails, loadEstimates, selectedCategory]);
+
   const handleCenterPinChange = useCallback((lat: number, lng: number) => {
     if (!pickingOnMap) return;
-    
-    // Set immediate coordinates fallback so user can confirm instantly
-    setTempCoords(prev => ({
-      w3w: prev?.w3w && prev.lat === lat && prev.lng === lng ? prev.w3w : `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+
+    latestPickingCoordsRef.current = { lat, lng };
+
+    // Show immediate coordinate placeholder — never blank
+    setTempCoords({
+      w3w: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
       lat,
-      lng
-    }));
-    
+      lng,
+    });
     setIsResolving(true);
 
-    if (resolveTimeoutRef.current) {
-      clearTimeout(resolveTimeoutRef.current);
-    }
+    // Clear previous debounce
+    if (resolveTimeoutRef.current) clearTimeout(resolveTimeoutRef.current);
 
     resolveTimeoutRef.current = setTimeout(async () => {
+      const coords = latestPickingCoordsRef.current;
+      if (!coords) return;
+
       try {
-        const res = await convertTo3wa(lat, lng);
-        setTempCoords(prev => {
-          if (prev && prev.lat === lat && prev.lng === lng) {
-            return { ...prev, w3w: res.what3words };
-          }
-          return prev;
-        });
+        const res = await convertTo3wa(coords.lat, coords.lng);
+        
+        // Only update if coordinates still match (pin hasn't moved again)
+        if (
+          latestPickingCoordsRef.current?.lat === coords.lat &&
+          latestPickingCoordsRef.current?.lng === coords.lng
+        ) {
+          setTempCoords({ w3w: res.what3words, lat: coords.lat, lng: coords.lng });
+        }
       } catch (err) {
-        // Fallback is already set
+        console.warn('[w3w] resolution failed, keeping coordinate fallback');
+        // Coordinate fallback already set
       } finally {
         setIsResolving(false);
       }
-    }, 400);
+    }, 450);
   }, [pickingOnMap]);
 
 
@@ -431,47 +522,6 @@ function RidePageContent() {
 
 
 
-  const handlePickupSelect = useCallback(async () => {
-    if (!startAutocompleteRef.current) return;
-    const place = startAutocompleteRef.current.getPlace();
-    if (!place?.geometry?.location) return;
-    const lat = place.geometry.location.lat();
-    const lng = place.geometry.location.lng();
-    setLoading(true);
-    try {
-      const res = await convertTo3wa(lat, lng);
-      setPickup({ w3w: res.what3words, lat, lng });
-      setIsPickupManual(true);
-    } catch (err) { 
-      setPickup({ w3w: `${lat.toFixed(4)},${lng.toFixed(4)}`, lat, lng });
-      setIsPickupManual(true);
-    } finally { setLoading(false); }
-  }, []);
-
-  const handleDestSelect = useCallback(async () => {
-    if (!destAutocompleteRef.current) return;
-    const place = destAutocompleteRef.current.getPlace();
-    if (!place?.geometry?.location) return;
-    const lat = place.geometry.location.lat();
-    const lng = place.geometry.location.lng();
-    setLoading(true);
-    try {
-      const res = await convertTo3wa(lat, lng);
-      setDest({ w3w: res.what3words, lat, lng });
-      if (pickup) {
-        const details = await getRouteDetails(pickup, { lat, lng });
-        if (details) {
-          const distNum = parseFloat(details.distance?.split(' ')[0] || '0');
-          const ests = await loadEstimates(distNum);
-          setPrice(ests?.find((e: any) => e.category === 'economy')?.fare || 0);
-          setStep('confirm');
-        }
-      }
-    } catch (err) { 
-      setDest({ w3w: `${lat.toFixed(4)},${lng.toFixed(4)}`, lat, lng });
-      setStep('confirm');
-    } finally { setLoading(false); }
-  }, [pickup, getRouteDetails, loadEstimates]);
 
   const handleMapClick = useCallback(async (lat: number, lng: number) => {
     if (!pickingOnMap) return;
@@ -634,6 +684,7 @@ function RidePageContent() {
           routeTo={dest ? { lat: dest.lat, lng: dest.lng } : undefined}
           className="w-full h-full" 
           isSelectingPickup={!!pickingOnMap}
+          pickingType={pickingOnMap === 'pickup' ? 'start' : pickingOnMap === 'dest' ? 'dest' : null}
           onCenterPinChange={handleCenterPinChange}
           travelMode={step === 'walking' ? 'WALKING' : 'DRIVING'}
           zoomState={step === 'walking' ? 'navigation' : undefined}
@@ -967,16 +1018,51 @@ function RidePageContent() {
             <h2 className="text-2xl font-black text-black tracking-tighter mb-6">Where to?</h2>
             <div className="space-y-3">
               <div className="flex gap-3">
-                <div className="flex-1 input-container bg-gray-50 !border-gray-100 h-16">
+                <div className="flex-1 input-container bg-gray-50 !border-gray-100 h-16 relative">
                   <div className="w-2 h-2 rounded-full bg-green-500 mr-1" />
                   {isLoaded && (
-                    <Autocomplete onLoad={auto => startAutocompleteRef.current = auto} onPlaceChanged={handlePickupSelect} className="flex-1">
+                    <>
                       <input 
                         ref={pickupInputRef}
                         className="w-full bg-transparent border-none outline-none text-sm font-black text-black placeholder:text-gray-300" 
                         placeholder="Current location..." 
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (pickup) setPickup(null);
+                          fetchGoogleSuggestions(val, setStartGoogleSuggestions);
+                        }}
+                        onBlur={() => {
+                          setTimeout(() => setStartGoogleSuggestions([]), 200);
+                        }}
                       />
-                    </Autocomplete>
+                      {/* Premium dropdown overlay for Google suggestions */}
+                      {startGoogleSuggestions.length > 0 && (
+                        <div className="absolute top-[calc(100%+8px)] left-0 right-0 bg-white rounded-2xl shadow-premium border border-gray-100 z-[60] overflow-hidden animate-fade-in max-h-60 overflow-y-auto no-scroll">
+                          <div className="px-5 py-2.5 bg-blue-50/50 border-b border-gray-50">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-[#000080]">Search Results</span>
+                          </div>
+                          {startGoogleSuggestions.map((s) => (
+                            <button 
+                              key={s.place_id}
+                              type="button"
+                              onClick={() => {
+                                handleSelectGooglePlace(s, true);
+                                setStartGoogleSuggestions([]);
+                              }}
+                              className="w-full px-5 py-3.5 flex items-center gap-4 text-left active:bg-gray-50 border-b border-gray-100 last:border-none transition-colors"
+                            >
+                              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                                <EnvironmentOutlined className="text-[#000080] text-sm" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-black truncate leading-tight">{s.structured_formatting.main_text}</p>
+                                <p className="text-xs text-gray-400 truncate mt-1">{s.structured_formatting.secondary_text}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
                 <button 
@@ -1006,33 +1092,37 @@ function RidePageContent() {
                   <div className="w-2 h-2 rounded-sm bg-black mr-1" />
                   {isLoaded && (
                     <>
-                      <Autocomplete onLoad={auto => destAutocompleteRef.current = auto} onPlaceChanged={handleDestSelect} className="flex-1 w-full flex">
-                        <input 
-                          ref={destInputRef}
-                          autoFocus 
-                          className="w-full bg-transparent border-none outline-none text-base font-black text-black placeholder:text-gray-300 flex-1" 
-                          placeholder="Search destination..." 
-                          onChange={async (e) => {
-                            const val = e.target.value;
-                            setDestIn(val);
-                            
-                            // Custom What3Words autosuggest dropdown integration
-                            if (val.includes('.') || val.startsWith('///')) {
-                              try {
-                                const res = await (await import('../../lib/api')).autosuggest(val, position || undefined);
-                                setW3wSuggestions(res.suggestions || []);
-                              } catch {
-                                setW3wSuggestions([]);
-                              }
-                            } else {
+                      <input 
+                        ref={destInputRef}
+                        autoFocus 
+                        className="w-full bg-transparent border-none outline-none text-base font-black text-black placeholder:text-gray-300 flex-1" 
+                        placeholder="Search destination..." 
+                        onChange={async (e) => {
+                          const val = e.target.value;
+                          setDestIn(val);
+                          if (dest) setDest(null);
+                          
+                          fetchGoogleSuggestions(val, setDestGoogleSuggestions);
+
+                          // Custom What3Words autosuggest dropdown integration
+                          if (val.includes('.') || val.startsWith('///')) {
+                            try {
+                              const res = await (await import('../../lib/api')).autosuggest(val, position || undefined);
+                              setW3wSuggestions(res.suggestions || []);
+                            } catch {
                               setW3wSuggestions([]);
                             }
-                          }}
-                          onBlur={() => {
-                            setTimeout(() => setW3wSuggestions([]), 200);
-                          }}
-                        />
-                      </Autocomplete>
+                          } else {
+                            setW3wSuggestions([]);
+                          }
+                        }}
+                        onBlur={() => {
+                          setTimeout(() => {
+                            setW3wSuggestions([]);
+                            setDestGoogleSuggestions([]);
+                          }, 200);
+                        }}
+                      />
 
                       {/* Premium dropdown overlay for What3Words suggestions */}
                       {w3wSuggestions.length > 0 && (
@@ -1053,6 +1143,34 @@ function RidePageContent() {
                               <div>
                                 <p className="text-sm font-black text-red-600 leading-none mb-1">///{s.words}</p>
                                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{s.nearestPlace}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Premium dropdown overlay for Google suggestions */}
+                      {destGoogleSuggestions.length > 0 && (
+                        <div className="absolute top-[calc(100%+8px)] left-0 right-0 bg-white rounded-2xl shadow-premium border border-gray-100 z-[60] overflow-hidden animate-fade-in max-h-60 overflow-y-auto no-scroll">
+                          <div className="px-5 py-2.5 bg-blue-50/50 border-b border-gray-50">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-[#000080]">Search Results</span>
+                          </div>
+                          {destGoogleSuggestions.map((s) => (
+                            <button 
+                              key={s.place_id}
+                              type="button"
+                              onClick={() => {
+                                handleSelectGooglePlace(s, false);
+                                setDestGoogleSuggestions([]);
+                              }}
+                              className="w-full px-5 py-3.5 flex items-center gap-4 text-left active:bg-gray-50 border-b border-gray-100 last:border-none transition-colors"
+                            >
+                              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                                <EnvironmentOutlined className="text-[#000080] text-sm" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-black truncate leading-tight">{s.structured_formatting.main_text}</p>
+                                <p className="text-xs text-gray-400 truncate mt-1">{s.structured_formatting.secondary_text}</p>
                               </div>
                             </button>
                           ))}

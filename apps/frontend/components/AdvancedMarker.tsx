@@ -34,7 +34,6 @@ export default function AdvancedMarker({
   onClick,
 }: Props) {
   const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
-  const clickListenerRef = useRef<google.maps.MapsEventListener | null>(null);
 
   // Mount / unmount
   useEffect(() => {
@@ -57,13 +56,18 @@ export default function AdvancedMarker({
       zIndex,
     });
 
+    const handleMarkerClick = () => {
+      if (onClick) onClick();
+    };
+
     if (onClick) {
-      clickListenerRef.current = markerRef.current.addListener('click', onClick);
+      markerRef.current.addEventListener('gmp-click', handleMarkerClick);
     }
 
     return () => {
-      clickListenerRef.current?.remove();
-      clickListenerRef.current = null;
+      if (markerRef.current && onClick) {
+        markerRef.current.removeEventListener('gmp-click', handleMarkerClick);
+      }
       if (markerRef.current) {
         markerRef.current.map = null;
         markerRef.current = null;
@@ -86,6 +90,13 @@ export default function AdvancedMarker({
       markerRef.current.zIndex = zIndex;
     }
   }, [zIndex]);
+
+  // Update content without remounting
+  useEffect(() => {
+    if (markerRef.current) {
+      markerRef.current.content = content;
+    }
+  }, [content]);
 
   return null; // renders nothing in the React tree
 }

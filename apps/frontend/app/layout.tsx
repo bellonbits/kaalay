@@ -15,6 +15,9 @@ const outfit = Outfit({
 export const metadata: Metadata = {
   title: 'Kaalay • Precision Location',
   description: 'Precision local mapping and live coordination using what3words',
+  icons: {
+    icon: '/favicon.png',
+  },
 };
 
 export const viewport: Viewport = {
@@ -38,7 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Google Maps — loaded after hydration to avoid double-load warning */}
         <Script
           id="google-maps"
-          src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}&libraries=places,geometry,marker`}
+          src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}&libraries=places,geometry,marker&loading=async`}
           strategy="afterInteractive"
         />
         {/* what3words web components — loaded after hydration to avoid className mismatch */}
@@ -47,6 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           type="module"
           src="https://cdn.what3words.com/javascript-components@5.0.0/dist/what3words/what3words.esm.js"
           strategy="afterInteractive"
+          crossOrigin="anonymous"
         />
         <Script
           id="w3w-nomodule"
