@@ -196,6 +196,9 @@ const MapBase = forwardRef<MapHandle, Props>(({
 
   // ── Native polylines (avoids @react-google-maps/api Polyline race condition) ─
   const polylinesRef = useRef<google.maps.Polyline[]>([]);
+  // Latest route path, readable from onLoad when a (re)created map needs to
+  // seed its polylines with the current route immediately.
+  const routePathRef = useRef<google.maps.LatLngLiteral[] | null>(null);
 
   // ── Route state (Routes API replaces DirectionsService) ─────────────────
   const [routePoints, setRoutePoints] = useState<google.maps.LatLngLiteral[] | null>(null);
@@ -323,10 +326,36 @@ const MapBase = forwardRef<MapHandle, Props>(({
   const onLoad = useCallback((m: google.maps.Map) => {
     mapRef.current         = m;
     mapInstanceRef.current = m;
+
+    // Route polylines are created WITH the map and attached to this exact
+    // instance — they can never reference a stale/unmounted map. Afterwards
+    // only their path is updated (setPath), never their map binding.
+    const border = new google.maps.Polyline({
+      map: m,
+      path: routePathRef.current ?? [],
+      strokeColor: '#FFFFFF',
+      strokeWeight: 11,
+      strokeOpacity: 1.0,
+      geodesic: true,
+      zIndex: 1,
+    });
+    const core = new google.maps.Polyline({
+      map: m,
+      path: routePathRef.current ?? [],
+      strokeColor: '#FFD600',
+      strokeWeight: 7,
+      strokeOpacity: 1.0,
+      geodesic: true,
+      zIndex: 2,
+    });
+    polylinesRef.current = [border, core];
+
     setMapReady(true);
   }, []);
 
   const onUnmount = useCallback(() => {
+    polylinesRef.current.forEach(p => p.setMap(null));
+    polylinesRef.current = [];
     mapRef.current             = null;
     mapInstanceRef.current     = null;
     setMapReady(false);
@@ -536,50 +565,16 @@ const MapBase = forwardRef<MapHandle, Props>(({
     return null;
   }, [forceDirect, routePoints, memoizedRouteFrom, memoizedCenter, memoizedRouteTo]);
 
-  // ── NATIVE POLYLINE DRAW ──────────────────────────────────────────────────
-  // We use imperative google.maps.Polyline instead of the declarative
-  // <Polyline> from @react-google-maps/api because the React component loses
-  // its map reference on every parent re-render (GPS ticks, prop changes, etc).
+  // ── NATIVE POLYLINE PATH UPDATE ───────────────────────────────────────────
+  // The polyline objects themselves are created in onLoad (bound to the live
+  // map) and destroyed in onUnmount. Here we only push path changes into
+  // them — setPath on an attached polyline renders immediately, and an empty
+  // path hides the line. No attach/detach races possible.
   useEffect(() => {
-    // Always clear previous polylines first
-    polylinesRef.current.forEach(p => p.setMap(null));
-    polylinesRef.current = [];
-
-    const map = mapInstanceRef.current ?? mapRef.current;
-    if (!map || !routePath || routePath.length < 2) return;
-
-    const border = new google.maps.Polyline({
-      path: routePath,
-      strokeColor: '#FFFFFF',
-      strokeWeight: 11,
-      strokeOpacity: 1.0,
-      geodesic: true,
-      zIndex: 1,
-    });
-    border.setMap(map);
-
-    const core = new google.maps.Polyline({
-      path: routePath,
-      strokeColor: '#FFD600',
-      strokeWeight: 7,
-      strokeOpacity: 1.0,
-      geodesic: true,
-      zIndex: 2,
-    });
-    core.setMap(map);
-
-    polylinesRef.current = [border, core];
-    // mapReady is a dependency so the polylines re-attach after the inner
-    // GoogleMap remounts — they die with the old map instance otherwise
-  }, [routePath, mapReady]);
-
-  // Clear polylines on unmount
-  useEffect(() => {
-    return () => {
-      polylinesRef.current.forEach(p => p.setMap(null));
-      polylinesRef.current = [];
-    };
-  }, []);
+    routePathRef.current = routePath;
+    const path = routePath && routePath.length >= 2 ? routePath : [];
+    polylinesRef.current.forEach(p => p.setPath(path));
+  }, [routePath]);
 
   // ── ZOOM STATE ────────────────────────────────────────────────────────────
   useEffect(() => {
