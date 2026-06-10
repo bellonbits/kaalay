@@ -602,12 +602,18 @@ export default function HomePage() {
     })),
   ], [position, sessions, routeDest, isHelper, user, savedPlaces]);
 
-  const sheetTranslate = sheetH === 'peek' ? 'calc(100% - 320px)' : sheetH === 'half' ? 'calc(100% - 560px)' : sheetH === 'hidden' ? '100%' : '0px';
-  const mapControlsBottom = 
-    pickingLocationType ? 80           // picking mode — sheet is hidden, controls stay near bottom
-    : sheetH === 'peek' ? 400 
-    : sheetH === 'half' ? 640 
-    : sheetH === 'hidden' ? 40 
+  const sheetTranslate =
+    sheetH === 'peek' ? 'calc(100% - 320px)'
+    : sheetH === 'half' ? 'calc(100% - 560px)'
+    // Fully clear the sheet's own bottom offset (nav height + safe area) so the
+    // 'hidden' state leaves no sliver peeking behind the Confirm CTA.
+    : sheetH === 'hidden' ? 'calc(100% + 4rem + var(--safe-bottom) + 8px)'
+    : '0px';
+  const mapControlsBottom =
+    pickingLocationType ? 110          // picking mode — clear the full-width Confirm CTA below
+    : sheetH === 'peek' ? 400
+    : sheetH === 'half' ? 640
+    : sheetH === 'hidden' ? 40
     : 400;
 
   return (
