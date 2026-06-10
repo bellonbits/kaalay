@@ -92,6 +92,21 @@ services:
       retries: 3
       start_period: 30s
 
+  nginx:
+    image: docker.io/library/nginx:alpine
+    container_name: kaalay-nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.30
+
 networks:
   kaalay_net:
     driver: bridge
