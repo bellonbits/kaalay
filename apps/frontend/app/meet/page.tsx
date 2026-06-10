@@ -372,7 +372,8 @@ export default function MeetPage() {
   };
 
   // ── DERIVED STATE ─────────────────────────────────────────────────────────
-  const sheetTranslate = sheetH === 'peek' ? 'calc(100% - 120px)' : sheetH === 'half' ? 'calc(100% - 460px)' : '0px';
+  // Proportional reveal heights so the sheet feels the same on any screen size.
+  const sheetTranslate = sheetH === 'peek' ? 'calc(100% - clamp(110px, 16dvh, 160px))' : sheetH === 'half' ? 'calc(100% - clamp(420px, 58dvh, 680px))' : '0px';
 
   // Selected member derived distance & ETA for host
   const selectedMember = selectedMemberId ? membersList.find(m => m.memberId === selectedMemberId) : null;
@@ -508,7 +509,7 @@ export default function MeetPage() {
 
         {/* Bottom sheet */}
         <div
-          className="absolute bottom-0 left-0 right-0 z-20 h-[80%] bg-white rounded-t-[28px] shadow-sheet flex flex-col transition-transform duration-300 ease-out"
+          className="absolute bottom-0 left-0 right-0 mx-auto max-w-2xl z-20 h-[80%] bg-white rounded-t-[28px] shadow-sheet flex flex-col transition-transform duration-300 ease-out"
           style={{ transform: `translateY(${sheetTranslate})` }}
         >
           <div className="flex justify-center py-3 cursor-pointer shrink-0"

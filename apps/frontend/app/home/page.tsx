@@ -602,19 +602,26 @@ export default function HomePage() {
     })),
   ], [position, sessions, routeDest, isHelper, user, savedPlaces]);
 
+  // Sheet reveal heights as a proportion of the viewport, clamped so the hub
+  // covers the same share of the screen on a small phone, a big phone, or a
+  // tablet — instead of fixed pixels that feel huge on small and tiny on big.
+  const SHEET_PEEK = 'clamp(300px, 40dvh, 460px)';
+  const SHEET_HALF = 'clamp(470px, 64dvh, 760px)';
   const sheetTranslate =
-    sheetH === 'peek' ? 'calc(100% - 320px)'
-    : sheetH === 'half' ? 'calc(100% - 560px)'
+    sheetH === 'peek' ? `calc(100% - ${SHEET_PEEK})`
+    : sheetH === 'half' ? `calc(100% - ${SHEET_HALF})`
     // Fully clear the sheet's own bottom offset (nav height + safe area) so the
     // 'hidden' state leaves no sliver peeking behind the Confirm CTA.
     : sheetH === 'hidden' ? 'calc(100% + 4rem + var(--safe-bottom) + 8px)'
     : '0px';
+  // Map controls ride just above the revealed sheet, so they track its
+  // proportional height. Each value already folds in the bottom safe area.
   const mapControlsBottom =
-    pickingLocationType ? 110          // picking mode — clear the full-width Confirm CTA below
-    : sheetH === 'peek' ? 400
-    : sheetH === 'half' ? 640
-    : sheetH === 'hidden' ? 40
-    : 400;
+    pickingLocationType ? 'calc(110px + var(--safe-bottom))'   // clear the full-width Confirm CTA
+    : sheetH === 'peek' ? `calc(${SHEET_PEEK} + 24px + var(--safe-bottom))`
+    : sheetH === 'half' ? `calc(${SHEET_HALF} + 24px + var(--safe-bottom))`
+    : sheetH === 'hidden' ? 'calc(40px + var(--safe-bottom))'
+    : `calc(${SHEET_PEEK} + 24px + var(--safe-bottom))`;
 
   return (
     <div className="h-full relative overflow-hidden bg-white font-outfit">
@@ -676,7 +683,7 @@ export default function HomePage() {
             </div>
 
             {/* Bottom Confirm Pin — fixed so it always clears BottomNav and sheet */}
-            <div className="fixed left-6 right-6 z-[90] animate-slide-up-spring" style={{ bottom: 'calc(2rem + var(--safe-bottom))' }}>
+            <div className="fixed left-6 right-6 z-[90] animate-slide-up-spring max-w-xl mx-auto" style={{ bottom: 'calc(2rem + var(--safe-bottom))' }}>
               <button 
                 disabled={isPinResolving || !centerPinAddress}
                 onClick={handleConfirmMapPinSelection}
@@ -695,8 +702,8 @@ export default function HomePage() {
 
       {/* Premium Floating Circular Map Controls */}
       <div
-        className="absolute right-6 z-20 flex flex-col gap-3 pointer-events-none transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
-        style={{ bottom: `calc(${mapControlsBottom}px + var(--safe-bottom))` }}
+        className="absolute z-20 flex flex-col gap-3 pointer-events-none transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
+        style={{ bottom: mapControlsBottom, right: 'max(1.5rem, calc((100% - 42rem) / 2 + 1.5rem))' }}
       >
         {/* Restore Hub Button (Only when hidden) */}
         {sheetH === 'hidden' && (
@@ -804,7 +811,7 @@ export default function HomePage() {
       )}
 
       {/* Header Overlay (Always Mounted) */}
-      <div className={`absolute top-12 left-0 right-0 px-6 flex items-center justify-between z-30 transition-opacity duration-300 ${(!routeDest && !pickingLocationType) ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+      <div className={`absolute top-12 left-0 right-0 px-6 max-w-2xl mx-auto flex items-center justify-between z-30 transition-opacity duration-300 ${(!routeDest && !pickingLocationType) ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
         <button className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center shadow-premium active:scale-90 transition-transform">
           <MenuOutlined className="text-xl text-white" />
         </button>
@@ -890,7 +897,7 @@ export default function HomePage() {
 
       {/* Main Bottom Sheet (Always Mounted) */}
       <div 
-        className={`fixed bottom-safe-nav left-0 right-0 z-30 bg-white rounded-t-[32px] shadow-sheet transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${routeDest ? 'translate-y-full pointer-events-none' : ''}`}
+        className={`fixed bottom-safe-nav left-0 right-0 z-30 mx-auto max-w-2xl bg-white rounded-t-[32px] shadow-sheet transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${routeDest ? 'translate-y-full pointer-events-none' : ''}`}
         style={!routeDest ? { height: 'calc(92% - 64px)', transform: `translateY(${sheetTranslate})` } : { height: 'calc(92% - 64px)' }}
       >
         <div 
@@ -1205,7 +1212,7 @@ export default function HomePage() {
 
       {/* Selected Place Info Banner */}
       {selectedPlaceInfo && (
-        <div className="fixed bottom-[320px] left-6 right-6 z-40 animate-slide-up">
+        <div className="fixed left-6 right-6 z-40 animate-slide-up max-w-xl mx-auto" style={{ bottom: `calc(${SHEET_PEEK} + 8px + var(--safe-bottom))` }}>
           <div className="glass-premium p-5 rounded-[28px] border border-white/20 shadow-2xl flex flex-col gap-4 relative overflow-hidden bg-white/95">
             <button 
               onClick={() => setSelectedPlaceInfo(null)}
@@ -1375,7 +1382,7 @@ export default function HomePage() {
           </div>
 
           {/* Bottom active distress card */}
-          <div className="fixed left-6 right-6 z-[95] animate-slide-up-spring" style={{ bottom: 'calc(1.5rem + var(--safe-bottom))' }}>
+          <div className="fixed left-6 right-6 z-[95] animate-slide-up-spring max-w-xl mx-auto" style={{ bottom: 'calc(1.5rem + var(--safe-bottom))' }}>
             <div className="glass-premium p-6 rounded-[32px] border border-red-200/50 shadow-2xl flex flex-col gap-5 bg-white/95 relative overflow-hidden">
               {/* Red pulsing glow effect behind the card */}
               <div className="absolute -inset-10 bg-red-500/5 blur-3xl pointer-events-none rounded-full" />
