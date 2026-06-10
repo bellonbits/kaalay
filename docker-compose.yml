@@ -64,7 +64,7 @@ services:
     container_name: kaalay-backend
     restart: always
     ports:
-      - "3000:3000"
+      - "80:3000"
     environment:
       DATABASE_HOST: 10.90.0.10
       DATABASE_PORT: 5432
@@ -86,26 +86,11 @@ services:
       kaalay_net:
         ipv4_address: 10.90.0.20
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/', timeout=5)"]
+      test: python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/', timeout=5)"
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
-
-  nginx:
-    image: docker.io/library/nginx:alpine
-    container_name: kaalay-nginx
-    restart: always
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      backend:
-        condition: service_started
-    networks:
-      kaalay_net:
-        ipv4_address: 10.90.0.30
 
 networks:
   kaalay_net:
