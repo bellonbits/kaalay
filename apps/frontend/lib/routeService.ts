@@ -97,7 +97,6 @@ export async function computeRoute(
 
 
   const resolvedMode = travelMode;
-  console.log('[routeService] computing', toApiMode(travelMode), 'route from', origin, 'to', destination);
 
   const body = {
     origin:      { location: { latLng: { latitude: origin.lat,      longitude: origin.lng } } },
@@ -124,8 +123,6 @@ export async function computeRoute(
       body: JSON.stringify(body),
     });
 
-    console.log('[routeService] status:', res.status);
-
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
       console.warn(`[routeService] HTTP ${res.status}:`, txt.slice(0, 200));
@@ -135,7 +132,6 @@ export async function computeRoute(
     }
 
     const data = await res.json();
-    console.log('[routeService] routes count:', data.routes?.length);
     const route = data.routes?.[0];
     if (!route) {
       console.warn('[routeService] No routes returned', data);

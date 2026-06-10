@@ -693,13 +693,6 @@ function RidePageContent() {
 
   const isWalkingMode = step === 'walking' || selectedCategory === 'walking';
 
-  console.log('[MapBase props]', {
-    routeFrom: position ? { lat: position.lat, lng: position.lng } : pickup,
-    routeTo: dest,
-    forceDirect: isPrecisionActive,
-    travelMode: isWalkingMode ? 'WALKING' : 'DRIVING',
-  });
-
   return (
     <div className="h-full w-full bg-white font-outfit relative overflow-hidden">
       {/* Immersive Map Background */}

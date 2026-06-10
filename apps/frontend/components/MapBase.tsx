@@ -445,14 +445,6 @@ const MapBase = forwardRef<MapHandle, Props>(({
   const lastRouteKeyRef = useRef<string>('');
 
   useEffect(() => {
-    console.log('[MapBase route effect]', {
-      hasFrom: !!routeFrom,
-      hasTo: !!memoizedRouteTo,
-      mapReady,
-      travelMode,
-      mapInstance: !!(mapInstanceRef.current ?? mapRef.current),
-    });
-
     if (!mapReady || !isLoaded || !memoizedRouteTo || forceDirect) {
       if (forceDirect) {
         // forceDirect = straight line, clear the API-computed path
@@ -467,10 +459,7 @@ const MapBase = forwardRef<MapHandle, Props>(({
     }
 
     const map = mapInstanceRef.current ?? mapRef.current;
-    if (!map) {
-      console.error('[MapBase] map is null when route effect fired — this is the bug');
-      return;
-    }
+    if (!map) return;
 
     const origin = stableOrigin;
     const mode = travelMode ?? 'DRIVING';
@@ -497,12 +486,6 @@ const MapBase = forwardRef<MapHandle, Props>(({
             ...result.polylinePoints,
             { lat: memoizedRouteTo.lat, lng: memoizedRouteTo.lng },
           ];
-          console.log('[MapBase draw]', {
-            resultPoints: result.polylinePoints.length,
-            path: stitched.length,
-            map: !!(mapInstanceRef.current ?? mapRef.current),
-            googleAvailable: typeof google !== 'undefined',
-          });
           // Stitch exact GPS origin + road path + exact destination pin
           setRoutePoints(stitched);
           const slm = distToDest ?? haversineMetres(origin, memoizedRouteTo);
