@@ -11,6 +11,7 @@ import {
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useSocket } from '../../hooks/useSocket';
 import { createSession, updateSessionStatus, convertTo3wa, autosuggest, convertToCoordinates } from '../../lib/api';
+import { shareInvite, copyText } from '../../lib/share';
 import type { MarkerData } from '../../components/MapBase';
 
 import MapBase from '../../components/MapBase';
@@ -132,10 +133,11 @@ export default function SharePage() {
     router.push('/home');
   };
 
-  const copy = () => {
-    navigator.clipboard.writeText(session!.shareCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copy = async () => {
+    if (await copyText(session!.shareCode)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const shareUrl   = () => `${window.location.origin}/track/${session!.shareCode}`;
@@ -143,18 +145,35 @@ export default function SharePage() {
     const w = w3w ? `///${w3w}` : session!.shareCode;
     return `Find me at ${w}\n\nTrack my live location:\n${shareUrl()}\n\nSent via Kaalay Heelay`;
   };
-  const shareWhatsApp = () => window.open(`https://wa.me/?text=${encodeURIComponent(shareText())}`, '_blank');
-  const shareSMS      = () => window.open(`sms:?body=${encodeURIComponent(shareText())}`, '_blank');
-  const copyMessage   = () => {
-    navigator.clipboard.writeText(shareText());
-    setMsgCopied(true);
-    setTimeout(() => setMsgCopied(false), 2000);
+
+  // Native OS share sheet (WhatsApp, SMS, AirDrop…) with clipboard fallback.
+  const shareNative = async () => {
+    const w = w3w ? `///${w3w}` : session!.shareCode;
+    const outcome = await shareInvite({
+      title: 'My live location · Kaalay',
+      text: `Find me at ${w}. Track my live location:`,
+      url: shareUrl(),
+    });
+    if (outcome === 'copied') {
+      setUrlCopied(true);
+      setTimeout(() => setUrlCopied(false), 2000);
+    }
   };
 
-  const copyUrl = () => {
-    navigator.clipboard.writeText(shareUrl());
-    setUrlCopied(true);
-    setTimeout(() => setUrlCopied(false), 2000);
+  const shareWhatsApp = () => window.open(`https://wa.me/?text=${encodeURIComponent(shareText())}`, '_blank');
+  const shareSMS      = () => window.open(`sms:?body=${encodeURIComponent(shareText())}`, '_blank');
+  const copyMessage   = async () => {
+    if (await copyText(shareText())) {
+      setMsgCopied(true);
+      setTimeout(() => setMsgCopied(false), 2000);
+    }
+  };
+
+  const copyUrl = async () => {
+    if (await copyText(shareUrl())) {
+      setUrlCopied(true);
+      setTimeout(() => setUrlCopied(false), 2000);
+    }
   };
 
   const markers: MarkerData[] = [
@@ -356,6 +375,16 @@ export default function SharePage() {
             {urlCopied ? 'Copied!' : 'Copy URL'}
           </button>
         </div>
+
+        {/* Primary native share — opens the OS share sheet */}
+        <button onClick={shareNative} style={{
+          width: '100%', padding: '14px', background: '#000080', color: '#FFFFFF',
+          border: 'none', borderRadius: 14, fontSize: 14, fontWeight: 800,
+          cursor: 'pointer', fontFamily: 'Inter, sans-serif', marginBottom: 10,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        }}>
+          <ShareAltOutlined style={{ fontSize: 15 }} /> Share live location
+        </button>
 
         {/* Share buttons */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>

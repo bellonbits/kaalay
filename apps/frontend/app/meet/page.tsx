@@ -5,10 +5,12 @@ import dynamic from 'next/dynamic';
 import {
   ArrowLeftOutlined, TeamOutlined, CopyOutlined, CheckOutlined,
   EnvironmentOutlined, UserOutlined, LoadingOutlined, AimOutlined,
-  CompassOutlined,
+  CompassOutlined, ShareAltOutlined,
 } from '@ant-design/icons';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useSocket } from '../../hooks/useSocket';
+import { onReconnect } from '../../lib/socket';
+import { shareInvite, copyText } from '../../lib/share';
 import { createSession, convertTo3wa } from '../../lib/api';
 import type { MarkerData } from '../../components/MapBase';
 
@@ -66,6 +68,11 @@ export default function MeetPage() {
   const joinedRef = useRef(false);
   const broadRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hostBroadRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Latest values readable from socket reconnect callbacks (which capture stale closures)
+  const positionRef = useRef(position);
+  const nameRef = useRef(name);
+  positionRef.current = position;
+  nameRef.current = name;
 
   const sync = useCallback(() => {
     setMembersList(Array.from(membersRef.current.values()));
@@ -103,7 +110,8 @@ export default function MeetPage() {
     const onMemberList = (list: GroupMember[]) => {
       membersRef.current.clear();
       const filtered = list.filter(m => m.memberId !== myId.current);
-      filtered.forEach(m => membersRef.current.set(m.memberId, m));
+      // Stamp client-side lastSeen so the stale sweep measures against our clock
+      filtered.forEach(m => membersRef.current.set(m.memberId, { ...m, lastSeen: Date.now() }));
       
       // Detect existing host from list
       const host = list.find(m => m.isHost);
@@ -123,7 +131,7 @@ export default function MeetPage() {
 
     const onMemberJoined = (m: GroupMember) => {
       if (m.memberId === myId.current) return;
-      membersRef.current.set(m.memberId, m);
+      membersRef.current.set(m.memberId, { ...m, lastSeen: Date.now() });
       
       const timestamp = Date.now();
       setJoinAlerts(prev => [{ name: m.name, timestamp }, ...prev].slice(0, 3));
@@ -210,16 +218,56 @@ export default function MeetPage() {
     };
   }, [step, activeCode, hostId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Join once position ready
+  // Join once position ready, and re-join automatically on every (re)connect.
+  // Mobile sockets drop on backgrounding / network switches; without the
+  // re-emit the server forgets our room and live updates silently stop.
   useEffect(() => {
-    if (step !== 'live' || !activeCode || !position || joinedRef.current) return;
-    joinedRef.current = true;
-    socketRef.current?.emit('join-group', {
-      code: activeCode, memberId: myId.current, name,
-      lat: position.lat, lng: position.lng,
-      accuracy: position.accuracy, heading: position.heading,
-    });
+    if (step !== 'live' || !activeCode || !position) return;
+
+    const emitJoin = () => {
+      const p = positionRef.current;
+      if (!p) return;
+      socketRef.current?.emit('join-group', {
+        code: activeCode, memberId: myId.current, name: nameRef.current,
+        lat: p.lat, lng: p.lng, accuracy: p.accuracy, heading: p.heading,
+      });
+    };
+
+    if (!joinedRef.current) {
+      joinedRef.current = true;
+      emitJoin();
+    }
+    // Re-join on each reconnect (fires immediately if already connected too,
+    // which is a harmless idempotent re-join on the server).
+    const off = onReconnect(emitJoin);
+    return off;
   }, [step, activeCode, position]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Prune members who stopped broadcasting (left the app, lost signal). Their
+  // last update is tracked in lastSeen; >35s without one drops them so the
+  // roster and "online" dots reflect reality.
+  useEffect(() => {
+    if (step !== 'live') return;
+    const sweep = setInterval(() => {
+      const now = Date.now();
+      let changed = false;
+      membersRef.current.forEach((m, id) => {
+        if (now - (m.lastSeen ?? 0) > 35000) {
+          membersRef.current.delete(id);
+          changed = true;
+          if (id === selectedMemberId) {
+            const rest = Array.from(membersRef.current.values());
+            setSelectedMemberId(rest.length ? rest[0].memberId : null);
+          }
+          if (id === hostId) { setHostId(null); setHostLocation(null); setHostName(''); }
+        }
+      });
+      // Always re-sync so "online/away" freshness dots update even when a
+      // member has simply gone quiet (no changed membership).
+      sync();
+    }, 5000);
+    return () => clearInterval(sweep);
+  }, [step, selectedMemberId, hostId, sync]);
 
   // ── REGULAR member location broadcast (everyone, 3s) ─────────────────────
   useEffect(() => {
@@ -296,14 +344,30 @@ export default function MeetPage() {
     router.push('/home');
   };
 
-  const copyCode = () => {
-    navigator.clipboard.writeText(`${window.location.origin}/meet?code=${activeCode}`);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const inviteUrl = () => `${window.location.origin}/meet?code=${activeCode}`;
+
+  // Native share sheet (WhatsApp, SMS, AirDrop…) with clipboard fallback.
+  const invite = async () => {
+    const outcome = await shareInvite({
+      title: 'Join my Kaalay meetup',
+      text: `Join my live location on Kaalay — code ${activeCode}.`,
+      url: inviteUrl(),
+    });
+    if (outcome === 'copied') {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const copyCode = async () => {
+    if (await copyText(inviteUrl())) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const shareWhatsApp = () => {
-    const txt = `Join my location on Kaalay!\n\nCode: ${activeCode}\nLink: ${window.location.origin}/meet?code=${activeCode}`;
+    const txt = `Join my location on Kaalay!\n\nCode: ${activeCode}\nLink: ${inviteUrl()}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`, '_blank');
   };
 
@@ -459,8 +523,8 @@ export default function MeetPage() {
                 <p className="text-[10px] text-[#888] font-bold tracking-widest uppercase mb-0.5">Session code</p>
                 <p className="text-lg font-black tracking-widest text-[#000080]">{activeCode}</p>
               </div>
-              <button onClick={copyCode} className={`px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors ${copied ? 'bg-[#F0FDF4] text-[#16A34A] border-[1.5px] border-[#86EFAC]' : 'bg-[#F7F7F7] text-[#000080] border-[1.5px] border-[#EBEBEB]'}`}>
-                {copied ? <CheckOutlined /> : <CopyOutlined />}
+              <button onClick={invite} className={`px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors ${copied ? 'bg-[#F0FDF4] text-[#16A34A] border-[1.5px] border-[#86EFAC]' : 'bg-[#F7F7F7] text-[#000080] border-[1.5px] border-[#EBEBEB]'}`}>
+                {copied ? <CheckOutlined /> : <ShareAltOutlined />}
                 {copied ? 'Copied!' : 'Invite'}
               </button>
               <button onClick={shareWhatsApp} className="px-3.5 py-2.5 bg-[#25D366] text-white border-none rounded-xl text-xs font-bold">WhatsApp</button>
@@ -547,7 +611,15 @@ export default function MeetPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-bold text-[#000080] truncate">{m.name}</p>
-                        <div className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse flex-shrink-0" title="Online" />
+                        {(() => {
+                          const fresh = Date.now() - (m.lastSeen ?? 0) < 12000;
+                          return (
+                            <div
+                              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${fresh ? 'bg-[#22C55E] animate-pulse' : 'bg-[#F59E0B]'}`}
+                              title={fresh ? 'Live' : 'Away'}
+                            />
+                          );
+                        })()}
                         {iAmHost && isSelected && (
                           <span className="px-1.5 py-0.5 bg-[#000080]/10 text-[#000080] text-[9px] font-black rounded uppercase tracking-wider">
                             Tracking

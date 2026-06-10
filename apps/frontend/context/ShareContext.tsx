@@ -1,6 +1,7 @@
 'use client';
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { useSocket } from '../hooks/useSocket';
+import { onReconnect } from '../lib/socket';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { createSession, updateSessionStatus } from '../lib/api';
 import { useLocation } from './LocationContext';
@@ -27,8 +28,12 @@ export function ShareProvider({ children }: { children: React.ReactNode }) {
     const p = manualPosition || position;
     if (!activeSession || !p || !socketRef.current) return;
 
-    const s = socketRef.current;
-    s.emit('join', activeSession.shareCode);
+    // Re-join the share room on every (re)connect so viewers keep receiving
+    // updates after the broadcaster's socket drops (backgrounding, network
+    // switch). Without this a single blip silently ends the live share.
+    const offReconnect = onReconnect(() => {
+      socketRef.current?.emit('join', activeSession.shareCode);
+    });
 
     broadRef.current = setInterval(() => {
       const currentP = manualPosition || position;
@@ -46,6 +51,7 @@ export function ShareProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       if (broadRef.current) clearInterval(broadRef.current);
+      offReconnect();
     };
   }, [activeSession, position, manualPosition]);
 
