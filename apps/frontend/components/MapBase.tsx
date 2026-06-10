@@ -477,7 +477,6 @@ const MapBase = forwardRef<MapHandle, Props>(({
     const key = `${origin.lat.toFixed(6)},${origin.lng.toFixed(6)}-${memoizedRouteTo.lat.toFixed(6)},${memoizedRouteTo.lng.toFixed(6)}-${mode}`;
 
     if (key === lastRouteKeyRef.current) return;
-    lastRouteKeyRef.current = key;
 
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
 
@@ -490,6 +489,9 @@ const MapBase = forwardRef<MapHandle, Props>(({
         if (cancelled) return;
 
         if (result && result.polylinePoints.length >= 2) {
+          // Commit the cache key only on success — a cancelled or failed fetch
+          // must stay retryable, otherwise the route is never drawn for this key
+          lastRouteKeyRef.current = key;
           const stitched = [
             { lat: origin.lat, lng: origin.lng },
             ...result.polylinePoints,
@@ -584,7 +586,9 @@ const MapBase = forwardRef<MapHandle, Props>(({
     core.setMap(map);
 
     polylinesRef.current = [border, core];
-  }, [routePath]);
+    // mapReady is a dependency so the polylines re-attach after the inner
+    // GoogleMap remounts — they die with the old map instance otherwise
+  }, [routePath, mapReady]);
 
   // Clear polylines on unmount
   useEffect(() => {
