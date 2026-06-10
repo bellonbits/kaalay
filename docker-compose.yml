@@ -1,3 +1,13 @@
+# Kaalay production stack.
+#
+# Secrets come from a `.env` file next to this compose file (gitignored).
+# Copy `.env.example` to `.env` on the server and set real values.
+#
+# All inter-service addresses are STATIC IPs on a dedicated subnet so the
+# stack keeps working even if podman's container DNS (aardvark-dns) breaks.
+# Only the backend (3000) is published publicly; everything else is
+# localhost-only or unpublished.
+
 services:
   postgres:
     image: docker.io/library/postgres:15-alpine
@@ -6,11 +16,14 @@ services:
     environment:
       POSTGRES_DB: kaalay
       POSTGRES_USER: admin
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.10
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U admin -d kaalay"]
       interval: 5s
@@ -22,9 +35,12 @@ services:
     container_name: kaalay-redis
     restart: always
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.11
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -36,16 +52,24 @@ services:
     container_name: kaalay-adminer
     restart: always
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.14
 
   zookeeper:
     image: docker.io/confluentinc/cp-zookeeper:7.4.0
     container_name: kaalay-zookeeper
+    restart: always
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
       ZOOKEEPER_LOG4J_ROOT_LOGLEVEL: WARN
       ZOOKEEPER_LOG4J_PROP: WARN,CONSOLE
+      KAFKA_HEAP_OPTS: "-Xmx256m -Xms128m"
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.12
     healthcheck:
       test: ["CMD-SHELL", "/bin/bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/2181' || exit 1"]
       interval: 5s
@@ -55,18 +79,24 @@ services:
   kafka:
     image: docker.io/confluentinc/cp-kafka:7.4.0
     container_name: kaalay-kafka
+    restart: always
     depends_on:
       zookeeper:
         condition: service_healthy
-    ports:
-      - "9092:9092"
     environment:
       KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ZOOKEEPER_CONNECT: 10.90.0.12:2181
+      # Advertise the static IP so clients never need DNS to reach the broker
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://10.90.0.13:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms256m"
+      KAFKA_LOG4J_ROOT_LOGLEVEL: WARN
+      KAFKA_TOOLS_LOG4J_LOGLEVEL: WARN
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.13
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
       interval: 10s
@@ -83,26 +113,40 @@ services:
     ports:
       - "3000:3000"
     environment:
-      DATABASE_HOST: postgres
+      DATABASE_HOST: 10.90.0.10
       DATABASE_PORT: 5432
       DATABASE_USER: admin
-      DATABASE_PASSWORD: password
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-password}
       DATABASE_NAME: kaalay
-      DATABASE_URL: postgresql://admin:password@postgres:5432/kaalay
-      REDIS_HOST: redis
+      DATABASE_URL: postgresql://admin:${POSTGRES_PASSWORD:-password}@10.90.0.10:5432/kaalay
+      REDIS_HOST: 10.90.0.11
       REDIS_PORT: 6379
-      KAFKA_BROKER_URL: kafka:9092
-      JWT_SECRET: super-secret-key
+      KAFKA_BOOTSTRAP_SERVERS: 10.90.0.13:9092
+      JWT_SECRET: ${JWT_SECRET:-super-secret-key}
+      W3W_API_KEY: ${W3W_API_KEY:-}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      kafka:
-        condition: service_healthy
-    volumes:
-      - ./apps/backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 3000 --reload
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.20
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  kaalay_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.90.0.0/24
+          gateway: 10.90.0.1
 
 volumes:
   postgres_data:
