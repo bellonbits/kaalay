@@ -366,11 +366,8 @@ const MapBase = forwardRef<MapHandle, Props>(({
     gestureHandling: 'greedy',
     clickableIcons: false,
     preventGoogleFontsLoading: true,
-    // mapId is required for AdvancedMarkerElement to function.
-    // 'DEMO_MAP_ID' is Google's official placeholder for development/testing.
-    // Native google.maps.Polyline renders correctly on vector maps —
-    // the previous polyline invisibility was caused by the React <Polyline>
-    // component losing its map reference (now fixed with imperative setMap()).
+    // mapId is required for AdvancedMarkerElement; DEMO_MAP_ID is Google's
+    // dev placeholder. Map initialises as RASTER either way on this account.
     mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID',
     // tilt is managed imperatively in zoom/follow effects via map.setTilt()
   }), []);

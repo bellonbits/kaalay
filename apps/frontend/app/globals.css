@@ -17,12 +17,21 @@
   --radius-xl: 24px;
 }
 
-* { 
-  box-sizing: border-box; 
-  margin: 0; 
-  padding: 0; 
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
   -webkit-tap-highlight-color: transparent;
   max-width: 100%;
+}
+
+/* Google Maps draws polylines/overlays inside an SVG sized far wider than the
+   viewport and positioned by transforms. The global `* { max-width: 100% }`
+   above clamps that SVG, so route lines render off-position (invisible).
+   Exempt everything inside the maps container. */
+.gm-style,
+.gm-style * {
+  max-width: none !important;
 }
 
 html {
