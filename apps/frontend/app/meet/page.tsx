@@ -516,7 +516,7 @@ export default function MeetPage() {
             <div className="w-9 h-1 rounded-full bg-[#EBEBEB]" />
           </div>
 
-          <div className="flex-1 overflow-y-auto px-5 pb-10 no-scroll">
+          <div className="flex-1 overflow-y-auto px-5 no-scroll" style={{ paddingBottom: 'calc(2.5rem + var(--safe-bottom))' }}>
             {/* Invite row */}
             <div className="flex items-center gap-2 mb-4">
               <div className="flex-1 bg-[#F7F7F7] border-[1.5px] border-[#EBEBEB] rounded-xl px-3.5 py-2.5">

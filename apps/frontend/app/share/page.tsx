@@ -261,7 +261,7 @@ export default function SharePage() {
       </div>
 
       {/* Code card */}
-      <div style={{ background: '#FFFFFF', padding: '20px 20px 100px', boxShadow: '0 -4px 32px rgba(0,0,0,0.10)' }}>
+      <div style={{ background: '#FFFFFF', padding: '20px 20px calc(100px + var(--safe-bottom))', boxShadow: '0 -4px 32px rgba(0,0,0,0.10)' }}>
         {/* Route row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#F7F7F7', borderRadius: 16, padding: '14px 16px', border: '1.5px solid #EBEBEB', marginBottom: 16 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
@@ -540,7 +540,7 @@ export default function SharePage() {
       </div>
 
       {/* Setup form */}
-      <div style={{ flex: 1, background: '#FFFFFF', borderRadius: '28px 28px 0 0', overflowY: 'auto', padding: '24px 20px 100px', marginTop: -1, boxShadow: '0 -4px 32px rgba(0,0,0,0.08)' }}>
+      <div style={{ flex: 1, background: '#FFFFFF', borderRadius: '28px 28px 0 0', overflowY: 'auto', padding: '24px 20px calc(100px + var(--safe-bottom))', marginTop: -1, boxShadow: '0 -4px 32px rgba(0,0,0,0.08)' }}>
 
         {/* Type selector */}
         <p style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 12 }}>Session type</p>

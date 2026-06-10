@@ -15,7 +15,20 @@
   --radius-3xl: 40px;
   --radius-2xl: 32px;
   --radius-xl: 24px;
+  /* Bottom safe-area inset (home indicator / gesture bar). Falls back to 0
+     on devices/browsers without an inset. The viewport is `viewport-fit:
+     cover`, so without this padding fixed bottom UI renders under the
+     indicator and gets clipped. */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
 }
+
+/* Utilities for clearing the bottom safe area on fixed elements. */
+.pb-safe { padding-bottom: var(--safe-bottom); }
+.mb-safe { margin-bottom: var(--safe-bottom); }
+/* Adds the inset on TOP of an existing bottom offset (e.g. above the nav). */
+.bottom-safe-0 { bottom: var(--safe-bottom); }
+.bottom-safe-nav { bottom: calc(4rem + var(--safe-bottom)); } /* 64px nav + inset */
 
 * {
   box-sizing: border-box;

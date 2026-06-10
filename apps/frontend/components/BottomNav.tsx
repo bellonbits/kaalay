@@ -74,8 +74,11 @@ export default function BottomNav() {
     ['/track', '/ride'].some(p => pathname.startsWith(p));
 
   return (
-    <div className={`fixed bottom-0 left-0 right-0 h-16 z-[100] bg-white border-t border-gray-100/90 flex items-center justify-center transition-all duration-500 ease-in-out ${shouldTransitionHide ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
-      <div className="flex items-center justify-around w-full max-w-md h-full px-2">
+    <div
+      className={`fixed bottom-0 left-0 right-0 z-[100] bg-white border-t border-gray-100/90 transition-all duration-500 ease-in-out ${shouldTransitionHide ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
+      style={{ paddingBottom: 'var(--safe-bottom)' }}
+    >
+      <div className="flex items-center justify-around w-full max-w-md h-16 mx-auto px-2">
 
         {ITEMS.map(item => {
           const active =
