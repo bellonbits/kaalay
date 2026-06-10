@@ -1,8 +1,6 @@
 import asyncio
 import logging
-import json
-from aiokafka import AIOKafkaConsumer
-from ..core.config import settings
+from ..core.queue import consume_ride_requests
 from ..core.redis import get_redis
 from ..core.sio import sio
 from ..core.database import SessionLocal
@@ -11,51 +9,21 @@ from ..models.all import Driver
 logger = logging.getLogger(__name__)
 
 async def start_driver_assignment_worker():
-    # Wait an extra buffer after backend starts — Kafka may still be warming up
-    logger.info("⏳ Waiting for Kafka to warm up before starting Driver Assignment Service...")
-    await asyncio.sleep(5)
-    
-    retries = 0
+    logger.info("🚦 Driver Assignment Service started (Redis queue)")
     while True:
-        consumer = None
         try:
-            consumer = AIOKafkaConsumer(
-                'ride-requests',
-                bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
-                group_id='driver_assignment_group',  # rename — avoid collision with old dead group
-                auto_offset_reset='earliest',
-                value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-                session_timeout_ms=45000,    # 45s — gives time if Kafka is slow
-                heartbeat_interval_ms=10000, # 10s — must be < session_timeout / 3
-                request_timeout_ms=60000,
-                max_poll_interval_ms=300000,
-            )
-            await consumer.start()
-            logger.info("✅ Kafka consumer started successfully for Driver Assignment")
-            retries = 0
-
-            async for msg in consumer:
-                try:
-                    data = msg.value
-                    await handle_ride_request(data)
-                except Exception as e:
-                    logger.error(f"Error handling ride request: {e}", exc_info=True)
-                    # Never re-raise here — one bad message should not kill the consumer
-
+            # brpop blocks, so run it in a thread to keep the event loop free
+            msg = await asyncio.to_thread(consume_ride_requests, 5)
+            if not msg:
+                continue
+            data = {"id": msg.get("rideId"), **(msg.get("payload") or {})}
+            await handle_ride_request(data)
         except asyncio.CancelledError:
             logger.info("Driver Assignment Service cancelled.")
             break
         except Exception as e:
-            retries += 1
-            wait = min(5 * retries, 60)  # 5s, 10s, 15s... max 60s
-            logger.error(f"Kafka consumer failed (attempt {retries}), retrying in {wait}s: {e}")
-            await asyncio.sleep(wait)
-        finally:
-            if consumer:
-                try:
-                    await consumer.stop()
-                except Exception:
-                    pass
+            logger.error(f"Assignment worker error, retrying in 5s: {e}", exc_info=True)
+            await asyncio.sleep(5)
 
 
 async def handle_ride_request(data: dict):

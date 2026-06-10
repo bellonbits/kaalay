@@ -57,53 +57,6 @@ services:
       kaalay_net:
         ipv4_address: 10.90.0.14
 
-  zookeeper:
-    image: docker.io/confluentinc/cp-zookeeper:7.4.0
-    container_name: kaalay-zookeeper
-    restart: always
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-      ZOOKEEPER_LOG4J_ROOT_LOGLEVEL: WARN
-      ZOOKEEPER_LOG4J_PROP: WARN,CONSOLE
-      KAFKA_HEAP_OPTS: "-Xmx256m -Xms128m"
-    networks:
-      kaalay_net:
-        ipv4_address: 10.90.0.12
-    healthcheck:
-      test: ["CMD-SHELL", "/bin/bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/2181' || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  kafka:
-    image: docker.io/confluentinc/cp-kafka:7.4.0
-    container_name: kaalay-kafka
-    restart: always
-    depends_on:
-      zookeeper:
-        condition: service_healthy
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: 10.90.0.12:2181
-      # Advertise the static IP so clients never need DNS to reach the broker
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://10.90.0.13:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_HEAP_OPTS: "-Xmx512m -Xms256m"
-      KAFKA_LOG4J_ROOT_LOGLEVEL: WARN
-      KAFKA_TOOLS_LOG4J_LOGLEVEL: WARN
-    networks:
-      kaalay_net:
-        ipv4_address: 10.90.0.13
-    healthcheck:
-      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
-      interval: 10s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
-
   backend:
     build:
       context: ./apps/backend
@@ -121,7 +74,6 @@ services:
       DATABASE_URL: postgresql://admin:${POSTGRES_PASSWORD:-password}@10.90.0.10:5432/kaalay
       REDIS_HOST: 10.90.0.11
       REDIS_PORT: 6379
-      KAFKA_BOOTSTRAP_SERVERS: 10.90.0.13:9092
       JWT_SECRET: ${JWT_SECRET:-super-secret-key}
       W3W_API_KEY: ${W3W_API_KEY:-}
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}

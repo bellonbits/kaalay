@@ -9,7 +9,6 @@ import time
 from contextlib import asynccontextmanager
 from sqlalchemy.exc import OperationalError
 from .services.assignment import start_driver_assignment_worker
-from .core.kafka import init_kafka, close_kafka
 
 # Create tables — retry while postgres/networking is still coming up so a slow
 # infra boot doesn't kill the process permanently
@@ -26,20 +25,10 @@ else:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize Kafka (topic pre-creation, producer, location consumer).
-    # A Kafka outage must not take the whole API down — auth/rides/places
-    # still work without the dispatch pipeline.
-    kafka_ok = False
-    try:
-        await init_kafka()
-        kafka_ok = True
-        asyncio.create_task(start_driver_assignment_worker())
-    except Exception as exc:
-        print(f"❌ Kafka init failed, continuing without dispatch pipeline: {exc}", flush=True)
+    # Background worker for driver matching, fed by the Redis dispatch queue
+    worker = asyncio.create_task(start_driver_assignment_worker())
     yield
-    # Shutdown
-    if kafka_ok:
-        await close_kafka()
+    worker.cancel()
 
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 

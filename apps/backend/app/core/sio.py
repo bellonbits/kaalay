@@ -253,15 +253,14 @@ async def handle_update_location(sid, data):
     
     if lat and lng and driver_id:
         try:
-            from .kafka import produce_location_update
-            await produce_location_update({
-                "lat": lat,
-                "lng": lng,
-                "driverId": driver_id,
-                "name": data.get("name")
-            })
+            from .redis import get_redis
+            r = get_redis()
+            # Store in Redis GEO set for radius searching
+            r.geoadd("driver_locations", (lng, lat, str(driver_id)))
+            # Also set a TTL for driver availability
+            r.setex(f"driver_active:{driver_id}", 30, "online")
         except Exception as e:
-            logger.error(f"Kafka produce error: {e}")
+            logger.error(f"Redis location update error: {e}")
 
 
 @sio.on("status-update", namespace=NAMESPACE)
