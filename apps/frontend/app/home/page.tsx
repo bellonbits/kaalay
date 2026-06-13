@@ -64,6 +64,24 @@ const getHaversineDistance = (lat1: number, lon1: number, lat2: number, lon2: nu
   return R * c; // Distance in km
 };
 
+// Initial bearing from point A to B, in degrees (0 = N, 90 = E).
+const getBearing = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+};
+
+const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+const cardinal = (deg: number) => COMPASS[Math.round(deg / 45) % 8];
+
+const fmtKm = (km: number) => km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
+const fmtWalkEta = (km: number) => {
+  const mins = Math.max(1, Math.round(km / 5 * 60));
+  return mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+};
+
 export default function HomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -602,6 +620,35 @@ export default function HomePage() {
     })),
   ], [position, sessions, routeDest, isHelper, user, savedPlaces]);
 
+  // ── "I'm Lost" always-on directions ──────────────────────────────────────
+  // Guide a lost user to the nearest known place on the grid. Recomputed as
+  // they move so the route + banner stay live.
+  const sosTarget = useMemo(() => {
+    if (!sosActive || !position || savedPlaces.length === 0) return null;
+    let best: { lat: number; lng: number; name: string; words?: string; distanceKm: number } | null = null;
+    for (const p of savedPlaces) {
+      const lat = p.latitude, lng = p.longitude;
+      if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+      const d = getHaversineDistance(position.lat, position.lng, lat, lng);
+      if (!best || d < best.distanceKm) {
+        best = { lat, lng, name: p.name ?? 'Safe point', words: p.words, distanceKm: d };
+      }
+    }
+    return best;
+  }, [sosActive, position?.lat, position?.lng, savedPlaces]);
+
+  const sosDirections = useMemo(() => {
+    if (!sosTarget || !position) return null;
+    const brg = getBearing(position.lat, position.lng, sosTarget.lat, sosTarget.lng);
+    return {
+      name: sosTarget.name,
+      words: sosTarget.words,
+      distance: fmtKm(sosTarget.distanceKm),
+      eta: fmtWalkEta(sosTarget.distanceKm),
+      heading: cardinal(brg),
+    };
+  }, [sosTarget, position?.lat, position?.lng]);
+
   // Sheet reveal heights as a proportion of the viewport, clamped so the hub
   // covers the same share of the screen on a small phone, a big phone, or a
   // tablet — instead of fixed pixels that feel huge on small and tiny on big.
@@ -633,13 +680,13 @@ export default function HomePage() {
           zoom={16} 
           markers={markers} 
           routeFrom={position ? { lat: position.lat, lng: position.lng } : (routeStart ? { lat: routeStart.lat, lng: routeStart.lng } : undefined)}
-          routeTo={routeDest ? { lat: routeDest.lat, lng: routeDest.lng } : undefined} 
-          isSelectingPickup={(!routeDest || !!pickingLocationType) && !isHelper}
-          pickingType={pickingLocationType || (!routeDest ? 'start' : null)}
+          routeTo={sosTarget ? { lat: sosTarget.lat, lng: sosTarget.lng } : (routeDest ? { lat: routeDest.lat, lng: routeDest.lng } : undefined)}
+          isSelectingPickup={!sosTarget && (!routeDest || !!pickingLocationType) && !isHelper}
+          pickingType={sosTarget ? null : (pickingLocationType || (!routeDest ? 'start' : null))}
           onCenterPinChange={handleCenterPinChange}
           followMode={followMode}
           onFollowModeChange={setFollowMode}
-          zoomState={zoomState}
+          zoomState={sosTarget ? 'tracking' : zoomState}
           travelMode={travelMode}
           className="w-full h-full" 
           onClick={() => {
@@ -1291,6 +1338,31 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* Always-on directions to the nearest safe point (shows the moment
+          lost mode opens, above the SOS overlay, and stays during broadcast) */}
+      {sosActive && sosDirections && (
+        <div className="fixed top-12 left-4 right-4 z-[60] max-w-xl mx-auto animate-slide-down pointer-events-none">
+          <div className="bg-[#000080] rounded-2xl border border-white/15 shadow-premium px-4 py-3 flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
+              <CompassOutlined className="text-white text-xl" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-black uppercase tracking-widest text-white/60">Walk to safety · nearest known spot</p>
+              <p className="text-sm font-black text-white truncate leading-tight">
+                Head {sosDirections.heading} to {sosDirections.name}
+              </p>
+              {sosDirections.words && (
+                <p className="text-[11px] text-white/70 truncate font-mono">/// {sosDirections.words}</p>
+              )}
+            </div>
+            <div className="text-right flex-shrink-0">
+              <p className="text-base font-black text-white leading-none">{sosDirections.distance}</p>
+              <p className="text-[10px] font-bold text-white/70 mt-0.5">{sosDirections.eta}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Immersive Fullscreen SOS Overlay */}
       {sosActive && !sosSessionCode && (
         <div className="fixed inset-0 z-50 bg-[#0e0c0c]/90 backdrop-blur-md flex flex-col items-center justify-center animate-fade-in">
@@ -1372,8 +1444,8 @@ export default function HomePage() {
       {/* SOS Active Distress Dashboard & Card */}
       {sosActive && sosSessionCode && (
         <>
-          {/* Top Live Activity Status Pill */}
-          <div className="absolute top-12 left-0 right-0 z-40 flex justify-center pointer-events-none animate-slide-down">
+          {/* Top Live Activity Status Pill — sits below the directions banner */}
+          <div className={`absolute left-0 right-0 z-40 flex justify-center pointer-events-none animate-slide-down ${sosDirections ? 'top-[7.5rem]' : 'top-12'}`}>
             <div className="bg-red-600/90 backdrop-blur-md rounded-full px-4 py-2 border border-red-500/20 shadow-lg flex items-center gap-2.5">
               <span className="w-2.5 h-2.5 bg-white rounded-full animate-ping" />
               <span className="text-[10px] font-black uppercase tracking-widest text-white">SOS Live Broadcast</span>
