@@ -4,7 +4,7 @@ from sqlalchemy import func
 from ..core.database import get_db
 from ..core.deps import get_current_user
 from ..core.responses import success_response, error_response
-from ..models.all import Ride, RideStatus, User, Driver, Payment
+from ..models.all import Ride, RideStatus, User, Driver, Payment, Incident, IncidentStatus
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -53,5 +53,58 @@ async def get_active_trips(db: Session = Depends(get_db), admin: User = Depends(
             "fare": t.fare,
             "createdAt": t.createdAt.isoformat()
         })
-        
+
     return success_response(result)
+
+@router.get("/incidents")
+async def list_incidents(status: str = None, db: Session = Depends(get_db), admin: User = Depends(is_admin)):
+    query = db.query(Incident)
+    if status:
+        query = query.filter(Incident.status == status)
+    else:
+        query = query.filter(Incident.status.in_([IncidentStatus.OPEN, IncidentStatus.DISPATCHED]))
+
+    incidents = query.order_by(Incident.createdAt.desc()).limit(100).all()
+    result = []
+    for i in incidents:
+        result.append({
+            "id": str(i.id),
+            "reporterId": str(i.reporterId) if i.reporterId else None,
+            "type": i.type,
+            "severity": i.severity,
+            "status": i.status,
+            "silent": i.silent,
+            "lat": i.lat,
+            "lng": i.lng,
+            "what3words": i.what3words,
+            "message": i.message,
+            "createdAt": i.createdAt.isoformat() if i.createdAt else None,
+        })
+    return success_response(result)
+
+@router.get("/incidents/stats")
+async def get_incident_stats(db: Session = Depends(get_db), admin: User = Depends(is_admin)):
+    open_count = db.query(Incident).filter(Incident.status == IncidentStatus.OPEN).count()
+    dispatched_count = db.query(Incident).filter(Incident.status == IncidentStatus.DISPATCHED).count()
+    resolved_count = db.query(Incident).filter(Incident.status == IncidentStatus.RESOLVED).count()
+
+    by_severity = dict(
+        db.query(Incident.severity, func.count(Incident.id))
+        .filter(Incident.status.in_([IncidentStatus.OPEN, IncidentStatus.DISPATCHED]))
+        .group_by(Incident.severity)
+        .all()
+    )
+    by_type = dict(
+        db.query(Incident.type, func.count(Incident.id))
+        .filter(Incident.status.in_([IncidentStatus.OPEN, IncidentStatus.DISPATCHED]))
+        .group_by(Incident.type)
+        .all()
+    )
+
+    return success_response({
+        "open": open_count,
+        "dispatched": dispatched_count,
+        "resolved": resolved_count,
+        "bySeverity": by_severity,
+        "byType": by_type,
+    })

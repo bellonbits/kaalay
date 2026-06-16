@@ -15,7 +15,8 @@ import {
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useAuth } from '../../context/AuthContext';
 import { useShare } from '../../context/ShareContext';
-import { acceptRide, requestRide, convertToWords, getPlaces, createPlace, triggerSos, cancelSos } from '../../lib/api';
+import { acceptRide, requestRide, convertToWords, getPlaces, createPlace, triggerEmergencySos, cancelSos, type EmergencySeverity } from '../../lib/api';
+import { severityColor } from '../../lib/emergencyColors';
 import type { MarkerData } from '../../components/MapBase';
 import NavigationSheet, { LocationPoint } from '../../components/NavigationSheet';
 import { useSocket } from '../../hooks/useSocket';
@@ -135,6 +136,7 @@ export default function HomePage() {
   const [sosSessionCode, setSosSessionCode] = useState<string | null>(null);
   const [sosLoading, setSosLoading] = useState(false);
   const [sosW3w, setSosW3w] = useState<string | null>(null);
+  const [sosSeverity, setSosSeverity] = useState<EmergencySeverity>('yellow');
 
   useEffect(() => {
     if (sosParam === '1') {
@@ -190,32 +192,45 @@ export default function HomePage() {
       const w3wData = await convertToWords(position.lat, position.lng);
       const w3wStr = w3wData.words;
       setSosW3w(w3wStr);
+      setSosSeverity('yellow');
 
       const payload = {
         lat: position.lat,
         lng: position.lng,
         accuracy: position.accuracy,
         w3w: w3wStr,
+        type: 'lost_person' as const,
+        severity: 'yellow' as const,
         message: `EMERGENCY! I'm lost near ///${w3wStr}`
       };
 
-      const res = await triggerSos(payload);
+      const res = await triggerEmergencySos(payload);
       setSosSessionCode(res.shareCode);
       setSosConfirmOpen(false);
-      
+
       const shareUrl = `${window.location.origin}/track/${res.shareCode}`;
       const waText = `EMERGENCY! I am lost at my what3words address: ///${w3wStr}.\n\nTrack my live location in real-time here:\n${shareUrl}\n\nSent via Kaalay SOS`;
-      window.open(`https://wa.me/?text=${encodeURIComponent(waText)}`, '_blank');
+      // Alert trusted contacts directly via WhatsApp too, in addition to the in-app notification they get
+      if (res.contacts?.length) {
+        res.contacts.forEach((c: { phoneNumber: string }) => {
+          const phone = c.phoneNumber.replace(/[^\d]/g, '');
+          window.open(`https://wa.me/${phone}?text=${encodeURIComponent(waText)}`, '_blank');
+        });
+      } else {
+        window.open(`https://wa.me/?text=${encodeURIComponent(waText)}`, '_blank');
+      }
     } catch (err) {
       console.error("SOS trigger failed", err);
       const coordStr = `${position.lat.toFixed(5)},${position.lng.toFixed(5)}`;
       setSosW3w(coordStr);
       try {
-        const res = await triggerSos({
+        const res = await triggerEmergencySos({
           lat: position.lat,
           lng: position.lng,
           accuracy: position.accuracy,
-          w3w: coordStr
+          w3w: coordStr,
+          type: 'lost_person',
+          severity: 'yellow'
         });
         setSosSessionCode(res.shareCode);
         setSosConfirmOpen(false);
@@ -1375,10 +1390,15 @@ export default function HomePage() {
             <ArrowLeftOutlined className="text-white text-lg" />
           </button>
 
-          {/* Emergency Pill */}
-          <div className="bg-red-500/10 border border-red-500/30 rounded-full px-4 py-1.5 flex items-center gap-2 mb-6">
-            <span className="w-2 h-2 bg-red-600 rounded-full animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-red-500">Kaalay Rescue</span>
+          {/* Emergency Pill — colored by current severity (Green→Black scale) */}
+          <div
+            className="rounded-full px-4 py-1.5 flex items-center gap-2 mb-6 border"
+            style={{ backgroundColor: severityColor(sosSeverity).bgSoft, borderColor: `${severityColor(sosSeverity).hex}4D` }}
+          >
+            <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: severityColor(sosSeverity).hex }} />
+            <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: severityColor(sosSeverity).hex }}>
+              Kaalay Rescue · {severityColor(sosSeverity).label}
+            </span>
           </div>
 
           {/* Pulsing Centered Button */}
@@ -1414,6 +1434,12 @@ export default function HomePage() {
               </div>
               
               <h3 className="text-lg font-black text-black uppercase tracking-wider">Confirm SOS Broadcast</h3>
+              <span
+                className="mt-2 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest"
+                style={{ backgroundColor: severityColor('yellow').bgSoft, color: severityColor('yellow').hex }}
+              >
+                Severity: {severityColor('yellow').label}
+              </span>
               <p className="text-gray-500 text-xs font-bold mt-2 leading-relaxed px-4">
                 Are you sure you want to broadcast an emergency? This will share your real-time 1-second interval coordinates and what3words address with emergency responders.
               </p>
@@ -1446,35 +1472,44 @@ export default function HomePage() {
         <>
           {/* Top Live Activity Status Pill — sits below the directions banner */}
           <div className={`absolute left-0 right-0 z-40 flex justify-center pointer-events-none animate-slide-down ${sosDirections ? 'top-[7.5rem]' : 'top-12'}`}>
-            <div className="bg-red-600/90 backdrop-blur-md rounded-full px-4 py-2 border border-red-500/20 shadow-lg flex items-center gap-2.5">
+            <div
+              className="backdrop-blur-md rounded-full px-4 py-2 border shadow-lg flex items-center gap-2.5"
+              style={{ backgroundColor: severityColor(sosSeverity).hex, borderColor: `${severityColor(sosSeverity).hex}33` }}
+            >
               <span className="w-2.5 h-2.5 bg-white rounded-full animate-ping" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-white">SOS Live Broadcast</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-white">SOS Live Broadcast · {severityColor(sosSeverity).label}</span>
               <span className="text-[10px] font-black text-white/80 bg-black/15 px-2 py-0.5 rounded-full uppercase">1s Update</span>
             </div>
           </div>
 
           {/* Bottom active distress card */}
           <div className="fixed left-6 right-6 z-[95] animate-slide-up-spring max-w-xl mx-auto" style={{ bottom: 'calc(1.5rem + var(--safe-bottom))' }}>
-            <div className="glass-premium p-6 rounded-[32px] border border-red-200/50 shadow-2xl flex flex-col gap-5 bg-white/95 relative overflow-hidden">
-              {/* Red pulsing glow effect behind the card */}
-              <div className="absolute -inset-10 bg-red-500/5 blur-3xl pointer-events-none rounded-full" />
+            <div
+              className="glass-premium p-6 rounded-[32px] border shadow-2xl flex flex-col gap-5 bg-white/95 relative overflow-hidden"
+              style={{ borderColor: `${severityColor(sosSeverity).hex}40` }}
+            >
+              {/* Severity-colored pulsing glow effect behind the card */}
+              <div className="absolute -inset-10 blur-3xl pointer-events-none rounded-full" style={{ backgroundColor: severityColor(sosSeverity).bgSoft }} />
               
               <div className="flex gap-4 relative z-10">
-                <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center flex-shrink-0 animate-pulse">
-                  <AlertOutlined className="text-red-500 text-xl" />
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 animate-pulse" style={{ backgroundColor: severityColor(sosSeverity).bgSoft }}>
+                  <AlertOutlined className="text-xl" style={{ color: severityColor(sosSeverity).hex }} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <h4 className="text-base font-black text-black leading-tight">Your Location Shared</h4>
-                    <span className="px-2 py-0.5 bg-red-50 text-red-500 text-[8px] font-black uppercase rounded-md tracking-wider">
-                      Active Distress
+                    <span
+                      className="px-2 py-0.5 text-[8px] font-black uppercase rounded-md tracking-wider"
+                      style={{ backgroundColor: severityColor(sosSeverity).bgSoft, color: severityColor(sosSeverity).hex }}
+                    >
+                      Active Distress · {severityColor(sosSeverity).label}
                     </span>
                   </div>
                   <p className="text-xs font-bold text-gray-500 mt-1 leading-snug">
                     Responders are tracking you. Keep your phone on.
                   </p>
                   {sosW3w && (
-                    <p className="text-sm font-black text-red-600 mt-2 tracking-wide font-mono flex items-center gap-1.5">
+                    <p className="text-sm font-black mt-2 tracking-wide font-mono flex items-center gap-1.5" style={{ color: severityColor(sosSeverity).hex }}>
                       <span className="text-xs">///</span>{sosW3w}
                     </p>
                   )}

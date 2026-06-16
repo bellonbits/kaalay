@@ -32,6 +32,35 @@ class RideCategory(str, enum.Enum):
     XL = "xl"
     DELIVERY = "delivery"
 
+class EmergencyType(str, enum.Enum):
+    MEDICAL = "medical"
+    POLICE = "police"
+    VIOLENCE = "violence"
+    KIDNAPPING = "kidnapping"
+    FIRE = "fire"
+    DISASTER = "disaster"
+    LOST_PERSON = "lost_person"
+
+class EmergencySeverity(str, enum.Enum):
+    GREEN = "green"
+    YELLOW = "yellow"
+    ORANGE = "orange"
+    RED = "red"
+    BLACK = "black"
+
+class IncidentStatus(str, enum.Enum):
+    OPEN = "open"
+    DISPATCHED = "dispatched"
+    RESOLVED = "resolved"
+    CANCELLED = "cancelled"
+
+class FacilityType(str, enum.Enum):
+    HOSPITAL = "hospital"
+    CLINIC = "clinic"
+    POLICE = "police"
+    FIRE = "fire"
+    AMBULANCE = "ambulance"
+
 class User(Base):
     __tablename__ = "users"
 
@@ -48,6 +77,8 @@ class User(Base):
     rides = relationship("Ride", back_populates="rider")
     driverProfile = relationship("Driver", back_populates="user", uselist=False)
     notifications = relationship("Notification", back_populates="user")
+    emergencyContacts = relationship("EmergencyContact", back_populates="owner", foreign_keys="EmergencyContact.userId")
+    incidents = relationship("Incident", back_populates="reporter")
 
 class Driver(Base):
     __tablename__ = "drivers"
@@ -150,3 +181,51 @@ class Rating(Base):
     createdAt = Column(DateTime, default=datetime.utcnow)
 
     driver = relationship("Driver", back_populates="ratings")
+
+class EmergencyContact(Base):
+    __tablename__ = "emergency_contacts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    userId = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    name = Column(String)
+    phoneNumber = Column(String)
+    relationship_ = Column("relationship", String, nullable=True)
+    createdAt = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="emergencyContacts", foreign_keys=[userId])
+
+class Incident(Base):
+    __tablename__ = "incidents"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    reporterId = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    type = Column(String, default=EmergencyType.LOST_PERSON)
+    severity = Column(String, default=EmergencySeverity.YELLOW)
+    status = Column(String, default=IncidentStatus.OPEN)
+    silent = Column(Boolean, default=False)
+
+    lat = Column(Float)
+    lng = Column(Float)
+    accuracy = Column(Float, nullable=True)
+    heading = Column(Float, nullable=True)
+    what3words = Column(String, nullable=True)
+    message = Column(String, nullable=True)
+    shareToken = Column(String, nullable=True, index=True)
+
+    createdAt = Column(DateTime, default=datetime.utcnow)
+    updatedAt = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    resolvedAt = Column(DateTime, nullable=True)
+
+    reporter = relationship("User", back_populates="incidents")
+
+class EmergencyFacility(Base):
+    __tablename__ = "emergency_facilities"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String)
+    type = Column(String, default=FacilityType.HOSPITAL)
+    lat = Column(Float)
+    lng = Column(Float)
+    phoneNumber = Column(String, nullable=True)
+    city = Column(String, nullable=True)
+    createdAt = Column(DateTime, default=datetime.utcnow)

@@ -4,6 +4,7 @@ import Script from 'next/script';
 import ClientShell from './ClientShell';
 import './globals.css';
 import BottomNav from '../components/BottomNav';
+import EmergencySOSButton from '../components/EmergencySOSButton';
 
 const outfit = Outfit({
   subsets: ['latin'],
@@ -49,6 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <main className="flex-1 relative overflow-hidden w-full">
               {children}
             </main>
+            <EmergencySOSButton />
             <BottomNav />
           </div>
         </ClientShell>

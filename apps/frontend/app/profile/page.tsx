@@ -6,7 +6,8 @@ import {
   LogoutOutlined, EditOutlined, CameraOutlined, ArrowLeftOutlined,
   CheckOutlined, RightOutlined, LoadingOutlined, CarOutlined,
   IdcardOutlined, CloseOutlined, WalletOutlined, StarFilled,
-  GlobalOutlined, AppstoreOutlined, SettingOutlined, SafetyCertificateOutlined
+  GlobalOutlined, AppstoreOutlined, SettingOutlined, SafetyCertificateOutlined,
+  TeamOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../context/AuthContext';
 import { updateProfile, api } from '../../lib/api';
@@ -177,6 +178,7 @@ export default function ProfilePage() {
             <SettingsRow icon={<PhoneOutlined />} label="Phone" value={user.phoneNumber} />
             <SettingsRow icon={<MailOutlined />} label="Email" value={user.email || 'Complete profile'} />
             <SettingsRow icon={<SafetyOutlined />} label="Trust & Safety" value="Verified" />
+            <SettingsRow icon={<TeamOutlined />} label="Trusted Contacts" value="Notified on SOS" onClick={() => router.push('/profile/trusted-contacts')} />
             <SettingsRow icon={<AppstoreOutlined />} label="History" value="View all" border={false} />
           </div>
         </div>
@@ -284,9 +286,9 @@ export default function ProfilePage() {
   );
 }
 
-function SettingsRow({ icon, label, value, border = true }: { icon: any, label: string, value: string, border?: boolean }) {
+function SettingsRow({ icon, label, value, border = true, onClick }: { icon: any, label: string, value: string, border?: boolean, onClick?: () => void }) {
   return (
-    <div className={`flex items-center gap-5 p-4 group cursor-pointer active:bg-gray-50 transition-colors ${border ? 'border-b border-gray-50' : ''}`}>
+    <div onClick={onClick} className={`flex items-center gap-5 p-4 group cursor-pointer active:bg-gray-50 transition-colors ${border ? 'border-b border-gray-50' : ''}`}>
       <div className="w-12 h-12 rounded-[18px] bg-gray-50 flex items-center justify-center text-black text-lg group-hover:bg-yellow-400 transition-colors">
         {icon}
       </div>

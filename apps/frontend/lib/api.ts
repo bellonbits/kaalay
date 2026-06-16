@@ -195,6 +195,40 @@ export const triggerSos = (data: { lat: number; lng: number; w3w: string; accura
 export const cancelSos = (token: string) =>
   api.patch(`/location/share/${token}`, { status: 'ended' }).then(r => r.data);
 
+// ── Emergency (Kaaley Heedhe) ────────────────────────────────────────────
+export type EmergencyType = 'medical' | 'police' | 'violence' | 'kidnapping' | 'fire' | 'disaster' | 'lost_person';
+export type EmergencySeverity = 'green' | 'yellow' | 'orange' | 'red' | 'black';
+
+export const triggerEmergencySos = (data: {
+  lat: number;
+  lng: number;
+  accuracy?: number;
+  heading?: number;
+  w3w?: string;
+  message?: string;
+  type?: EmergencyType;
+  severity?: EmergencySeverity;
+  silent?: boolean;
+}) => api.post('/emergency/sos', data).then(r => r.data);
+
+export const getIncident = (id: string) =>
+  api.get(`/emergency/incidents/${id}`).then(r => r.data);
+
+export const updateIncidentStatus = (id: string, status: 'open' | 'dispatched' | 'resolved' | 'cancelled') =>
+  api.patch(`/emergency/incidents/${id}`, { status }).then(r => r.data);
+
+export const listTrustedContacts = () =>
+  api.get('/emergency/contacts').then(r => r.data);
+
+export const addTrustedContact = (data: { name: string; phoneNumber: string; relationship?: string }) =>
+  api.post('/emergency/contacts', data).then(r => r.data);
+
+export const deleteTrustedContact = (id: string) =>
+  api.delete(`/emergency/contacts/${id}`).then(r => r.data);
+
+export const getNearestFacilities = (lat: number, lng: number, type?: string, limit = 5) =>
+  api.get('/emergency/nearest', { params: { lat, lng, type, limit } }).then(r => r.data);
+
 // ── Rides ─────────────────────────────────────────────────────────────────
 export const requestRide = (data: {
   pickup: { lat: number; lng: number; words: string };
