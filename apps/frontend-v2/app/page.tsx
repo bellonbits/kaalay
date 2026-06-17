@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Compass } from "lucide-react";
-import { useAuthStore } from "@/features/auth/store";
+import { homeRouteForRole, useAuthStore } from "@/features/auth/store";
 
 export default function SplashPage() {
   const router = useRouter();
@@ -12,7 +12,7 @@ export default function SplashPage() {
   useEffect(() => {
     if (!hydrated) return;
     const t = setTimeout(() => {
-      router.replace(user ? "/navigate" : "/welcome");
+      router.replace(user ? homeRouteForRole(user.role) : "/welcome");
     }, 900);
     return () => clearTimeout(t);
   }, [hydrated, user, router]);

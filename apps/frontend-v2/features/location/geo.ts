@@ -43,6 +43,23 @@ export function formatDistance(meters: number): string {
   return `${(meters / 1000).toFixed(1)} km`;
 }
 
+/**
+ * Move/interval gate shared by every hook that throttles pushes to the
+ * backend off a GPS stream (share-session push, road-snap requests, ride
+ * location pushes) — fires only once the position has moved far enough or
+ * enough time has passed, whichever comes first.
+ */
+export function shouldPush(
+  last: { lat: number; lng: number; time: number } | null,
+  next: { lat: number; lng: number },
+  minMoveMetres: number,
+  minIntervalMs: number
+): boolean {
+  if (!last) return true;
+  const moved = haversineMeters(last.lat, last.lng, next.lat, next.lng);
+  return moved >= minMoveMetres || Date.now() - last.time >= minIntervalMs;
+}
+
 export function formatDuration(seconds: number): string {
   const mins = Math.round(seconds / 60);
   if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"}`;

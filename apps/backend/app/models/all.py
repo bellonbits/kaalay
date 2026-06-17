@@ -141,6 +141,12 @@ class Place(Base):
     words = Column(String, index=True)
     tags = Column(JSON, default=[])
     photos = Column(JSON, default=[])
+    # Opening hours — kept intentionally simple (one daily window, not a
+    # full per-weekday schedule) since these are community-contributed
+    # spots, not managed business listings.
+    alwaysOpen = Column(Boolean, default=True)
+    openTime = Column(String, nullable=True)   # "HH:MM", 24h, local time
+    closeTime = Column(String, nullable=True)  # "HH:MM", 24h, local time
     createdAt = Column(DateTime, default=datetime.utcnow)
 
 class Notification(Base):

@@ -3,6 +3,7 @@ from ..core.config import settings
 from ..core.responses import success_response, error_response
 import requests
 from pydantic import BaseModel
+from typing import List
 import uuid
 
 router = APIRouter(prefix="/location", tags=["location"])
@@ -370,6 +371,43 @@ async def get_grid(sw_lat: float, sw_lng: float, ne_lat: float, ne_lng: float):
         return success_response(res)
     except Exception as e:
         return error_response("W3W_GRID_ERROR", str(e), 500)
+
+class SnapToRoadPoint(BaseModel):
+    lat: float
+    lng: float
+
+class SnapToRoadRequest(BaseModel):
+    points: List[SnapToRoadPoint]
+
+@router.post("/snap-to-road")
+async def snap_to_road(dto: SnapToRoadRequest):
+    """Proxies Google's Roads API so the server-restricted key never reaches
+    the client. Returns an empty list on any failure/missing key/no-match —
+    callers fall back to raw GPS rather than treat this as a hard error."""
+    if not settings.GOOGLE_MAPS_SERVER_KEY or not dto.points:
+        return success_response({"snappedPoints": []})
+
+    path = "|".join(f"{p.lat},{p.lng}" for p in dto.points)
+    url = (
+        f"https://roads.googleapis.com/v1/snapToRoads"
+        f"?path={path}&interpolate=true&key={settings.GOOGLE_MAPS_SERVER_KEY}"
+    )
+    try:
+        response = requests.get(url, timeout=5)
+        res = response.json()
+        snapped = [
+            {
+                "lat": p["location"]["latitude"],
+                "lng": p["location"]["longitude"],
+                "placeId": p.get("placeId"),
+                "originalIndex": p.get("originalIndex"),
+            }
+            for p in res.get("snappedPoints", [])
+        ]
+        return success_response({"snappedPoints": snapped})
+    except Exception as e:
+        print(f"Roads API Error: {e}")
+        return success_response({"snappedPoints": []})
 
 @router.get("/autosuggest")
 async def autosuggest(input: str, lat: float = None, lng: float = None):

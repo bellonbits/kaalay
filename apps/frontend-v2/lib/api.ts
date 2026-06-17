@@ -1,15 +1,25 @@
 import axios, { type AxiosError } from "axios";
 import type {
+  AdminDashboardStats,
+  AdminDriver,
+  AdminTrip,
+  AdminUser,
   AuthResponse,
   AutosuggestSuggestion,
   DistanceResponse,
+  DriverProfile,
+  DriverWallet,
   EmergencyContact,
   EmergencyFacility,
   EmergencySeverity,
   EmergencyType,
+  FareEstimate,
   Incident,
   IncidentStatus,
   Place,
+  Ride,
+  RideCategory,
+  RideStatus,
   ShareSession,
   SosResponse,
   User,
@@ -104,6 +114,18 @@ export const getGridSection = (swLat: number, swLng: number, neLat: number, neLn
     })
     .then((r) => r.data);
 
+export interface SnappedPoint {
+  lat: number;
+  lng: number;
+  placeId?: string;
+  originalIndex?: number;
+}
+
+export const snapToRoad = (points: { lat: number; lng: number }[]) =>
+  api
+    .post<{ snappedPoints: SnappedPoint[] }>(`/location/snap-to-road`, { points })
+    .then((r) => r.data);
+
 // ── Live location sharing ──────────────────────────────────────────────
 export const createShareSession = (data: {
   lat: number;
@@ -175,3 +197,100 @@ export const createPlace = (data: {
 export const getPlaces = () => api.get<Place[]>("/places").then((r) => r.data);
 
 export const getPlace = (id: string) => api.get<Place>(`/places/${id}`).then((r) => r.data);
+
+// ── Rides (ride-hailing) ────────────────────────────────────────────────
+export const getFareEstimates = (distance: number, category?: RideCategory) =>
+  api.post<FareEstimate[]>("/rides/estimate", { distance, category }).then((r) => r.data);
+
+export const createRide = (data: {
+  pickup: { lat: number; lng: number; words: string };
+  destination: { lat: number; lng: number; words: string };
+  category?: RideCategory;
+  distance?: number;
+  duration?: number;
+}) => api.post<Ride>("/rides", data).then((r) => r.data);
+
+export const getRide = (id: string) => api.get<Ride>(`/rides/${id}`).then((r) => r.data);
+
+export const getRideHistory = () => api.get<Ride[]>("/rides/history").then((r) => r.data);
+
+export const getNearbyRides = () => api.get<Ride[]>("/rides/nearby").then((r) => r.data);
+
+export const acceptRide = (id: string) => api.post<Ride>(`/rides/${id}/accept`).then((r) => r.data);
+
+export const signalRideArriving = (id: string) => api.patch<Ride>(`/rides/${id}/arriving`).then((r) => r.data);
+
+export const signalRideArrived = (id: string) => api.patch<Ride>(`/rides/${id}/arrived`).then((r) => r.data);
+
+export const startRide = (id: string) => api.patch<Ride>(`/rides/${id}/start`).then((r) => r.data);
+
+export const completeRide = (id: string) => api.patch<Ride>(`/rides/${id}/complete`).then((r) => r.data);
+
+export const cancelRide = (id: string) => api.patch<Ride>(`/rides/${id}/cancel`).then((r) => r.data);
+
+export const rateRide = (id: string, rating: number, comment?: string) =>
+  api.post(`/rides/${id}/rating`, { rating, comment }).then((r) => r.data);
+
+export const updateDriverRideLocation = (
+  id: string,
+  data: { lat: number; lng: number; heading?: number; speed?: number }
+) => api.patch<{ distanceMeters: number }>(`/rides/${id}/location`, data).then((r) => r.data);
+
+// ── Drivers ──────────────────────────────────────────────────────────────
+export const registerDriver = (data: {
+  vehicleModel: string;
+  vehicleColor: string;
+  licensePlate: string;
+  vehicleCategory?: RideCategory;
+  nationalIdUrl?: string;
+  drivingLicenseUrl?: string;
+}) => api.post<DriverProfile>("/drivers/register", data).then((r) => r.data);
+
+export const getMyDriverProfile = () => api.get<DriverProfile>("/drivers/me").then((r) => r.data);
+
+export const updateDriverStatus = (status: "online" | "offline" | "busy") =>
+  api.patch<{ status: string }>("/drivers/status", null, { params: { status } }).then((r) => r.data);
+
+export const getDriverWallet = () => api.get<DriverWallet>("/drivers/wallet").then((r) => r.data);
+
+// ── Admin ────────────────────────────────────────────────────────────────
+export const getAdminDashboardStats = () => api.get<AdminDashboardStats>("/admin/dashboard-stats").then((r) => r.data);
+
+export const getAdminActiveTrips = () => api.get<AdminTrip[]>("/admin/active-trips").then((r) => r.data);
+
+export const getAdminUsers = (q?: string) => api.get<AdminUser[]>("/admin/users", { params: { q } }).then((r) => r.data);
+
+export const updateAdminUser = (id: string, data: { isActive?: boolean; role?: string }) =>
+  api.patch<AdminUser>(`/admin/users/${id}`, data).then((r) => r.data);
+
+export const getAdminDrivers = (verified?: boolean) =>
+  api.get<AdminDriver[]>("/admin/drivers", { params: { verified } }).then((r) => r.data);
+
+export const verifyAdminDriver = (id: string, isVerified: boolean) =>
+  api.patch<AdminDriver>(`/admin/drivers/${id}/verify`, { isVerified }).then((r) => r.data);
+
+export const forceAdminDriverStatus = (id: string, status: "online" | "offline" | "busy") =>
+  api.patch<AdminDriver>(`/admin/drivers/${id}/status`, { status }).then((r) => r.data);
+
+export const getAdminRides = (status?: RideStatus) =>
+  api.get<Ride[]>("/admin/rides", { params: { status } }).then((r) => r.data);
+
+export const forceCancelAdminRide = (id: string) => api.patch<Ride>(`/admin/rides/${id}/cancel`).then((r) => r.data);
+
+export const getAdminIncidents = (status?: IncidentStatus) =>
+  api.get<Incident[]>("/admin/incidents", { params: { status } }).then((r) => r.data);
+
+export const updateAdminIncident = (id: string, status: IncidentStatus) =>
+  api.patch<{ id: string; status: IncidentStatus; resolvedAt: string | null }>(`/admin/incidents/${id}`, { status }).then((r) => r.data);
+
+export const updateAdminPlace = (id: string, data: Partial<{
+  name: string;
+  description: string;
+  tags: string[];
+  photos: string[];
+  alwaysOpen: boolean;
+  openTime: string;
+  closeTime: string;
+}>) => api.patch<Place>(`/places/${id}`, data).then((r) => r.data);
+
+export const deleteAdminPlace = (id: string) => api.delete<{ id: string; deleted: true }>(`/places/${id}`).then((r) => r.data);

@@ -2,16 +2,30 @@
 import { useCallback, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Compass, Users, ShieldAlert, Share2, User } from "lucide-react";
+import { Compass, Users, ShieldAlert, Share2, User, LayoutDashboard, Wallet } from "lucide-react";
 import { useNavigationStore } from "@/features/navigation/store";
 import { useLocationStore } from "@/features/location/store";
+import { useAuthStore } from "@/features/auth/store";
 import { triggerEmergencySos } from "@/lib/api";
 
-const TABS = [
+const RIDER_TABS = [
   { label: "Navigate", icon: Compass, path: "/navigate", raised: false },
   { label: "Meet", icon: Users, path: "/meet", raised: false },
   { label: "SOS", icon: ShieldAlert, path: "/sos", raised: true },
   { label: "Share", icon: Share2, path: "/share", raised: false },
+  { label: "Profile", icon: User, path: "/profile", raised: false },
+] as const;
+
+// Drivers and admins get their own apps, not the rider's navigation tools.
+const DRIVER_TABS = [
+  { label: "Dashboard", icon: LayoutDashboard, path: "/driver", raised: false },
+  { label: "Earnings", icon: Wallet, path: "/driver/earnings", raised: false },
+  { label: "SOS", icon: ShieldAlert, path: "/sos", raised: true },
+  { label: "Profile", icon: User, path: "/profile", raised: false },
+] as const;
+
+const ADMIN_TABS = [
+  { label: "Dashboard", icon: LayoutDashboard, path: "/admin", raised: false },
   { label: "Profile", icon: User, path: "/profile", raised: false },
 ] as const;
 
@@ -23,6 +37,9 @@ export default function BottomNav() {
   const router = useRouter();
   const immersive = useNavigationStore((s) => s.immersive);
   const position = useLocationStore((s) => s.position);
+  const role = useAuthStore((s) => s.user?.role);
+
+  const TABS = role === "admin" ? ADMIN_TABS : role === "driver" ? DRIVER_TABS : RIDER_TABS;
 
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);

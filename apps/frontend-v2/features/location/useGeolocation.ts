@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
-import { haversineMeters, bearing } from "./geo";
+import { haversineMeters, bearing, shouldPush } from "./geo";
 import { updateShareSession } from "@/lib/api";
 
 export interface Position {
@@ -48,12 +48,8 @@ export function useGeolocation(options: Options = {}) {
       const token = shareTokenRef.current;
       if (!token) return;
       const last = lastPushRef.current;
-      const now = Date.now();
-      if (last) {
-        const moved = haversineMeters(last.lat, last.lng, pos.lat, pos.lng);
-        if (moved < minMoveMetres && now - last.time < pushIntervalMs) return;
-      }
-      lastPushRef.current = { lat: pos.lat, lng: pos.lng, time: now };
+      if (!shouldPush(last, pos, minMoveMetres, pushIntervalMs)) return;
+      lastPushRef.current = { lat: pos.lat, lng: pos.lng, time: Date.now() };
       updateShareSession(token, { lat: pos.lat, lng: pos.lng }).catch(() => {
         // Fire-and-forget — a missed location push isn't fatal.
       });

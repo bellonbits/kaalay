@@ -9,6 +9,22 @@ import uuid
 
 router = APIRouter(prefix="/drivers", tags=["drivers"])
 
+def _driver_out(driver: Driver) -> dict:
+    return {
+        "id": str(driver.id),
+        "userId": str(driver.userId),
+        "vehicleModel": driver.vehicleModel,
+        "vehicleColor": driver.vehicleColor,
+        "licensePlate": driver.licensePlate,
+        "vehicleCategory": driver.vehicleCategory,
+        "isVerified": driver.isVerified,
+        "status": driver.status,
+        "rating": driver.rating,
+        "acceptanceRate": driver.acceptanceRate,
+        "currentLat": driver.currentLat,
+        "currentLng": driver.currentLng,
+    }
+
 class DriverRegister(BaseModel):
     vehicleModel: str
     vehicleColor: str
@@ -45,7 +61,7 @@ async def register_driver(
     db.add(driver)
     db.commit()
     db.refresh(driver)
-    return success_response(driver)
+    return success_response(_driver_out(driver))
 
 @router.get("/me")
 async def get_driver_me(
@@ -55,7 +71,7 @@ async def get_driver_me(
     driver = db.query(Driver).filter(Driver.userId == current_user.id).first()
     if not driver:
         return error_response("NOT_FOUND", "No driver profile found for this user", 404)
-    return success_response(driver)
+    return success_response(_driver_out(driver))
 
 @router.patch("/status")
 async def update_status(

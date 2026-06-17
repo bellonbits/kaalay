@@ -5,6 +5,9 @@ from ..core.database import get_db
 from ..core.deps import get_current_user
 from ..core.responses import success_response, error_response
 from ..models.all import Ride, RideStatus, User, Driver, Payment, Incident, IncidentStatus
+from pydantic import BaseModel
+from typing import Optional
+import uuid
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -107,4 +110,137 @@ async def get_incident_stats(db: Session = Depends(get_db), admin: User = Depend
         "resolved": resolved_count,
         "bySeverity": by_severity,
         "byType": by_type,
+    })
+
+# ── User management ───────────────────────────────────────────────────────
+
+def _user_out(user: User) -> dict:
+    return {
+        "id": str(user.id),
+        "fullName": user.fullName,
+        "phoneNumber": user.phoneNumber,
+        "email": user.email,
+        "role": user.role,
+        "isActive": user.isActive,
+        "createdAt": user.createdAt.isoformat() if user.createdAt else None,
+    }
+
+@router.get("/users")
+async def list_users(q: str = None, db: Session = Depends(get_db), admin: User = Depends(is_admin)):
+    query = db.query(User)
+    if q:
+        query = query.filter(User.fullName.ilike(f"%{q}%") | User.phoneNumber.ilike(f"%{q}%"))
+    users = query.order_by(User.createdAt.desc()).limit(200).all()
+    return success_response([_user_out(u) for u in users])
+
+class UserUpdate(BaseModel):
+    isActive: Optional[bool] = None
+    role: Optional[str] = None
+
+@router.patch("/users/{id}")
+async def update_user(id: uuid.UUID, dto: UserUpdate, db: Session = Depends(get_db), admin: User = Depends(is_admin)):
+    user = db.query(User).filter(User.id == id).first()
+    if not user:
+        return error_response("NOT_FOUND", "User not found", 404)
+    if dto.isActive is not None:
+        user.isActive = dto.isActive
+    if dto.role is not None:
+        user.role = dto.role
+    db.commit()
+    db.refresh(user)
+    return success_response(_user_out(user))
+
+# ── Driver management ─────────────────────────────────────────────────────
+
+def _admin_driver_out(driver: Driver) -> dict:
+    return {
+        "id": str(driver.id),
+        "userId": str(driver.userId),
+        "fullName": driver.user.fullName if driver.user else None,
+        "phoneNumber": driver.user.phoneNumber if driver.user else None,
+        "vehicleModel": driver.vehicleModel,
+        "vehicleColor": driver.vehicleColor,
+        "licensePlate": driver.licensePlate,
+        "vehicleCategory": driver.vehicleCategory,
+        "nationalIdUrl": driver.nationalIdUrl,
+        "drivingLicenseUrl": driver.drivingLicenseUrl,
+        "isVerified": driver.isVerified,
+        "status": driver.status,
+        "rating": driver.rating,
+        "acceptanceRate": driver.acceptanceRate,
+    }
+
+@router.get("/drivers")
+async def list_drivers(verified: bool = None, db: Session = Depends(get_db), admin: User = Depends(is_admin)):
+    from sqlalchemy.orm import joinedload
+    query = db.query(Driver).options(joinedload(Driver.user))
+    if verified is not None:
+        query = query.filter(Driver.isVerified == verified)
+    drivers = query.order_by(Driver.lastSeen.desc()).limit(200).all()
+    return success_response([_admin_driver_out(d) for d in drivers])
+
+class DriverVerifyUpdate(BaseModel):
+    isVerified: bool
+
+@router.patch("/drivers/{id}/verify")
+async def verify_driver(id: uuid.UUID, dto: DriverVerifyUpdate, db: Session = Depends(get_db), admin: User = Depends(is_admin)):
+    driver = db.query(Driver).filter(Driver.id == id).first()
+    if not driver:
+        return error_response("NOT_FOUND", "Driver not found", 404)
+    driver.isVerified = dto.isVerified
+    db.commit()
+    db.refresh(driver)
+    return success_response(_admin_driver_out(driver))
+
+class DriverStatusUpdate(BaseModel):
+    status: str
+
+@router.patch("/drivers/{id}/status")
+async def force_driver_status(id: uuid.UUID, dto: DriverStatusUpdate, db: Session = Depends(get_db), admin: User = Depends(is_admin)):
+    driver = db.query(Driver).filter(Driver.id == id).first()
+    if not driver:
+        return error_response("NOT_FOUND", "Driver not found", 404)
+    driver.status = dto.status
+    db.commit()
+    if dto.status != "online":
+        from ..core.redis import get_redis
+        get_redis().zrem("driver_locations", str(driver.id))
+    return success_response(_admin_driver_out(driver))
+
+# ── Ride management ───────────────────────────────────────────────────────
+
+@router.get("/rides")
+async def list_all_rides(status: str = None, db: Session = Depends(get_db), admin: User = Depends(is_admin)):
+    from .rides import _ride_out
+    query = db.query(Ride)
+    if status:
+        query = query.filter(Ride.status == status)
+    rides = query.order_by(Ride.createdAt.desc()).limit(200).all()
+    return success_response([_ride_out(r) for r in rides])
+
+@router.patch("/rides/{id}/cancel")
+async def force_cancel_ride(id: uuid.UUID, db: Session = Depends(get_db), admin: User = Depends(is_admin)):
+    from .rides import _update_ride_status_internal
+    return await _update_ride_status_internal(id, RideStatus.CANCELLED, db)
+
+# ── Incident resolution ───────────────────────────────────────────────────
+
+class IncidentUpdate(BaseModel):
+    status: str
+
+@router.patch("/incidents/{id}")
+async def update_incident(id: uuid.UUID, dto: IncidentUpdate, db: Session = Depends(get_db), admin: User = Depends(is_admin)):
+    from datetime import datetime
+    incident = db.query(Incident).filter(Incident.id == id).first()
+    if not incident:
+        return error_response("NOT_FOUND", "Incident not found", 404)
+    incident.status = dto.status
+    if dto.status == IncidentStatus.RESOLVED:
+        incident.resolvedAt = datetime.utcnow()
+    db.commit()
+    db.refresh(incident)
+    return success_response({
+        "id": str(incident.id),
+        "status": incident.status,
+        "resolvedAt": incident.resolvedAt.isoformat() if incident.resolvedAt else None,
     })

@@ -121,6 +121,123 @@ export interface EmergencyContact {
   createdAt: string | null;
 }
 
+export type RideStatus = "requested" | "accepted" | "arriving" | "arrived" | "started" | "completed" | "cancelled";
+
+export type RideCategory = "economy" | "bike" | "xl" | "delivery";
+
+export interface RideDriverSummary {
+  id: string;
+  fullName: string | null;
+  phoneNumber: string | null;
+  vehicleModel: string | null;
+  vehicleColor: string | null;
+  licensePlate: string | null;
+  rating: number;
+  currentLat: number | null;
+  currentLng: number | null;
+}
+
+export interface RideRiderSummary {
+  id: string;
+  fullName: string;
+  phoneNumber: string;
+}
+
+export interface Ride {
+  id: string;
+  riderId: string;
+  driverId: string | null;
+  status: RideStatus;
+  category: RideCategory;
+  pickupLat: number;
+  pickupLng: number;
+  pickupWhat3words: string;
+  destinationLat: number;
+  destinationLng: number;
+  destinationWhat3words: string;
+  fare: number | null;
+  distance: number | null;
+  duration: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  driver: RideDriverSummary | null;
+  rider: RideRiderSummary | null;
+}
+
+export interface FareEstimate {
+  category: RideCategory;
+  fare: number;
+  currency: string;
+  eta: number;
+}
+
+export interface DriverProfile {
+  id: string;
+  userId: string;
+  vehicleModel: string | null;
+  vehicleColor: string | null;
+  licensePlate: string | null;
+  vehicleCategory: RideCategory;
+  isVerified: boolean;
+  status: "online" | "offline" | "busy";
+  rating: number;
+  acceptanceRate: number;
+  currentLat: number | null;
+  currentLng: number | null;
+}
+
+export interface DriverWallet {
+  totalGross: number;
+  walletBalance: number;
+  commissionPaid: number;
+  currency: string;
+}
+
+export interface AdminUser {
+  id: string;
+  fullName: string;
+  phoneNumber: string;
+  email?: string | null;
+  role: UserRole;
+  isActive: boolean;
+  createdAt: string | null;
+}
+
+export interface AdminDriver {
+  id: string;
+  userId: string;
+  fullName: string | null;
+  phoneNumber: string | null;
+  vehicleModel: string | null;
+  vehicleColor: string | null;
+  licensePlate: string | null;
+  vehicleCategory: RideCategory;
+  nationalIdUrl: string | null;
+  drivingLicenseUrl: string | null;
+  isVerified: boolean;
+  status: "online" | "offline" | "busy";
+  rating: number;
+  acceptanceRate: number;
+}
+
+export interface AdminDashboardStats {
+  activeTrips: number;
+  completedTrips: number;
+  totalDrivers: number;
+  verifiedDrivers: number;
+  totalRevenue: number;
+}
+
+export interface AdminTrip {
+  id: string;
+  status: RideStatus;
+  category: RideCategory;
+  pickup: string;
+  destination: string;
+  fare: number | null;
+  createdAt: string | null;
+}
+
 export interface EmergencyFacility {
   id: string;
   name: string;

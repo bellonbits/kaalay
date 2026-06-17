@@ -6,7 +6,7 @@ import { ArrowLeft, Loader2, Phone, User as UserIcon, Mail } from "lucide-react"
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAuthStore } from "@/features/auth/store";
+import { homeRouteForRole, useAuthStore } from "@/features/auth/store";
 
 function AuthFlow() {
   const router = useRouter();
@@ -33,7 +33,7 @@ function AuthFlow() {
       if (isNewUser) {
         setStep("register");
       } else {
-        router.replace("/navigate");
+        router.replace(homeRouteForRole(useAuthStore.getState().user?.role));
       }
     } catch {
       setError("Couldn't reach Kaalay. Check your connection and try again.");

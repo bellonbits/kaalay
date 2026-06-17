@@ -24,7 +24,8 @@ type Estimate = { distanceMeters: number; durationSeconds: number } | "loading" 
 export default function RoutePage() {
   const { ready } = useRequireAuth();
   const router = useRouter();
-  const position = useLocationStore((s) => s.position);
+  // Road-snapped when on a road (see useRoadSnap) — falls back to raw GPS off-road.
+  const position = useLocationStore((s) => s.displayPosition);
   const destination = useNavigationStore((s) => s.destination);
   const setDestination = useNavigationStore((s) => s.setDestination);
   const setImmersive = useNavigationStore((s) => s.setImmersive);

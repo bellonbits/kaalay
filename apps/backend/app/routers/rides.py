@@ -10,6 +10,52 @@ import uuid
 
 router = APIRouter(prefix="/rides", tags=["rides"])
 
+def _ride_out(ride: Ride) -> dict:
+    """Plain-dict projection of a Ride — mirrors places.py's _place_out
+    pattern. Returning the raw SQLAlchemy ORM object through
+    success_response() doesn't serialize cleanly (FastAPI's encoder chokes
+    on SQLAlchemy's internal _sa_instance_state)."""
+    driver_out = None
+    if ride.driver:
+        driver_out = {
+            "id": str(ride.driver.id),
+            "fullName": ride.driver.user.fullName if ride.driver.user else None,
+            "phoneNumber": ride.driver.user.phoneNumber if ride.driver.user else None,
+            "vehicleModel": ride.driver.vehicleModel,
+            "vehicleColor": ride.driver.vehicleColor,
+            "licensePlate": ride.driver.licensePlate,
+            "rating": ride.driver.rating,
+            "currentLat": ride.driver.currentLat,
+            "currentLng": ride.driver.currentLng,
+        }
+    rider_out = None
+    if ride.rider:
+        rider_out = {
+            "id": str(ride.rider.id),
+            "fullName": ride.rider.fullName,
+            "phoneNumber": ride.rider.phoneNumber,
+        }
+    return {
+        "id": str(ride.id),
+        "riderId": str(ride.riderId),
+        "driverId": str(ride.driverId) if ride.driverId else None,
+        "status": ride.status,
+        "category": ride.category,
+        "pickupLat": ride.pickupLat,
+        "pickupLng": ride.pickupLng,
+        "pickupWhat3words": ride.pickupWhat3words,
+        "destinationLat": ride.destinationLat,
+        "destinationLng": ride.destinationLng,
+        "destinationWhat3words": ride.destinationWhat3words,
+        "fare": ride.fare,
+        "distance": ride.distance,
+        "duration": ride.duration,
+        "createdAt": ride.createdAt.isoformat() if ride.createdAt else None,
+        "updatedAt": ride.updatedAt.isoformat() if ride.updatedAt else None,
+        "driver": driver_out,
+        "rider": rider_out,
+    }
+
 @router.get("/nearby")
 async def get_nearby_rides(
     db: Session = Depends(get_db),
@@ -19,7 +65,7 @@ async def get_nearby_rides(
     rides = db.query(Ride).options(joinedload(Ride.rider)).filter(
         Ride.status == RideStatus.REQUESTED
     ).order_by(Ride.createdAt.desc()).all()
-    return success_response(rides)
+    return success_response([_ride_out(r) for r in rides])
 
 class LocationPoint(BaseModel):
     lat: float
@@ -113,27 +159,27 @@ async def create_ride(
         await publish_ride_request(str(ride.id), payload)
     except Exception as e:
         print(f"Queue Publishing Error: {e}")
-        
-    return success_response(ride)
+
+    return success_response(_ride_out(ride))
 
 @router.get("/history")
 async def get_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    rides = db.query(Ride).filter(Ride.riderId == current_user.id).all()
-    return success_response(rides)
+    rides = db.query(Ride).filter(Ride.riderId == current_user.id).order_by(Ride.createdAt.desc()).all()
+    return success_response([_ride_out(r) for r in rides])
 
 @router.get("/{id}")
 async def get_ride(
-    id: uuid.UUID, 
+    id: uuid.UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     ride = db.query(Ride).filter(Ride.id == id).first()
     if not ride:
         return error_response("NOT_FOUND", "Ride not found", 404)
-    return success_response(ride)
+    return success_response(_ride_out(ride))
 
 async def _update_ride_status_internal(id: uuid.UUID, status: str, db: Session, driver: Optional[Driver] = None):
     ride = db.query(Ride).options(joinedload(Ride.driver).joinedload(Driver.user)).filter(Ride.id == id).first()
@@ -206,8 +252,8 @@ async def _update_ride_status_internal(id: uuid.UUID, status: str, db: Session, 
             await sio.emit(event, {"shareCode": str(id), "id": str(id)}, room="dispatch", namespace=NAMESPACE)
     except Exception as e:
         print(f"Status Socket Error: {e}")
-    
-    return success_response(ride)
+
+    return success_response(_ride_out(ride))
 
 
 @router.patch("/{id}/status")
@@ -233,6 +279,77 @@ async def complete_ride(id: uuid.UUID, db: Session = Depends(get_db)):
 @router.patch("/{id}/cancel")
 async def cancel_ride(id: uuid.UUID, db: Session = Depends(get_db)):
     return await _update_ride_status_internal(id, RideStatus.CANCELLED, db)
+
+def _haversine_meters(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    import math
+    R = 6371000  # Earth radius in metres
+    dLat = math.radians(lat2 - lat1)
+    dLng = math.radians(lng2 - lng1)
+    a = math.sin(dLat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dLng / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+ARRIVING_THRESHOLD_METERS = 500
+ARRIVED_THRESHOLD_METERS = 40
+
+class DriverLocationUpdate(BaseModel):
+    lat: float
+    lng: float
+    heading: Optional[float] = None
+    speed: Optional[float] = None
+
+@router.patch("/{id}/location")
+async def update_driver_location(
+    id: uuid.UUID,
+    dto: DriverLocationUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Called by the driver app on every GPS tick during an active ride.
+    Updates the driver's last-known position, auto-promotes the ride status
+    once the driver is close enough to the current target leg (pickup before
+    ARRIVED, destination once STARTED), and streams the position to the
+    rider over the ride's Socket.IO room."""
+    driver = db.query(Driver).filter(Driver.userId == current_user.id).first()
+    if not driver:
+        return error_response("NOT_DRIVER", "You are not registered as a driver", 403)
+
+    ride = db.query(Ride).filter(Ride.id == id).first()
+    if not ride:
+        return error_response("NOT_FOUND", "Ride not found", 404)
+    if ride.driverId != driver.id:
+        return error_response("FORBIDDEN", "You are not the driver for this ride", 403)
+    if ride.status not in (RideStatus.ACCEPTED, RideStatus.ARRIVING, RideStatus.ARRIVED, RideStatus.STARTED):
+        return error_response("INVALID_STATUS", "Ride is not active", 400)
+
+    driver.currentLat = dto.lat
+    driver.currentLng = dto.lng
+    db.commit()
+
+    pre_pickup = ride.status in (RideStatus.ACCEPTED, RideStatus.ARRIVING)
+    target_lat = ride.pickupLat if pre_pickup else ride.destinationLat
+    target_lng = ride.pickupLng if pre_pickup else ride.destinationLng
+    distance_meters = _haversine_meters(dto.lat, dto.lng, target_lat, target_lng)
+
+    if ride.status == RideStatus.ACCEPTED and distance_meters < ARRIVING_THRESHOLD_METERS:
+        await _update_ride_status_internal(id, RideStatus.ARRIVING, db)
+    elif ride.status == RideStatus.ARRIVING and distance_meters < ARRIVED_THRESHOLD_METERS:
+        await _update_ride_status_internal(id, RideStatus.ARRIVED, db)
+
+    try:
+        from ..core.sio import sio, NAMESPACE
+        avg_speed = max(dto.speed or 4.0, 1.0)  # m/s, floor avoids a divide-by-near-zero ETA spike
+        await sio.emit("driver-location", {
+            "id": str(id),
+            "lat": dto.lat,
+            "lng": dto.lng,
+            "heading": dto.heading,
+            "distanceMeters": distance_meters,
+            "etaSeconds": distance_meters / avg_speed,
+        }, room=str(id), namespace=NAMESPACE)
+    except Exception as e:
+        print(f"Driver Location Socket Error: {e}")
+
+    return success_response({"distanceMeters": distance_meters})
 
 @router.post("/{id}/accept")
 async def accept_ride(id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

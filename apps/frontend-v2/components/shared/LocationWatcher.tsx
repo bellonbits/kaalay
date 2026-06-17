@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 import { useGeolocation } from "@/features/location/useGeolocation";
+import { useRoadSnap } from "@/features/location/useRoadSnap";
 import { useLocationStore } from "@/features/location/store";
 import { useShareStore } from "@/features/share/store";
 import { convertToWords } from "@/lib/api";
@@ -15,13 +16,19 @@ import { convertToWords } from "@/lib/api";
 export default function LocationWatcher() {
   const activeToken = useShareStore((s) => s.activeToken);
   const { position } = useGeolocation({ shareToken: activeToken });
+  const { displayPosition } = useRoadSnap(position);
   const setPosition = useLocationStore((s) => s.setPosition);
+  const setDisplayPosition = useLocationStore((s) => s.setDisplayPosition);
   const setCurrentWords = useLocationStore((s) => s.setCurrentWords);
   const lastResolvedRef = useRef<string | null>(null);
 
   useEffect(() => {
     setPosition(position);
   }, [position, setPosition]);
+
+  useEffect(() => {
+    setDisplayPosition(displayPosition);
+  }, [displayPosition, setDisplayPosition]);
 
   useEffect(() => {
     if (!position) return;

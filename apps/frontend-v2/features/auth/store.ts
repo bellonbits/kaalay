@@ -2,6 +2,13 @@ import { create } from "zustand";
 import { getMe, loginUser, registerUser } from "@/lib/api";
 import type { User } from "@/types/api";
 
+/** Where a signed-in user should land — admins and drivers get their own apps. */
+export function homeRouteForRole(role?: string | null): string {
+  if (role === "admin") return "/admin";
+  if (role === "driver") return "/driver";
+  return "/navigate";
+}
+
 interface AuthState {
   user: User | null;
   loading: boolean;

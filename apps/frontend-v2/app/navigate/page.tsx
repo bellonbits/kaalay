@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LocateFixed, Search, Mic } from "lucide-react";
+import { LocateFixed, Search, Mic, Car } from "lucide-react";
 import MapBase from "@/components/shared/MapBase";
 import DestinationSearch from "@/features/navigation/components/DestinationSearch";
 import LocationCard from "@/features/navigation/components/LocationCard";
@@ -18,7 +18,8 @@ import type { Place } from "@/types/api";
 export default function NavigatePage() {
   const { ready } = useRequireAuth();
   const router = useRouter();
-  const position = useLocationStore((s) => s.position);
+  // Road-snapped when on a road (see useRoadSnap) — falls back to raw GPS off-road.
+  const position = useLocationStore((s) => s.displayPosition);
   const setDestination = useNavigationStore((s) => s.setDestination);
   const setAutoStart = useNavigationStore((s) => s.setAutoStart);
 
@@ -137,6 +138,14 @@ export default function NavigatePage() {
           <Search className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
           <span className="flex-1 text-left text-base font-semibold text-muted-foreground">Where do you want to go?</span>
           <Mic className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+        </button>
+
+        <button
+          onClick={() => router.push("/ride")}
+          className="mt-3 flex h-11 items-center gap-2 rounded-full bg-card px-4 shadow-lg active:scale-95 transition-transform"
+        >
+          <Car className="h-4 w-4 text-primary" />
+          <span className="text-xs font-bold text-foreground">Request a ride</span>
         </button>
       </div>
 

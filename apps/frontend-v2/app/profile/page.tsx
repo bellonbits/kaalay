@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Check,
   Edit2,
+  Car,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -118,6 +119,15 @@ export default function ProfilePage() {
           border={false}
         />
       </div>
+
+      {user.role !== "driver" && user.role !== "admin" && (
+        <>
+          <p className="mt-6 px-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Drive</p>
+          <div className="mt-2 space-y-1 rounded-3xl bg-card p-2 shadow-sm">
+            <NavRow icon={Car} label="Drive with Kaalay" onClick={() => router.push("/driver")} border={false} />
+          </div>
+        </>
+      )}
 
       <button
         onClick={handleLogout}
