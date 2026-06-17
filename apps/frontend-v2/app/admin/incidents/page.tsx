@@ -80,7 +80,7 @@ export default function AdminIncidentsPage() {
               <span className="text-xs font-bold capitalize text-muted-foreground">{i.type.replace("_", " ")}</span>
             </div>
             {i.message && <p className="mt-2 text-sm font-semibold text-foreground">{i.message}</p>}
-            {i.what3words && <p className="mt-1 text-xs font-semibold text-muted-foreground">{`///${i.what3words}`}</p>}
+            {i.what3words && <p className="mt-1 text-xs font-semibold text-muted-foreground">{i.what3words}</p>}
 
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button

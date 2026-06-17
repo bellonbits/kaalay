@@ -75,7 +75,7 @@ export default function NavigatePage() {
       try {
         const res = await convertToWords(lat, lng);
         lastResolvedRef.current = key;
-        setPinPoint({ lat, lng, label: `///${res.words}`, words: res.words });
+        setPinPoint({ lat, lng, label: res.words, words: res.words });
       } catch {
         setPinPoint({ lat, lng, label: `${lat.toFixed(5)}, ${lng.toFixed(5)}` });
       } finally {

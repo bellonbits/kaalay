@@ -4,7 +4,7 @@ import type { GooglePlaceDetail } from "./googlePlaces";
 export interface LocationPoint {
   lat: number;
   lng: number;
-  /** Display label — usually a what3words address ("///a.b.c") or place name. */
+  /** Display label — usually a Kaalay location code ("NRB-4K9PX2W8") or place name. */
   label: string;
   words?: string;
 }

@@ -81,7 +81,7 @@ export default function SosPage() {
             {activeIncident.type.replace("_", " ")} · {colors.label} severity
           </span>
           {activeIncident.what3words && (
-            <p className="mt-4 font-mono text-sm font-bold text-primary">{"///"}{activeIncident.what3words}</p>
+            <p className="mt-4 font-mono text-sm font-bold text-primary">{activeIncident.what3words}</p>
           )}
 
           {contacts.length > 0 && (

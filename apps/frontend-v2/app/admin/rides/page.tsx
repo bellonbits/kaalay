@@ -72,8 +72,8 @@ export default function AdminRidesPage() {
               </span>
               <span className="text-xs font-bold text-muted-foreground">{r.category}</span>
             </div>
-            <p className="mt-2 truncate text-sm font-bold text-foreground">{`///${r.pickupWhat3words}`}</p>
-            <p className="truncate text-xs font-semibold text-muted-foreground">{`→ ///${r.destinationWhat3words}`}</p>
+            <p className="mt-2 truncate text-sm font-bold text-foreground">{r.pickupWhat3words}</p>
+            <p className="truncate text-xs font-semibold text-muted-foreground">{`→ ${r.destinationWhat3words}`}</p>
             <p className="mt-1 text-xs font-semibold text-muted-foreground">
               KES {Math.round(r.fare ?? 0)} {r.driver?.fullName ? `· ${r.driver.fullName}` : ""}
             </p>

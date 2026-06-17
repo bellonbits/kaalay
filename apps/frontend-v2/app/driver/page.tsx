@@ -119,7 +119,7 @@ export default function DriverDashboardPage() {
           <div key={offer.rideId} className="rounded-3xl bg-card p-5 shadow-2xl">
             <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">New ride request</p>
             <p className="mt-1 text-base font-extrabold text-foreground">
-              {`///${offer.pickup} → ///${offer.destination}`}
+              {`${offer.pickup} → ${offer.destination}`}
             </p>
             <p className="mt-1 text-sm font-semibold text-muted-foreground">
               {offer.distanceKm?.toFixed(1)} km away · KES {Math.round(offer.fare ?? 0)}

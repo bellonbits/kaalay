@@ -8,33 +8,125 @@ import uuid
 
 router = APIRouter(prefix="/location", tags=["location"])
 
-def latlng_to_mock_words(lat: float, lng: float) -> str:
-    mapping = {'0': 'z', '1': 'a', '2': 'b', '3': 'c', '4': 'd', '5': 'e', '6': 'f', '7': 'g', '8': 'h', '9': 'i', '.': 'p', '-': 'm'}
-    lat_str = "".join(mapping[c] for c in f"{lat:.5f}" if c in mapping)
-    lng_str = "".join(mapping[c] for c in f"{lng:.5f}" if c in mapping)
-    return f"{lat_str}.{lng_str}.kaalay"
+# ── Kaalay location codes ───────────────────────────────────────────────
+# Customer-facing location codes are entirely our own — never the real
+# what3words product. Format: "{COUNTY}-{8-char base36}", e.g. "NRB-4K9PX2W8".
+# The county prefix is just a nearest-centroid label for readability; the
+# suffix is a reversible encoding of lat/lng within Kenya's bounding box, so
+# no database/lookup table is needed to go either direction.
+#
+# County centroids are approximate (general knowledge, not surveyed
+# boundaries) — good enough for a friendly regional tag, not for legal
+# boundary determination.
+KENYA_COUNTIES = [
+    ("Mombasa", "MSA", -4.05, 39.67), ("Kwale", "KWL", -4.18, 39.45),
+    ("Kilifi", "KLF", -3.51, 39.85), ("Tana River", "TRV", -1.65, 40.10),
+    ("Lamu", "LMU", -2.27, 40.90), ("Taita-Taveta", "TTV", -3.40, 38.35),
+    ("Garissa", "GRS", -0.45, 39.65), ("Wajir", "WJR", 1.75, 40.05),
+    ("Mandera", "MDR", 3.93, 41.86), ("Marsabit", "MSB", 2.33, 37.98),
+    ("Isiolo", "ISL", 0.35, 37.58), ("Meru", "MRU", 0.05, 37.65),
+    ("Tharaka-Nithi", "THN", -0.30, 37.75), ("Embu", "EMB", -0.54, 37.46),
+    ("Kitui", "KTU", -1.37, 38.01), ("Machakos", "MCK", -1.52, 37.27),
+    ("Makueni", "MKN", -2.25, 37.83), ("Nyandarua", "NYD", -0.18, 36.52),
+    ("Nyeri", "NYR", -0.42, 36.95), ("Kirinyaga", "KRG", -0.66, 37.32),
+    ("Murang'a", "MRG", -0.78, 37.04), ("Kiambu", "KMB", -1.03, 36.87),
+    ("Turkana", "TKN", 3.12, 35.60), ("West Pokot", "WPK", 1.62, 35.39),
+    ("Samburu", "SMB", 1.22, 36.96), ("Trans Nzoia", "TNZ", 1.05, 34.95),
+    ("Uasin Gishu", "UGS", 0.52, 35.30), ("Elgeyo-Marakwet", "EGM", 0.80, 35.50),
+    ("Nandi", "NND", 0.18, 35.13), ("Baringo", "BRG", 0.47, 35.97),
+    ("Laikipia", "LKP", 0.20, 36.78), ("Nakuru", "NKU", -0.30, 36.07),
+    ("Narok", "NRK", -1.08, 35.87), ("Kajiado", "KJD", -2.10, 36.78),
+    ("Kericho", "KRC", -0.37, 35.29), ("Bomet", "BMT", -0.78, 35.34),
+    ("Kakamega", "KKG", 0.28, 34.75), ("Vihiga", "VHG", 0.05, 34.72),
+    ("Bungoma", "BNG", 0.56, 34.56), ("Busia", "BSA", 0.46, 34.11),
+    ("Siaya", "SYA", 0.06, 34.29), ("Kisumu", "KSM", -0.09, 34.77),
+    ("Homa Bay", "HBY", -0.53, 34.46), ("Migori", "MGR", -1.06, 34.47),
+    ("Kisii", "KSI", -0.68, 34.78), ("Nyamira", "NYM", -0.57, 34.94),
+    ("Nairobi", "NRB", -1.29, 36.82),
+]
 
-def mock_words_to_latlng(words: str) -> tuple[float, float]:
-    parts = words.strip().replace("///", "").split(".")
-    if len(parts) >= 2:
-        rev_mapping = {'z': '0', 'a': '1', 'b': '2', 'c': '3', 'd': '4', 'e': '5', 'f': '6', 'g': '7', 'h': '8', 'i': '9', 'p': '.', 'm': '-'}
-        try:
-            lat = float("".join(rev_mapping[c] for c in parts[0] if c in rev_mapping))
-            lng = float("".join(rev_mapping[c] for c in parts[1] if c in rev_mapping))
-            return lat, lng
-        except:
-            pass
-    return -1.2921, 36.8219
+_BASE36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+_CODE_WIDTH = 8
+# Generous bounding box around Kenya (not a tight crop) so border towns
+# still encode/decode correctly.
+_LAT_MIN, _LAT_MAX = -4.9, 5.1
+_LNG_MIN, _LNG_MAX = 33.8, 42.0
+_SCALE = 100000  # ~1.1m steps — finer than what3words' 3m squares
+_LNG_SPAN = int(round((_LNG_MAX - _LNG_MIN) * _SCALE)) + 1
+
+def _nearest_county_abbr(lat: float, lng: float) -> str:
+    best = min(KENYA_COUNTIES, key=lambda c: (c[2] - lat) ** 2 + (c[3] - lng) ** 2)
+    return best[1]
+
+def _to_base36(n: int) -> str:
+    if n == 0:
+        digits = "0"
+    else:
+        chars = []
+        while n > 0:
+            n, r = divmod(n, 36)
+            chars.append(_BASE36[r])
+        digits = "".join(reversed(chars))
+    return digits.rjust(_CODE_WIDTH, "0")
+
+def _from_base36(s: str) -> int:
+    n = 0
+    for ch in s.upper():
+        n = n * 36 + _BASE36.index(ch)
+    return n
+
+def latlng_to_kaalay_code(lat: float, lng: float) -> str:
+    abbr = _nearest_county_abbr(lat, lng)
+    clamped_lat = min(max(lat, _LAT_MIN), _LAT_MAX)
+    clamped_lng = min(max(lng, _LNG_MIN), _LNG_MAX)
+    lat_int = int(round((clamped_lat - _LAT_MIN) * _SCALE))
+    lng_int = int(round((clamped_lng - _LNG_MIN) * _SCALE))
+    combined = lat_int * _LNG_SPAN + lng_int
+    return f"{abbr}-{_to_base36(combined)}"
+
+def kaalay_code_to_latlng(code: str) -> tuple[float, float]:
+    try:
+        _, suffix = code.strip().upper().replace("///", "").split("-", 1)
+        combined = _from_base36(suffix)
+        lat_int, lng_int = divmod(combined, _LNG_SPAN)
+        lat = lat_int / _SCALE + _LAT_MIN
+        lng = lng_int / _SCALE + _LNG_MIN
+        return lat, lng
+    except (ValueError, IndexError):
+        return -1.2921, 36.8219  # Nairobi fallback for unrecognized input
+
+def _lookup_real_what3words(lat: float, lng: float) -> None:
+    """Fires the real what3words API and stashes the result server-side
+    (Redis, internal-only key) for our own reference — never returned to
+    the frontend. Customers only ever see the Kaalay code. Best-effort:
+    any failure here is swallowed, it must never affect the customer-facing
+    response."""
+    if not settings.W3W_API_KEY or settings.W3W_API_KEY == "Z5Z6G74L":
+        return
+    try:
+        from ..core.redis import get_redis
+        import json
+        response = requests.get(
+            f"https://api.what3words.com/v3/convert-to-3wa?coordinates={lat},{lng}&key={settings.W3W_API_KEY}",
+            timeout=5,
+        )
+        res = response.json()
+        real_words = res.get("words")
+        if real_words:
+            r = get_redis()
+            r.setex(f"internal:w3w:{lat:.5f}:{lng:.5f}", 86400, json.dumps({"words": real_words}))
+    except Exception as e:
+        print(f"Internal what3words lookup error (non-fatal): {e}")
 
 @router.get("/convert-to-words")
 async def convert_to_words(lat: float, lng: float):
     from ..core.redis import get_redis
     import json
-    
+
     lat5 = f"{lat:.5f}"
     lng5 = f"{lng:.5f}"
-    redis_key = f"w3w:words:{lat5}:{lng5}"
-    
+    redis_key = f"kcode:words:{lat5}:{lng5}"
+
     r = get_redis()
     try:
         cached = r.get(redis_key)
@@ -42,57 +134,30 @@ async def convert_to_words(lat: float, lng: float):
             return success_response(json.loads(cached))
     except Exception as re:
         print(f"Redis cache read error: {re}")
-        
-    if not settings.W3W_API_KEY or settings.W3W_API_KEY == "Z5Z6G74L":
-        success_res = {"words": latlng_to_mock_words(lat, lng), "lat": lat, "lng": lng}
-        try:
-            r.setex(redis_key, 86400, json.dumps(success_res))
-            clean_words = success_res["words"].strip().replace("///", "").lower()
-            reverse_res = {
-                "latitude": lat,
-                "longitude": lng,
-                "what3words": success_res["words"]
-            }
-            r.setex(f"w3w:coords:{clean_words}", 86400, json.dumps(reverse_res))
-        except Exception as se:
-            print(f"Redis cache write error: {se}")
-        return success_response(success_res)
-        
-    url = f"https://api.what3words.com/v3/convert-to-3wa?coordinates={lat},{lng}&key={settings.W3W_API_KEY}"
+
+    # Real what3words lookup happens server-side only, for our own internal
+    # reference — the customer-facing "words" field below is always our own
+    # Kaalay code, never the real what3words address.
+    _lookup_real_what3words(lat, lng)
+
+    code = latlng_to_kaalay_code(lat, lng)
+    success_res = {"words": code, "lat": lat, "lng": lng}
     try:
-        response = requests.get(url)
-        res = response.json()
-        if "words" in res:
-            success_res = {"words": res["words"], "lat": lat, "lng": lng}
-            try:
-                # Save both forward and reverse mapping in cache for 24 hours
-                r.setex(redis_key, 86400, json.dumps(success_res))
-                clean_words = res["words"].strip().replace("///", "").lower()
-                reverse_res = {
-                    "latitude": lat,
-                    "longitude": lng,
-                    "what3words": res["words"]
-                }
-                r.setex(f"w3w:coords:{clean_words}", 86400, json.dumps(reverse_res))
-            except Exception as se:
-                print(f"Redis cache write error: {se}")
-            return success_response(success_res)
-        else:
-            print(f"W3W Error Response: {res}")
-            # Fallback to mock format if quota exceeded or key invalid
-            return success_response({"words": latlng_to_mock_words(lat, lng), "lat": lat, "lng": lng, "warning": "quota_exceeded"})
-    except Exception as e:
-        print(f"W3W Connection Error: {e}")
-        return error_response("CONNECTION_ERROR", str(e), 500)
+        r.setex(redis_key, 86400, json.dumps(success_res))
+        reverse_res = {"latitude": lat, "longitude": lng, "what3words": code}
+        r.setex(f"kcode:coords:{code.lower()}", 86400, json.dumps(reverse_res))
+    except Exception as se:
+        print(f"Redis cache write error: {se}")
+    return success_response(success_res)
 
 @router.get("/convert-to-coordinates")
 async def convert_to_coordinates(words: str):
     from ..core.redis import get_redis
     import json
-    
-    clean_words = words.strip().replace("///", "").lower()
-    redis_key = f"w3w:coords:{clean_words}"
-    
+
+    clean = words.strip().replace("///", "")
+    redis_key = f"kcode:coords:{clean.lower()}"
+
     r = get_redis()
     try:
         cached = r.get(redis_key)
@@ -100,59 +165,22 @@ async def convert_to_coordinates(words: str):
             return success_response(json.loads(cached))
     except Exception as re:
         print(f"Redis cache read error: {re}")
-        
-    if not settings.W3W_API_KEY or settings.W3W_API_KEY == "Z5Z6G74L" or words.endswith(".kaalay"):
-        lat, lng = mock_words_to_latlng(words)
-        success_res = {
-            "latitude": lat,
-            "longitude": lng,
-            "what3words": words
-        }
-        try:
-            r.setex(redis_key, 86400, json.dumps(success_res))
-            lat5 = f"{lat:.5f}"
-            lng5 = f"{lng:.5f}"
-            forward_res = {"words": words, "lat": lat, "lng": lng}
-            r.setex(f"w3w:words:{lat5}:{lng5}", 86400, json.dumps(forward_res))
-        except Exception as se:
-            print(f"Redis cache write error: {se}")
-        return success_response(success_res)
-        
-    url = f"https://api.what3words.com/v3/convert-to-coordinates?words={words}&key={settings.W3W_API_KEY}"
+
+    # Decodes our own "ABC-XXXXXXXX" format. Anything unrecognized (an old
+    # real what3words address from before this change, a stray paste, etc.)
+    # degrades gracefully to a Nairobi default rather than erroring.
+    lat, lng = kaalay_code_to_latlng(clean)
+
+    success_res = {"latitude": lat, "longitude": lng, "what3words": clean}
     try:
-        response = requests.get(url)
-        res = response.json()
-        if "coordinates" in res:
-            lat = res["coordinates"]["lat"]
-            lng = res["coordinates"]["lng"]
-            success_res = {
-                "latitude": lat,
-                "longitude": lng,
-                "what3words": res["words"]
-            }
-            try:
-                # Save both reverse and forward mapping in cache for 24 hours
-                r.setex(redis_key, 86400, json.dumps(success_res))
-                lat5 = f"{lat:.5f}"
-                lng5 = f"{lng:.5f}"
-                forward_res = {"words": res["words"], "lat": lat, "lng": lng}
-                r.setex(f"w3w:words:{lat5}:{lng5}", 86400, json.dumps(forward_res))
-            except Exception as se:
-                print(f"Redis cache write error: {se}")
-            return success_response(success_res)
-        else:
-            print(f"W3W Error Response: {res}")
-            # Fallback if invalid mock words or error
-            lat, lng = mock_words_to_latlng(words)
-            return success_response({
-                "latitude": lat,
-                "longitude": lng,
-                "what3words": words,
-                "warning": "fallback_triggered"
-            })
-    except Exception as e:
-        print(f"W3W Connection Error: {e}")
-        return error_response("CONNECTION_ERROR", str(e), 500)
+        r.setex(redis_key, 86400, json.dumps(success_res))
+        lat5 = f"{lat:.5f}"
+        lng5 = f"{lng:.5f}"
+        forward_res = {"words": clean, "lat": lat, "lng": lng}
+        r.setex(f"kcode:words:{lat5}:{lng5}", 86400, json.dumps(forward_res))
+    except Exception as se:
+        print(f"Redis cache write error: {se}")
+    return success_response(success_res)
 
 @router.get("/distance")
 async def get_distance(fromLat: float, fromLng: float, toLat: float, toLng: float):

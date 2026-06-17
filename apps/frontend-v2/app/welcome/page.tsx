@@ -48,7 +48,7 @@ export default function WelcomePage() {
         </div>
 
         <p className="max-w-xs text-base font-medium text-muted-foreground">
-          Precision location, navigation, and emergency help — built for Africa, powered by what3words.
+          Precision location, navigation, and emergency help — built for Africa.
         </p>
       </motion.div>
 

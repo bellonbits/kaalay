@@ -76,7 +76,7 @@ export default function RideRequestPage() {
       try {
         const res = await convertToWords(lat, lng);
         lastResolvedRef.current = key;
-        setPickDraft({ lat, lng, label: `///${res.words}`, words: res.words });
+        setPickDraft({ lat, lng, label: res.words, words: res.words });
       } catch {
         setPickDraft({ lat, lng, label: `${lat.toFixed(5)}, ${lng.toFixed(5)}` });
       } finally {

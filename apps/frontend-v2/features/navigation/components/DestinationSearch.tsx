@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Search, MapPin, Hash, X, Clock, Mic, UtensilsCrossed, ShoppingCart, Cross, Building2 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
-import { autosuggest, convertToCoordinates, getPlace, searchPlaces } from "@/lib/api";
+import { convertToCoordinates, getPlace, searchPlaces } from "@/lib/api";
 import { addRecent, getRecents, type RecentEntry } from "../recents";
 import { useVoiceSearch } from "../useVoiceSearch";
 import { newPlacesSession, searchGooglePlaces, getGooglePlaceDetails } from "../googlePlaces";
@@ -24,7 +24,7 @@ function categoryBadge(tags: string[] = []) {
 
 interface Result {
   key: string;
-  icon: "w3w" | "place" | "coords" | "google";
+  icon: "code" | "place" | "coords" | "google";
   title: string;
   subtitle?: string;
   placeId?: string;
@@ -33,6 +33,9 @@ interface Result {
 }
 
 const COORD_PATTERN = /^\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/;
+// Kaalay's own location code, e.g. "NRB-4K9PX2W8" — county abbreviation,
+// dash, alphanumeric suffix. Not a what3words address.
+const KAALAY_CODE_PATTERN = /^[A-Za-z]{2,4}-[0-9A-Za-z]+$/;
 
 interface Props {
   open: boolean;
@@ -84,41 +87,26 @@ export default function DestinationSearch({ open, onClose, onSelect, onPlaceSele
     }
 
     setLoading(true);
+    const isCodeShaped = KAALAY_CODE_PATTERN.test(q);
     const t = setTimeout(async () => {
       try {
-        const isW3wShaped = q.replace(/^\/\/\//, "").split(".").length === 3;
-        const [w3wRes, placesRes, googleRes] = await Promise.allSettled([
-          isW3wShaped ? convertToCoordinates(q.replace(/^\/\/\//, "")) : autosuggest(q, near?.lat, near?.lng),
+        const [codeRes, placesRes, googleRes] = await Promise.allSettled([
+          isCodeShaped ? convertToCoordinates(q) : Promise.resolve(null),
           searchPlaces(q),
           searchGooglePlaces(q, near),
         ]);
 
         const next: Result[] = [];
 
-        if (w3wRes.status === "fulfilled") {
-          if (isW3wShaped && "latitude" in w3wRes.value) {
-            const w = w3wRes.value;
-            next.push({
-              key: `w3w-${w.what3words}`,
-              icon: "w3w",
-              title: `///${w.what3words}`,
-              subtitle: "what3words address",
-              resolve: async () => ({ lat: w.latitude, lng: w.longitude, label: `///${w.what3words}`, words: w.what3words }),
-            });
-          } else if ("suggestions" in w3wRes.value) {
-            for (const s of w3wRes.value.suggestions) {
-              next.push({
-                key: `w3w-${s.words}`,
-                icon: "w3w",
-                title: `///${s.words}`,
-                subtitle: s.nearestPlace,
-                resolve: async () => {
-                  const coords = await convertToCoordinates(s.words);
-                  return { lat: coords.latitude, lng: coords.longitude, label: `///${s.words}`, words: s.words };
-                },
-              });
-            }
-          }
+        if (codeRes.status === "fulfilled" && codeRes.value) {
+          const c = codeRes.value;
+          next.push({
+            key: `code-${c.what3words}`,
+            icon: "code",
+            title: c.what3words,
+            subtitle: "Kaalay location code",
+            resolve: async () => ({ lat: c.latitude, lng: c.longitude, label: c.what3words, words: c.what3words }),
+          });
         }
 
         if (placesRes.status === "fulfilled") {
@@ -127,7 +115,7 @@ export default function DestinationSearch({ open, onClose, onSelect, onPlaceSele
               key: `place-${p.id}`,
               icon: "place",
               title: p.name,
-              subtitle: `///${p.words}`,
+              subtitle: p.words,
               placeId: p.id,
               resolve: async () => ({ lat: p.latitude, lng: p.longitude, label: p.name, words: p.words }),
             });
@@ -224,7 +212,7 @@ export default function DestinationSearch({ open, onClose, onSelect, onPlaceSele
           </div>
           {!query && (
             <p className="mt-2 px-1 text-xs font-medium text-muted-foreground">
-              Try a what3words address, a place name, or coordinates.
+              Try a Kaalay location code, a place name, or coordinates.
             </p>
           )}
         </div>
@@ -270,7 +258,7 @@ export default function DestinationSearch({ open, onClose, onSelect, onPlaceSele
                 className="flex w-full items-center gap-4 rounded-2xl p-3 text-left active:bg-secondary transition-colors"
               >
                 <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-secondary">
-                  {r.icon === "w3w" && <Hash className="h-5 w-5 text-primary" />}
+                  {r.icon === "code" && <Hash className="h-5 w-5 text-primary" />}
                   {r.icon === "place" && <MapPin className="h-5 w-5 text-foreground" />}
                   {r.icon === "coords" && <MapPin className="h-5 w-5 text-muted-foreground" />}
                   {r.icon === "google" && <Building2 className="h-5 w-5 text-foreground" />}

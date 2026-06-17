@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Kaalay — Find People. Find Places. Find Help.",
-  description: "Precision location, navigation, and emergency response for Africa, powered by what3words.",
+  description: "Precision location, navigation, and emergency response for Africa.",
 };
 
 export const viewport: Viewport = {

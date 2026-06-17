@@ -65,10 +65,7 @@ export default function SavedLocationsPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-bold text-foreground">{p.name}</p>
-                  <p className="truncate text-xs font-semibold text-muted-foreground">
-                    {"///"}
-                    {p.words}
-                  </p>
+                  <p className="truncate text-xs font-semibold text-muted-foreground">{p.words}</p>
                 </div>
               </button>
             ))}

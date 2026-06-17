@@ -49,14 +49,7 @@ export default function PlaceDetailSheet({ place, open, onClose, onDirections, o
           <div className="mt-2 flex items-center gap-2">
             <MapPin className="h-4 w-4 flex-shrink-0 text-primary" />
             <span className="truncate text-sm font-bold text-primary">
-              {place.source === "kaalay" ? (
-                <>
-                  {"///"}
-                  {place.words}
-                </>
-              ) : (
-                place.address
-              )}
+              {place.source === "kaalay" ? place.words : place.address}
             </span>
           </div>
 
