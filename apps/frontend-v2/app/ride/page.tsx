@@ -151,7 +151,7 @@ export default function RideRequestPage() {
       </button>
 
       {pickMode ? (
-        <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] z-20 rounded-3xl bg-card p-5 shadow-2xl">
+        <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] z-20 rounded-3xl bg-card p-5 shadow-2xl">
           <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
             {pickMode === "pickup" ? "Pickup location" : "Destination"}
           </p>
@@ -167,7 +167,7 @@ export default function RideRequestPage() {
           </button>
         </div>
       ) : (
-        <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] z-20 flex flex-col gap-4">
+        <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] z-20 flex flex-col gap-4">
           <div className="rounded-3xl bg-card p-4 shadow-2xl">
             <LocationRow
               icon={MapPin}

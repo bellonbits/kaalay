@@ -114,7 +114,7 @@ export default function DriverDashboardPage() {
         </button>
       </div>
 
-      <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] z-20 flex flex-col gap-3">
+      <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] z-20 flex flex-col gap-3">
         {offers.map((offer) => (
           <div key={offer.rideId} className="rounded-3xl bg-card p-5 shadow-2xl">
             <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">New ride request</p>

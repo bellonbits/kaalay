@@ -9,6 +9,7 @@ import { useRequireAuth } from "@/features/auth/useRequireAuth";
 import { useLocationStore } from "@/features/location/store";
 import { useRideSocket } from "@/features/ride/useRideSocket";
 import { useRideLocationPush } from "@/features/ride/useRideLocationPush";
+import { useNavigationStore } from "@/features/navigation/store";
 import { computeRoute, type RouteResult } from "@/features/navigation/routeService";
 import { haversineMeters } from "@/features/location/geo";
 import { useVoiceGuidance, type VoiceLanguage } from "@/features/navigation/useVoiceGuidance";
@@ -26,6 +27,15 @@ export default function DriverActiveTripPage() {
 
   const position = useLocationStore((s) => s.displayPosition);
   const { statusUpdate } = useRideSocket(rideId);
+  const setImmersive = useNavigationStore((s) => s.setImmersive);
+
+  // Hide BottomNav for the whole active trip — same as /navigate/route while
+  // turn-by-turn is running. NavigationHud's bottom bar sits flush at the
+  // screen bottom and would otherwise be covered by the nav.
+  useEffect(() => {
+    setImmersive(true);
+    return () => setImmersive(false);
+  }, [setImmersive]);
 
   const [ride, setRide] = useState<Ride | null>(null);
   const [route, setRoute] = useState<RouteResult | null>(null);
@@ -167,7 +177,9 @@ export default function DriverActiveTripPage() {
         />
       )}
 
-      <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] z-30">
+      {/* Stacked above NavigationHud's own bottom stat bar (flush at the
+          screen bottom) so the two floating cards don't overlap. */}
+      <div className={`absolute inset-x-4 z-30 ${live ? "bottom-[calc(env(safe-area-inset-bottom,0px)+13rem)]" : "bottom-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]"}`}>
         <div className="rounded-3xl bg-card p-5 shadow-2xl">
           <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
             {preArrival ? "Picking up" : "Dropping off"}

@@ -154,7 +154,7 @@ export default function RideTrackingPage() {
         </button>
       )}
 
-      <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] z-20 rounded-3xl bg-card p-5 shadow-2xl">
+      <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] z-20 rounded-3xl bg-card p-5 shadow-2xl">
         <p className="text-lg font-extrabold text-foreground">{STATUS_COPY[ride.status]}</p>
 
         {driverLocation && (ride.status === "accepted" || ride.status === "arriving" || ride.status === "started") && (
