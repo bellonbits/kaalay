@@ -76,7 +76,7 @@ export default function LocationCard({ point, accuracy, resolving, onNavigate }:
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-4 gap-2">
+        <div className="mt-4 grid grid-cols-4 gap-2.5">
           <ActionButton icon={Copy} label="Copy" onClick={handleCopy} disabled={!point} />
           <ActionButton icon={Share2} label="Share" onClick={handleShare} disabled={!point} />
           <ActionButton icon={Bookmark} label="Save" onClick={() => setSaveOpen(true)} disabled={!point?.words} />
@@ -132,11 +132,11 @@ function ActionButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`flex h-16 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-bold transition-transform active:scale-95 disabled:opacity-40 ${
+      className={`flex flex-col items-center justify-center gap-1 rounded-xl py-2.5 text-[10px] font-bold transition-transform active:scale-95 disabled:opacity-40 ${
         primary ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
       }`}
     >
-      <Icon className="h-5 w-5" />
+      <Icon className="h-4 w-4" />
       {label}
     </button>
   );
