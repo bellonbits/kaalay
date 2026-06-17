@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .core.config import settings
-from .core.database import engine, Base
+from .core.database import engine, Base, ensure_columns
 from .routers import auth, rides, places, notifications, location, drivers, ws, admin, emergency
 from .core.sio import sio_app
 import asyncio
@@ -15,6 +15,7 @@ from .services.assignment import start_driver_assignment_worker
 for _attempt in range(30):
     try:
         Base.metadata.create_all(bind=engine)
+        ensure_columns()
         print("✅ Database connected, tables ensured", flush=True)
         break
     except OperationalError as exc:
