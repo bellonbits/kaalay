@@ -12,6 +12,7 @@ import {
   TriangleAlert,
   Car,
   MessageCircle,
+  ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import MapBase from "@/components/shared/MapBase";
@@ -217,6 +218,16 @@ export default function NavigatePage() {
         style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 15.5rem)" }}
       >
         <MessageCircle className="h-5 w-5 text-white" />
+      </button>
+
+      {/* SOS — one tap from any map screen, not just buried in Profile */}
+      <button
+        onClick={() => router.push("/sos")}
+        aria-label="SOS"
+        className="absolute left-4 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-emergency shadow-lg active:scale-95 transition-transform"
+        style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 19rem)" }}
+      >
+        <ShieldAlert className="h-5 w-5 text-emergency-foreground" />
       </button>
 
       {/* Bottom sheet: quick actions */}

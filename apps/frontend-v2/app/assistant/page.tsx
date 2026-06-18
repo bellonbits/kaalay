@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Bot, Send, Mic, Navigation as NavIcon, MapPin } from "lucide-react";
+import MapBase from "@/components/shared/MapBase";
 import { useRequireAuth } from "@/features/auth/useRequireAuth";
 import { useLocationStore } from "@/features/location/store";
 import { useNavigationStore } from "@/features/navigation/store";
@@ -114,24 +115,41 @@ export default function NavigationAssistantPage() {
           )}
 
           {resolvedDestination && (
-            <div className="ml-10 rounded-2xl bg-card p-4 shadow-lg ring-1 ring-foreground/10">
-              <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-primary/10">
-                  <MapPin className="h-5 w-5 text-primary" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-extrabold text-foreground">{resolvedDestination.name}</p>
-                  <p className="text-[11px] font-semibold text-muted-foreground">
-                    {resolvedDestination.source === "kaalay" ? "Community-mapped" : "Mapped via Google"}
-                  </p>
-                </div>
+            <div className="ml-10 overflow-hidden rounded-2xl bg-card shadow-lg ring-1 ring-foreground/10">
+              <div className="h-32 w-full">
+                <MapBase
+                  markers={[
+                    {
+                      id: "resolved",
+                      lat: resolvedDestination.lat,
+                      lng: resolvedDestination.lng,
+                      label: resolvedDestination.name,
+                      color: "#DC2626",
+                    },
+                  ]}
+                  initialCenter={{ lat: resolvedDestination.lat, lng: resolvedDestination.lng }}
+                  initialZoom={15}
+                />
               </div>
-              <button
-                onClick={handleNavigate}
-                className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-bold text-primary-foreground active:scale-95 transition-transform"
-              >
-                <NavIcon className="h-4 w-4" /> Navigate
-              </button>
+              <div className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-primary/10">
+                    <MapPin className="h-5 w-5 text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-extrabold text-foreground">{resolvedDestination.name}</p>
+                    <p className="text-[11px] font-semibold text-muted-foreground">
+                      {resolvedDestination.source === "kaalay" ? "Community-mapped" : "Mapped via Google"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleNavigate}
+                  className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-bold text-primary-foreground active:scale-95 transition-transform"
+                >
+                  <NavIcon className="h-4 w-4" /> Navigate
+                </button>
+              </div>
             </div>
           )}
         </div>

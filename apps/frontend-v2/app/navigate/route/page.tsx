@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Footprints, Bike, Car, Compass, LocateFixed, Share2, MapPin, TriangleAlert, X } from "lucide-react";
+import { ArrowLeft, Check, Footprints, Bike, Car, Compass, LocateFixed, Share2, MapPin, TriangleAlert, X, ShieldAlert } from "lucide-react";
 import MapBase from "@/components/shared/MapBase";
 import NavigationHud from "@/features/navigation/components/NavigationHud";
 import DestinationSearch from "@/features/navigation/components/DestinationSearch";
@@ -285,6 +285,16 @@ export default function RoutePage() {
         ]}
         initialCenter={position ?? destination}
       />
+
+      {/* SOS — left-aligned and clear of the top turn-by-turn pill so it
+          never collides with NavigationHud's full-width bar. */}
+      <button
+        onClick={() => router.push("/sos")}
+        aria-label="SOS"
+        className="absolute left-4 top-[calc(env(safe-area-inset-top,0px)+6.5rem)] z-20 flex h-12 w-12 items-center justify-center rounded-full bg-emergency shadow-lg active:scale-95 transition-transform"
+      >
+        <ShieldAlert className="h-5 w-5 text-emergency-foreground" />
+      </button>
 
       {phase === "navigating" && manualPan && (
         <button

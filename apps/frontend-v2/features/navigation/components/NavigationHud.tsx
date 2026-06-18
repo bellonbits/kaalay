@@ -88,20 +88,20 @@ export default function NavigationHud(props: Props) {
       {/* Bottom HUD — distance, ETA, speed, cancel */}
       <div className="absolute bottom-0 left-0 right-0 z-30 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]">
         <div className="rounded-3xl bg-card p-5 shadow-xl">
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div>
-              <p className="text-xl font-extrabold text-foreground">{formatDistance(props.remainingDistanceMeters)}</p>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Remaining</p>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-extrabold text-foreground">{formatDistance(props.remainingDistanceMeters)}</p>
+              <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Remaining</p>
             </div>
-            <div>
-              <p className="text-xl font-extrabold text-foreground">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-extrabold text-foreground">
                 {props.mode === "road" ? formatDuration(props.remainingDurationSeconds) : "—"}
               </p>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">ETA</p>
+              <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">ETA</p>
             </div>
-            <div>
-              <p className="text-xl font-extrabold text-foreground">{speedKmh !== null ? `${Math.round(speedKmh)} km/h` : "—"}</p>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Speed</p>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-extrabold text-foreground">{speedKmh !== null ? `${Math.round(speedKmh)} km/h` : "—"}</p>
+              <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Speed</p>
             </div>
           </div>
           {props.mode === "road" && (
