@@ -12,3 +12,4 @@ python-multipart==0.0.9
 alembic==1.13.1
 python-socketio[asyncio]==5.11.2
 async-timeout==4.0.3
+anthropic==0.109.2

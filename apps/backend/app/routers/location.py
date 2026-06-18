@@ -182,6 +182,40 @@ async def convert_to_coordinates(words: str):
         print(f"Redis cache write error: {se}")
     return success_response(success_res)
 
+@router.get("/safety-summary")
+async def get_safety_summary(lat: float, lng: float):
+    """Coarse, honest safety signal for the home screen — bucketed from real
+    open-incident density nearby, not a fabricated risk score. Public (no
+    auth) since it's just a read of aggregate counts, no incident detail."""
+    from ..core.database import SessionLocal
+    from ..models.all import Incident, IncidentStatus
+    from datetime import datetime
+
+    deg_radius = 3 / 111  # ~3km
+    db = SessionLocal()
+    try:
+        nearby_open = db.query(Incident).filter(
+            Incident.status.in_([IncidentStatus.OPEN, IncidentStatus.DISPATCHED]),
+            Incident.lat.between(lat - deg_radius, lat + deg_radius),
+            Incident.lng.between(lng - deg_radius, lng + deg_radius),
+        ).count()
+    finally:
+        db.close()
+
+    if nearby_open == 0:
+        tier = "low"
+    elif nearby_open <= 2:
+        tier = "moderate"
+    else:
+        tier = "elevated"
+
+    hour = datetime.now().hour
+    return success_response({
+        "riskTier": tier,
+        "openIncidentsNearby": nearby_open,
+        "isDaytime": 6 <= hour < 19,
+    })
+
 @router.get("/distance")
 async def get_distance(fromLat: float, fromLng: float, toLat: float, toLng: float):
     """Calculate real distance and fare using Haversine formula"""

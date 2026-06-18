@@ -2,7 +2,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Loader2, Phone, User as UserIcon, Mail, Car, ShieldAlert, Motorbike, Package } from "lucide-react";
+import { ArrowLeft, Loader2, Phone, User as UserIcon, Mail, Car, ShieldAlert, Motorbike, Package, Compass } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -112,7 +112,10 @@ function AuthFlow() {
               exit={{ opacity: 0, x: -16 }}
               transition={{ duration: 0.25 }}
             >
-              <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
+              <div className="flex h-16 w-16 items-center justify-center rounded-[1.5rem] bg-primary/10">
+                <Compass className="h-8 w-8 text-primary" strokeWidth={1.75} />
+              </div>
+              <h1 className="mt-6 text-3xl font-extrabold tracking-tight text-foreground">
                 {intent === "login" ? "Welcome back" : "Let's get started"}
               </h1>
               <p className="mt-2 text-base font-medium text-muted-foreground">
@@ -158,7 +161,10 @@ function AuthFlow() {
               exit={{ opacity: 0, x: -16 }}
               transition={{ duration: 0.25 }}
             >
-              <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Create your account</h1>
+              <div className="flex h-16 w-16 items-center justify-center rounded-[1.5rem] bg-primary/10">
+                <UserIcon className="h-8 w-8 text-primary" strokeWidth={1.75} />
+              </div>
+              <h1 className="mt-6 text-3xl font-extrabold tracking-tight text-foreground">Create your account</h1>
               <p className="mt-2 text-base font-medium text-muted-foreground">Just a couple details and you&apos;re in.</p>
 
               <div className="mt-6 space-y-2">
@@ -168,7 +174,7 @@ function AuthFlow() {
                     <button
                       key={id}
                       onClick={() => setAccountType(id)}
-                      className={`flex h-20 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-center text-[11px] font-bold leading-tight transition-all ${
+                      className={`flex h-20 flex-col items-center justify-center gap-1 rounded-3xl px-1 text-center text-[11px] font-bold leading-tight transition-all ${
                         accountType === id ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
                       }`}
                     >
@@ -221,7 +227,7 @@ function AuthFlow() {
                         <button
                           key={id}
                           onClick={() => setVehicleCategory(id)}
-                          className={`flex h-16 flex-col items-center justify-center gap-1 rounded-2xl text-[10px] font-bold transition-all ${
+                          className={`flex h-16 flex-col items-center justify-center gap-1 rounded-3xl text-[10px] font-bold transition-all ${
                             vehicleCategory === id ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
                           }`}
                         >

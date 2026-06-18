@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .core.config import settings
 from .core.database import engine, Base, ensure_columns
-from .routers import auth, rides, places, notifications, location, drivers, ws, admin, emergency
+from .routers import auth, rides, places, notifications, location, drivers, ws, admin, emergency, ai
 from .core.sio import sio_app
 import asyncio
 import time
@@ -69,6 +69,7 @@ app.include_router(location.router, prefix=V1_PREFIX)
 app.include_router(drivers.router, prefix=V1_PREFIX)
 app.include_router(admin.router, prefix=V1_PREFIX)
 app.include_router(emergency.router, prefix=V1_PREFIX)
+app.include_router(ai.router, prefix=V1_PREFIX)
 app.include_router(ws.router) # WS often doesn't need /api/v1 prefix but can have it. Keeping it clean at root /ws
 
 from fastapi.exceptions import RequestValidationError

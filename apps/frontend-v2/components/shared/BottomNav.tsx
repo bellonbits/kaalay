@@ -34,7 +34,7 @@ const OPERATOR_TABS = [
   { label: "Profile", icon: User, path: "/profile", raised: false },
 ] as const;
 
-const HIDDEN_ON = ["/", "/welcome", "/auth"];
+const HIDDEN_ON = ["/", "/welcome", "/auth", "/onboarding"];
 const LONG_PRESS_MS = 650;
 
 export default function BottomNav() {
@@ -138,11 +138,15 @@ export default function BottomNav() {
                   className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1 active:scale-95 transition-transform"
                   aria-current={active ? "page" : undefined}
                 >
-                  <Icon
-                    className="h-6 w-6"
-                    strokeWidth={active ? 2.4 : 1.8}
-                    color={active ? "var(--primary)" : "var(--muted-foreground)"}
-                  />
+                  <div
+                    className={`flex h-9 w-9 items-center justify-center rounded-2xl transition-colors ${active ? "bg-primary/10" : ""}`}
+                  >
+                    <Icon
+                      className="h-5 w-5"
+                      strokeWidth={active ? 2.4 : 1.8}
+                      color={active ? "var(--primary)" : "var(--muted-foreground)"}
+                    />
+                  </div>
                   <span
                     className="text-[10px] font-bold uppercase tracking-wide"
                     style={{ color: active ? "var(--primary)" : "var(--muted-foreground)" }}

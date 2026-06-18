@@ -57,6 +57,12 @@ export interface DistanceResponse {
   estimate: number;
 }
 
+export interface SafetySummary {
+  riskTier: "low" | "moderate" | "elevated";
+  openIncidentsNearby: number;
+  isDaytime: boolean;
+}
+
 export interface AutosuggestSuggestion {
   words: string;
   nearestPlace: string;
@@ -119,6 +125,24 @@ export interface EmergencyContact {
   phoneNumber: string;
   relationship?: string | null;
   createdAt: string | null;
+}
+
+export interface AiChatMessage {
+  role: "user" | "assistant";
+  text: string;
+}
+
+export interface AiSuggestedRide {
+  category: RideCategory;
+  fare: number;
+  etaMinutes: number;
+  currency: string;
+  destination: { lat: number; lng: number; label: string };
+}
+
+export interface AiChatResponse {
+  reply: string;
+  suggestedRide: AiSuggestedRide | null;
 }
 
 export type RideStatus = "requested" | "accepted" | "arriving" | "arrived" | "started" | "completed" | "cancelled";

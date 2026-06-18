@@ -5,6 +5,8 @@ import type {
   AdminIncidentStats,
   AdminTrip,
   AdminUser,
+  AiChatMessage,
+  AiChatResponse,
   AuthResponse,
   AutosuggestSuggestion,
   DistanceResponse,
@@ -21,6 +23,7 @@ import type {
   Ride,
   RideCategory,
   RideStatus,
+  SafetySummary,
   ShareSession,
   SosResponse,
   User,
@@ -110,6 +113,9 @@ export const convertToCoordinates = (words: string) =>
 
 export const getDistance = (fromLat: number, fromLng: number, toLat: number, toLng: number) =>
   api.get<DistanceResponse>(`/location/distance`, { params: { fromLat, fromLng, toLat, toLng } }).then((r) => r.data);
+
+export const getSafetySummary = (lat: number, lng: number) =>
+  api.get<SafetySummary>(`/location/safety-summary`, { params: { lat, lng } }).then((r) => r.data);
 
 export const autosuggest = (input: string, lat?: number, lng?: number) =>
   api
@@ -218,6 +224,9 @@ export const createRide = (data: {
   distance?: number;
   duration?: number;
 }) => api.post<Ride>("/rides", data).then((r) => r.data);
+
+export const sendAiChatMessage = (data: { message: string; history: AiChatMessage[]; lat: number; lng: number }) =>
+  api.post<AiChatResponse>("/ai/chat", data).then((r) => r.data);
 
 export const getRide = (id: string) => api.get<Ride>(`/rides/${id}`).then((r) => r.data);
 

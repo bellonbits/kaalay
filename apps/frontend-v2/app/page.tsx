@@ -12,7 +12,12 @@ export default function SplashPage() {
   useEffect(() => {
     if (!hydrated) return;
     const t = setTimeout(() => {
-      router.replace(user ? homeRouteForRole(user.role) : "/welcome");
+      if (user) {
+        router.replace(homeRouteForRole(user.role));
+        return;
+      }
+      const onboarded = typeof window !== "undefined" && localStorage.getItem("kaalay_onboarded");
+      router.replace(onboarded ? "/welcome" : "/onboarding");
     }, 900);
     return () => clearTimeout(t);
   }, [hydrated, user, router]);

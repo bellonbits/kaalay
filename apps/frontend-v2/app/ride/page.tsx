@@ -1,23 +1,21 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, MapPin, Search, Navigation as NavIcon, Car, Motorbike, Package, X } from "lucide-react";
+import { ArrowLeft, MapPin, Navigation as NavIcon, Plus, MapPinned, X } from "lucide-react";
 import { toast } from "sonner";
 import MapBase from "@/components/shared/MapBase";
 import DestinationSearch from "@/features/navigation/components/DestinationSearch";
+import VehicleIllustration from "@/components/shared/VehicleIllustration";
 import { useRequireAuth } from "@/features/auth/useRequireAuth";
 import { useLocationStore } from "@/features/location/store";
 import { convertToWords, createRide, getFareEstimates } from "@/lib/api";
 import { haversineKm } from "@/features/location/geo";
+import { computeRoute, type RouteResult } from "@/features/navigation/routeService";
+import { RIDE_CATEGORIES, RIDE_CATEGORY_INFO } from "@/features/ride/rideCategories";
 import type { LocationPoint } from "@/features/navigation/types";
 import type { FareEstimate, RideCategory } from "@/types/api";
 
-const CATEGORIES: { id: RideCategory; label: string; icon: typeof Car }[] = [
-  { id: "economy", label: "Economy", icon: Car },
-  { id: "motorcycle", label: "Motorcycle", icon: Motorbike },
-  { id: "xl", label: "XL", icon: Car },
-  { id: "delivery", label: "Delivery", icon: Package },
-];
+const GOOGLE_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
 type LocationField = "pickup" | "destination";
 
@@ -36,6 +34,7 @@ export default function RideRequestPage() {
   const [searchField, setSearchField] = useState<LocationField | null>(null);
   const [category, setCategory] = useState<RideCategory>("economy");
   const [estimates, setEstimates] = useState<FareEstimate[] | null>(null);
+  const [route, setRoute] = useState<RouteResult | null>(null);
   const [requesting, setRequesting] = useState(false);
 
   const lastResolvedRef = useRef<string | null>(null);
@@ -57,6 +56,15 @@ export default function RideRequestPage() {
     }
     const km = haversineKm(pickup.lat, pickup.lng, destination.lat, destination.lng);
     getFareEstimates(km).then(setEstimates).catch(() => setEstimates(null));
+  }, [pickup, destination]);
+
+  // Route preview once both points are known — replaces the live picking map.
+  useEffect(() => {
+    if (!pickup || !destination) {
+      setRoute(null);
+      return;
+    }
+    computeRoute(pickup, destination, "DRIVING", GOOGLE_KEY).then(setRoute);
   }, [pickup, destination]);
 
   const startPickMode = (field: LocationField) => {
@@ -121,6 +129,7 @@ export default function RideRequestPage() {
   if (!ready) return null;
 
   const selectedEstimate = estimates?.find((e) => e.category === category);
+  const showRoute = !pickMode && pickup && destination;
 
   return (
     <div className="relative h-full w-full">
@@ -129,6 +138,7 @@ export default function RideRequestPage() {
         me={position}
         pickingMode={!!pickMode}
         onCenterChange={pickMode ? handleCenterChange : undefined}
+        routePoints={showRoute ? route?.polylinePoints ?? [] : []}
         initialCenter={pickMode ? (pickDraft ?? position ?? undefined) : (pickup ?? position ?? undefined)}
         markers={
           pickMode
@@ -142,13 +152,22 @@ export default function RideRequestPage() {
         }
       />
 
-      <button
-        onClick={() => (pickMode ? setPickMode(null) : router.back())}
-        className="absolute left-4 top-[calc(env(safe-area-inset-top,0px)+1rem)] z-20 flex h-12 w-12 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform"
-        aria-label="Back"
-      >
-        {pickMode ? <X className="h-5 w-5 text-foreground" /> : <ArrowLeft className="h-5 w-5 text-foreground" />}
-      </button>
+      {/* Header */}
+      <div className="absolute inset-x-4 top-[calc(env(safe-area-inset-top,0px)+1rem)] z-20 flex items-center justify-between">
+        <button
+          onClick={() => (pickMode ? setPickMode(null) : router.back())}
+          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform"
+          aria-label="Back"
+        >
+          {pickMode ? <X className="h-5 w-5 text-foreground" /> : <ArrowLeft className="h-5 w-5 text-foreground" />}
+        </button>
+        {!pickMode && (
+          <div className="rounded-2xl bg-card px-4 py-2 text-center shadow-lg">
+            <p className="text-sm font-extrabold text-foreground">Book Safe Ride</p>
+            <p className="text-[10px] font-semibold text-muted-foreground">Verified drivers only</p>
+          </div>
+        )}
+      </div>
 
       {pickMode ? (
         <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] z-20 rounded-3xl bg-card p-5 shadow-2xl">
@@ -167,45 +186,62 @@ export default function RideRequestPage() {
           </button>
         </div>
       ) : (
-        <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] z-20 flex flex-col gap-4">
+        <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] z-20 flex max-h-[70vh] flex-col gap-3 overflow-y-auto">
           <div className="rounded-3xl bg-card p-4 shadow-2xl">
             <LocationRow
               icon={MapPin}
               iconColor="text-primary"
-              label="Pickup"
+              label="From"
               value={pickup?.label ?? "Locating…"}
               onTap={() => startPickMode("pickup")}
-              onSearch={() => setSearchField("pickup")}
+              onAdd={() => setSearchField("pickup")}
             />
             <div className="my-2 ml-5 h-4 w-px bg-border" />
             <LocationRow
               icon={NavIcon}
               iconColor="text-emergency"
-              label="Destination"
+              label="To"
               value={destination?.label ?? "Where to?"}
               onTap={() => startPickMode("destination")}
-              onSearch={() => setSearchField("destination")}
+              onAdd={() => setSearchField("destination")}
             />
           </div>
 
+          <button
+            onClick={() => startPickMode(destination ? "pickup" : "destination")}
+            className="flex h-11 w-fit items-center gap-2 self-center rounded-full bg-card px-4 text-xs font-bold text-foreground shadow-lg active:scale-95 transition-transform"
+          >
+            <MapPinned className="h-4 w-4 text-primary" />
+            Choose on map
+          </button>
+
           {pickup && destination && (
             <div className="rounded-3xl bg-card p-4 shadow-2xl">
-              <div className="grid grid-cols-4 gap-2">
-                {CATEGORIES.map(({ id, label, icon: Icon }) => {
+              <p className="text-sm font-extrabold text-foreground">Choose a ride</p>
+              <div className="mt-3 flex flex-col gap-2">
+                {RIDE_CATEGORIES.map((id) => {
+                  const { label, description } = RIDE_CATEGORY_INFO[id];
                   const est = estimates?.find((e) => e.category === id);
+                  const active = category === id;
                   return (
                     <button
                       key={id}
                       onClick={() => setCategory(id)}
-                      className={`flex h-20 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-bold transition-all ${
-                        category === id ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
+                      className={`flex items-center gap-3 rounded-2xl p-3 text-left transition-all ${
+                        active ? "bg-primary/10 ring-2 ring-primary" : "bg-secondary"
                       }`}
                     >
-                      <Icon className="h-5 w-5" />
-                      {label}
-                      <span className="text-[10px] font-semibold opacity-80">
+                      <VehicleIllustration category={id} className="h-14 w-14" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-extrabold text-foreground">{label}</p>
+                        <p className="truncate text-xs font-medium text-muted-foreground">{description}</p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-muted-foreground">
+                          {est ? `in ${est.eta} min` : "…"}
+                        </p>
+                      </div>
+                      <p className="flex-shrink-0 text-sm font-extrabold text-foreground">
                         {est ? `KES ${Math.round(est.fare)}` : "…"}
-                      </span>
+                      </p>
                     </button>
                   );
                 })}
@@ -216,7 +252,7 @@ export default function RideRequestPage() {
                 disabled={requesting || !selectedEstimate}
                 className="mt-4 flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-xl font-extrabold text-primary-foreground active:scale-95 transition-transform disabled:opacity-40"
               >
-                {requesting ? "Requesting…" : `Request ${CATEGORIES.find((c) => c.id === category)?.label}`}
+                {requesting ? "Requesting…" : `Book Now · KES ${selectedEstimate ? Math.round(selectedEstimate.fare) : "—"}`}
               </button>
             </div>
           )}
@@ -240,14 +276,14 @@ function LocationRow({
   label,
   value,
   onTap,
-  onSearch,
+  onAdd,
 }: {
   icon: typeof MapPin;
   iconColor: string;
   label: string;
   value: string;
   onTap: () => void;
-  onSearch: () => void;
+  onAdd: () => void;
 }) {
   return (
     <div className="flex items-center gap-3">
@@ -257,11 +293,11 @@ function LocationRow({
         <p className="truncate text-sm font-bold text-foreground">{value}</p>
       </button>
       <button
-        onClick={onSearch}
+        onClick={onAdd}
         className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-secondary active:scale-95 transition-transform"
         aria-label={`Search for ${label.toLowerCase()}`}
       >
-        <Search className="h-4 w-4 text-muted-foreground" />
+        <Plus className="h-4 w-4 text-muted-foreground" />
       </button>
     </div>
   );
