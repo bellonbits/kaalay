@@ -90,7 +90,68 @@ export interface Place {
   closeTime?: string | null;
   /** null when there's no hours data to judge by. */
   isOpenNow: boolean | null;
+  visitCount: number;
+  /** null when the place has no reviews yet. */
+  averageRating: number | null;
+  reviewCount: number;
+  createdBy: string | null;
   createdAt: string;
+}
+
+export interface PlaceReview {
+  id: string;
+  placeId: string;
+  userId: string;
+  userName: string | null;
+  rating: number;
+  comment?: string | null;
+  createdAt: string | null;
+}
+
+export interface PlaceNote {
+  id: string;
+  placeId: string;
+  userId: string;
+  userName: string | null;
+  text: string;
+  createdAt: string | null;
+}
+
+export interface Waypoint {
+  lat: number;
+  lng: number;
+}
+
+export interface LocalGuide {
+  id: string;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  createdBy: string;
+  creatorName: string | null;
+  startLat: number;
+  startLng: number;
+  endLat: number;
+  endLng: number;
+  waypoints: Waypoint[];
+  distanceKm: number | null;
+  timesUsed: number;
+  createdAt: string | null;
+}
+
+export type RoadReportType = "blocked" | "flooded" | "construction" | "accident" | "other";
+export type RoadReportStatus = "active" | "resolved";
+
+export interface RoadReport {
+  id: string;
+  reporterId: string | null;
+  type: RoadReportType;
+  lat: number;
+  lng: number;
+  description?: string | null;
+  status: RoadReportStatus;
+  createdAt: string | null;
+  resolvedAt: string | null;
 }
 
 export interface Incident {
@@ -143,6 +204,20 @@ export interface AiSuggestedRide {
 export interface AiChatResponse {
   reply: string;
   suggestedRide: AiSuggestedRide | null;
+}
+
+export interface AiResolvedDestination {
+  source: "kaalay" | "google";
+  id: string | null;
+  name: string;
+  lat: number;
+  lng: number;
+  words: string | null;
+}
+
+export interface AiNavigateChatResponse {
+  reply: string;
+  resolvedDestination: AiResolvedDestination | null;
 }
 
 export type RideStatus = "requested" | "accepted" | "arriving" | "arrived" | "started" | "completed" | "cancelled";

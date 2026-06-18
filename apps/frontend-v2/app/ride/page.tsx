@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, MapPin, Navigation as NavIcon, Plus, MapPinned, X } from "lucide-react";
+import { ArrowLeft, MapPin, Navigation as NavIcon, Plus, MapPinned, X, Bot } from "lucide-react";
 import { toast } from "sonner";
 import MapBase from "@/components/shared/MapBase";
 import DestinationSearch from "@/features/navigation/components/DestinationSearch";
@@ -166,6 +166,15 @@ export default function RideRequestPage() {
             <p className="text-sm font-extrabold text-foreground">Book Safe Ride</p>
             <p className="text-[10px] font-semibold text-muted-foreground">Verified drivers only</p>
           </div>
+        )}
+        {!pickMode && (
+          <button
+            onClick={() => router.push("/ride/ai")}
+            className="flex h-12 w-12 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform"
+            aria-label="Book with AI instead"
+          >
+            <Bot className="h-5 w-5 text-primary" />
+          </button>
         )}
       </div>
 

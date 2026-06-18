@@ -1,6 +1,7 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Navigation as NavigationIcon, MapPin, Bookmark, Star } from "lucide-react";
+import { Navigation as NavigationIcon, MapPin, Bookmark, Star, ChevronRight } from "lucide-react";
 import type { DetailPlace } from "../types";
 
 interface Props {
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export default function PlaceDetailSheet({ place, open, onClose, onDirections, onStart }: Props) {
+  const router = useRouter();
   if (!place) return null;
 
   return (
@@ -73,6 +75,16 @@ export default function PlaceDetailSheet({ place, open, onClose, onDirections, o
                 </span>
               ))}
             </div>
+          )}
+
+          {place.source === "kaalay" && (
+            <button
+              onClick={() => router.push(`/place/${place.id}`)}
+              className="mt-4 flex w-full items-center justify-between rounded-2xl bg-secondary px-4 py-3 text-sm font-bold text-foreground active:scale-[0.98] transition-transform"
+            >
+              View full details — reviews &amp; community notes
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </button>
           )}
 
           <div className="mt-6 flex gap-3">

@@ -1,12 +1,14 @@
-import { Car, Motorbike, Package } from "lucide-react";
+import { Car, Motorbike, Bus, Package } from "lucide-react";
 import type { RideCategory } from "@/types/api";
 
-// Code-generated placeholder art per ride tier — swap for real vehicle
-// photography later without touching any layout that uses this component.
+// Code-generated placeholder art per ride tier — a layered icon-on-a-blob
+// treatment (background shape + icon + grounded shadow) standing in for
+// real vehicle photography/illustration later, without touching any layout
+// that uses this component.
 const ICON: Record<RideCategory, typeof Car> = {
   economy: Car,
   motorcycle: Motorbike,
-  xl: Car,
+  xl: Bus,
   delivery: Package,
 };
 
@@ -21,8 +23,10 @@ export default function VehicleIllustration({ category, className }: { category:
   const Icon = ICON[category];
   const { gradient, iconColor } = STYLE[category];
   return (
-    <div className={`flex flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${gradient} ${className ?? "h-16 w-16"}`}>
-      <Icon className={`h-8 w-8 ${iconColor}`} strokeWidth={1.5} />
+    <div className={`relative flex flex-shrink-0 items-center justify-center ${className ?? "h-16 w-16"}`}>
+      <div className={`absolute inset-0 rounded-[1.25rem] bg-gradient-to-br ${gradient}`} />
+      <Icon className={`relative h-8 w-8 -translate-y-0.5 ${iconColor}`} strokeWidth={1.5} />
+      <div className="absolute bottom-1.5 h-1.5 w-7 rounded-full bg-foreground/10 blur-[1.5px]" />
     </div>
   );
 }

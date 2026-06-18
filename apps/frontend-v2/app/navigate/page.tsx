@@ -1,38 +1,51 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Sparkles, ChevronRight, Search, Mic, Car, Bot } from "lucide-react";
-import SafetyPulse from "@/components/shared/SafetyPulse";
+import {
+  Bell,
+  Search,
+  Mic,
+  LocateFixed,
+  Navigation as NavIcon,
+  Share2,
+  Compass,
+  Bookmark,
+  Route as RouteIcon,
+  TriangleAlert,
+  Car,
+  Bot,
+  Star,
+} from "lucide-react";
+import { toast } from "sonner";
+import MapBase from "@/components/shared/MapBase";
 import DestinationSearch from "@/features/navigation/components/DestinationSearch";
 import PlaceDetailSheet from "@/features/navigation/components/PlaceDetailSheet";
 import { useRequireAuth } from "@/features/auth/useRequireAuth";
 import { useLocationStore } from "@/features/location/store";
 import { useNavigationStore } from "@/features/navigation/store";
-import { useShareStore } from "@/features/share/store";
-import { getSafetySummary, listTrustedContacts } from "@/lib/api";
+import { getNearbyPlaces, getNearbyRoadReports, resolveUploadUrl } from "@/lib/api";
 import { addRecent } from "@/features/navigation/recents";
-import type { LocationPoint, DetailPlace } from "@/features/navigation/types";
-import type { EmergencyContact, SafetySummary } from "@/types/api";
+import { haversineKm } from "@/features/location/geo";
+import { kaalayPlaceToDetail, type LocationPoint, type DetailPlace } from "@/features/navigation/types";
+import type { Place, RoadReport } from "@/types/api";
 
-const TIPS = [
-  "Share your trip with someone you trust before you head out at night.",
-  "Keep your phone charged — SOS needs a live connection to reach help fast.",
-  "Stick to well-lit, busier routes when walking after dark.",
-  "Confirm your driver's plate and photo match before you get in.",
-];
-
-const RISK_COPY: Record<SafetySummary["riskTier"], { label: string; tone: string }> = {
-  low: { label: "Low Risk", tone: "bg-success/10 text-success" },
-  moderate: { label: "Moderate Risk", tone: "bg-warning/10 text-warning" },
-  elevated: { label: "Elevated Risk", tone: "bg-emergency/10 text-emergency" },
+const ROAD_ISSUE_LABEL: Record<RoadReport["type"], string> = {
+  blocked: "Road blocked",
+  flooded: "Flooded",
+  construction: "Construction",
+  accident: "Accident",
+  other: "Road issue",
 };
 
-function greeting() {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  return "Good evening";
-}
+const QUICK_ACTIONS = [
+  { label: "Navigate", icon: NavIcon, kind: "search" as const },
+  { label: "Share Location", icon: Share2, path: "/share" },
+  { label: "Discover", icon: Compass, path: "/discover" },
+  { label: "Saved Places", icon: Bookmark, path: "/profile/saved-locations" },
+  { label: "Local Guides", icon: RouteIcon, path: "/routes" },
+  { label: "Report Road", icon: TriangleAlert, path: "/community/report-road" },
+  { label: "Book a Ride", icon: Car, path: "/ride" },
+];
 
 export default function NavigatePage() {
   const { ready, user } = useRequireAuth();
@@ -41,24 +54,28 @@ export default function NavigatePage() {
   const position = useLocationStore((s) => s.displayPosition);
   const setDestination = useNavigationStore((s) => s.setDestination);
   const setAutoStart = useNavigationStore((s) => s.setAutoStart);
-  const activeShareToken = useShareStore((s) => s.activeToken);
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<DetailPlace | null>(null);
-  const [safety, setSafety] = useState<SafetySummary | null>(null);
-  const [contacts, setContacts] = useState<EmergencyContact[]>([]);
-  const [tip] = useState(() => TIPS[Math.floor(Math.random() * TIPS.length)]);
+  const [following, setFollowing] = useState(true);
+  const [nearbyPlaces, setNearbyPlaces] = useState<Place[]>([]);
+  const [roadReports, setRoadReports] = useState<RoadReport[]>([]);
 
+  const lastNearbyFetchRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  // Same 300m-moved gate used elsewhere — avoids refetching on every GPS tick.
   useEffect(() => {
     if (!position) return;
-    getSafetySummary(position.lat, position.lng).then(setSafety).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [position?.lat, position?.lng]);
-
-  useEffect(() => {
-    if (activeShareToken) listTrustedContacts().then(setContacts).catch(() => {});
-    else setContacts([]);
-  }, [activeShareToken]);
+    const last = lastNearbyFetchRef.current;
+    if (last && haversineKm(last.lat, last.lng, position.lat, position.lng) * 1000 < 300) return;
+    lastNearbyFetchRef.current = { lat: position.lat, lng: position.lng };
+    getNearbyPlaces(position.lat, position.lng, 2)
+      .then(setNearbyPlaces)
+      .catch(() => {});
+    getNearbyRoadReports(position.lat, position.lng, 5)
+      .then(setRoadReports)
+      .catch(() => {});
+  }, [position]);
 
   const goToDestination = (point: LocationPoint) => {
     setDestination(point);
@@ -67,7 +84,13 @@ export default function NavigatePage() {
 
   const handlePlaceDirections = (place: DetailPlace) => {
     addRecent({ kind: "place", key: `${place.source}-${place.id}`, place });
-    setDestination({ lat: place.lat, lng: place.lng, label: place.name, words: place.words });
+    setDestination({
+      lat: place.lat,
+      lng: place.lng,
+      label: place.name,
+      words: place.words,
+      placeId: place.source === "kaalay" ? place.id : undefined,
+    });
     setAutoStart(false);
     setSelectedPlace(null);
     router.push("/navigate/route");
@@ -75,32 +98,73 @@ export default function NavigatePage() {
 
   const handlePlaceStart = (place: DetailPlace) => {
     addRecent({ kind: "place", key: `${place.source}-${place.id}`, place });
-    setDestination({ lat: place.lat, lng: place.lng, label: place.name, words: place.words });
+    setDestination({
+      lat: place.lat,
+      lng: place.lng,
+      label: place.name,
+      words: place.words,
+      placeId: place.source === "kaalay" ? place.id : undefined,
+    });
     setAutoStart(true);
     setSelectedPlace(null);
     router.push("/navigate/route");
   };
 
+  const handleQuickAction = useCallback(
+    (action: (typeof QUICK_ACTIONS)[number]) => {
+      if (action.kind === "search") setSearchOpen(true);
+      else router.push(action.path);
+    },
+    [router]
+  );
+
+  const handleMarkerClick = useCallback(
+    (id: string) => {
+      if (id.startsWith("road-")) {
+        const report = roadReports.find((r) => `road-${r.id}` === id);
+        if (report) toast.warning(`${ROAD_ISSUE_LABEL[report.type]}${report.description ? ` — ${report.description}` : ""}`);
+        return;
+      }
+      const place = nearbyPlaces.find((p) => p.id === id);
+      if (place) setSelectedPlace(kaalayPlaceToDetail(place));
+    },
+    [nearbyPlaces, roadReports]
+  );
+
   if (!ready) return null;
 
-  const risk = RISK_COPY[safety?.riskTier ?? "low"];
-
   return (
-    <div className="flex h-full w-full flex-col overflow-y-auto bg-background px-5 pb-[calc(env(safe-area-inset-bottom,0px)+6rem)] pt-[calc(env(safe-area-inset-top,0px)+1.25rem)]">
+    <div className="relative h-full w-full">
+      {/* Map is the hero — fills the whole screen behind the floating chrome */}
+      <MapBase
+        me={position}
+        follow={following}
+        onUserDrag={() => setFollowing(false)}
+        initialCenter={position ?? undefined}
+        markers={[
+          ...nearbyPlaces.map((p) => ({ id: p.id, lat: p.latitude, lng: p.longitude, label: p.name, color: "#16A34A" })),
+          ...roadReports.map((r) => ({
+            id: `road-${r.id}`,
+            lat: r.lat,
+            lng: r.lng,
+            label: ROAD_ISSUE_LABEL[r.type],
+            color: "#F59E0B",
+          })),
+        ]}
+        onMarkerClick={handleMarkerClick}
+      />
+
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-lg font-extrabold text-primary-foreground">
+      <div className="absolute inset-x-4 top-[calc(env(safe-area-inset-top,0px)+1rem)] z-20 flex items-center justify-between">
+        <div className="flex items-center gap-3 rounded-2xl bg-card px-3 py-2 shadow-lg">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-sm font-extrabold text-primary-foreground">
             {user?.fullName?.charAt(0).toUpperCase() ?? "K"}
           </div>
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground">Hi, {greeting()}</p>
-            <p className="text-base font-extrabold text-foreground">{user?.fullName ?? "there"}</p>
-          </div>
+          <p className="text-sm font-extrabold text-foreground">Hey {user?.fullName?.split(" ")[0] ?? "there"}</p>
         </div>
         <button
           onClick={() => router.push("/profile")}
-          className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-secondary active:scale-95 transition-transform"
+          className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform"
           aria-label="Notifications"
         >
           <Bell className="h-5 w-5 text-foreground" />
@@ -108,88 +172,88 @@ export default function NavigatePage() {
         </button>
       </div>
 
-      {/* Risk + shared-with */}
-      <div className="mt-5 flex items-center justify-between">
-        <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${risk.tone}`}>{risk.label}</span>
-        {activeShareToken && contacts.length > 0 ? (
-          <button onClick={() => router.push("/share")} className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground">Shared with</span>
-            <div className="flex -space-x-2">
-              {contacts.slice(0, 3).map((c) => (
-                <div
-                  key={c.id}
-                  className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-background bg-primary/15 text-[10px] font-bold text-primary"
-                >
-                  {c.name.charAt(0).toUpperCase()}
-                </div>
-              ))}
-            </div>
-          </button>
-        ) : (
-          <button onClick={() => router.push("/share")} className="text-xs font-bold text-primary">
-            Start sharing your trip
-          </button>
-        )}
-      </div>
-
-      {/* Safety pulse */}
-      <div className="mt-2 flex flex-col items-center">
-        <SafetyPulse accuracy={position?.accuracy} />
-        <p className="mt-2 max-w-xs text-center text-sm font-medium text-muted-foreground">
-          Your <span className="font-bold text-foreground">current area</span> is{" "}
-          {(safety?.isDaytime ?? true) ? "well-lit" : "lit by streetlights"} with{" "}
-          {safety?.openIncidentsNearby ? "a few recent reports nearby" : "no recent safety reports"}.
-        </p>
-        <button
-          onClick={() => router.push("/sos/nearby")}
-          className="mt-3 flex items-center gap-1.5 rounded-full bg-secondary px-4 py-2 text-xs font-bold text-foreground active:scale-95 transition-transform"
-        >
-          <span className="h-2 w-2 rounded-full bg-success" />
-          View Nearby Safe Zones
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {/* AI safety tips */}
-      <div className="mt-6 rounded-[1.75rem] bg-gradient-to-br from-primary to-success p-5 text-primary-foreground shadow-lg">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-5 w-5" />
-          <p className="text-base font-extrabold">AI Safety Tips</p>
-        </div>
-        <p className="mt-2 text-sm font-medium leading-relaxed opacity-95">{tip}</p>
-      </div>
-
-      {/* Quick actions */}
-      <div className="mt-6 grid grid-cols-2 gap-3">
-        <button
-          onClick={() => router.push("/ride")}
-          className="flex flex-col items-start gap-2 rounded-2xl bg-secondary p-4 text-left active:scale-95 transition-transform"
-        >
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15">
-            <Car className="h-5 w-5 text-primary" />
-          </div>
-          <p className="text-sm font-bold text-foreground">Book Safe Ride</p>
-        </button>
-        <button
-          onClick={() => router.push("/ride/ai")}
-          className="flex flex-col items-start gap-2 rounded-2xl bg-secondary p-4 text-left active:scale-95 transition-transform"
-        >
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15">
-            <Bot className="h-5 w-5 text-primary" />
-          </div>
-          <p className="text-sm font-bold text-foreground">Book with AI</p>
-        </button>
-      </div>
-
-      {/* Search */}
+      {/* Search bar */}
       <button
         onClick={() => setSearchOpen(true)}
-        className="mt-4 flex h-14 w-full flex-shrink-0 items-center gap-3 rounded-2xl bg-secondary px-4 active:scale-[0.99] transition-transform"
+        className="absolute inset-x-4 top-[calc(env(safe-area-inset-top,0px)+4.25rem)] z-20 flex h-14 items-center gap-3 rounded-2xl bg-card px-4 shadow-lg active:scale-[0.99] transition-transform"
       >
         <Search className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
-        <span className="flex-1 text-left text-sm font-semibold text-muted-foreground">Search a place or get directions</span>
+        <span className="flex-1 text-left text-base font-semibold text-muted-foreground">Where do you want to go?</span>
         <Mic className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
       </button>
+
+      {/* Recenter */}
+      <button
+        onClick={() => setFollowing(true)}
+        aria-label="Recenter on my location"
+        className="absolute right-4 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-card shadow-lg active:scale-95 transition-transform"
+        style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 15.5rem)" }}
+      >
+        <LocateFixed className={`h-5 w-5 ${following ? "text-primary" : "text-foreground"}`} />
+      </button>
+
+      {/* Navigation Assistant entry point */}
+      <button
+        onClick={() => router.push("/assistant")}
+        className="absolute left-1/2 z-20 flex h-12 -translate-x-1/2 items-center gap-2 rounded-full bg-foreground px-5 text-white shadow-lg active:scale-95 transition-transform"
+        style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 15.5rem)" }}
+      >
+        <Bot className="h-4 w-4" />
+        <span className="text-xs font-bold">Ask Kaalay anything</span>
+      </button>
+
+      {/* Bottom sheet: quick actions + community locations */}
+      <div className="absolute inset-x-0 bottom-0 z-20 rounded-t-3xl bg-card px-4 pb-[calc(env(safe-area-inset-bottom,0px)+6rem)] pt-4 shadow-2xl">
+        <div className="flex gap-3 overflow-x-auto pb-1">
+          {QUICK_ACTIONS.map((action) => (
+            <button
+              key={action.label}
+              onClick={() => handleQuickAction(action)}
+              className="flex w-20 flex-shrink-0 flex-col items-center gap-1.5 active:scale-95 transition-transform"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
+                <action.icon className="h-5 w-5 text-primary" />
+              </div>
+              <span className="text-center text-[10px] font-bold leading-tight text-foreground">{action.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {nearbyPlaces.length > 0 && (
+          <>
+            <p className="mt-4 text-xs font-bold uppercase tracking-wide text-muted-foreground">Community locations near you</p>
+            <div className="mt-2 flex gap-3 overflow-x-auto pb-1">
+              {nearbyPlaces.slice(0, 8).map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setSelectedPlace(kaalayPlaceToDetail(p))}
+                  className="flex w-36 flex-shrink-0 flex-col overflow-hidden rounded-2xl bg-secondary text-left active:scale-95 transition-transform"
+                >
+                  <div className="h-20 w-full bg-muted">
+                    {p.photos[0] && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={resolveUploadUrl(p.photos[0])} alt={p.name} className="h-full w-full object-cover" />
+                    )}
+                  </div>
+                  <div className="p-2.5">
+                    <p className="truncate text-xs font-extrabold text-foreground">{p.name}</p>
+                    <div className="mt-1 flex items-center justify-between">
+                      <span className="text-[10px] font-semibold text-muted-foreground">
+                        {position ? `${haversineKm(position.lat, position.lng, p.latitude, p.longitude).toFixed(1)} km` : ""}
+                      </span>
+                      {p.averageRating && (
+                        <span className="flex items-center gap-0.5 text-[10px] font-bold text-foreground">
+                          <Star className="h-2.5 w-2.5 fill-warning text-warning" /> {p.averageRating}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
       <DestinationSearch
         open={searchOpen}

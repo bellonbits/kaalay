@@ -7,6 +7,7 @@ import type {
   AdminUser,
   AiChatMessage,
   AiChatResponse,
+  AiNavigateChatResponse,
   AuthResponse,
   AutosuggestSuggestion,
   DistanceResponse,
@@ -19,19 +20,30 @@ import type {
   FareEstimate,
   Incident,
   IncidentStatus,
+  LocalGuide,
   Place,
+  PlaceNote,
+  PlaceReview,
   Ride,
   RideCategory,
   RideStatus,
+  RoadReport,
+  RoadReportType,
   SafetySummary,
   ShareSession,
   SosResponse,
   User,
   W3WConvertToCoordsResponse,
   W3WConvertToWordsResponse,
+  Waypoint,
 } from "@/types/api";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://app.suqafuran.com/api/v1";
+// Uploaded photos come back as paths relative to the backend's root
+// ("/uploads/x.png"), not under /api/v1 — resolve against the API origin so
+// <img> tags don't accidentally point at the Next.js app's own origin.
+const API_ORIGIN = BASE.replace(/\/api\/v1\/?$/, "");
+export const resolveUploadUrl = (url: string) => (url.startsWith("http") ? url : `${API_ORIGIN}${url}`);
 
 export const api = axios.create({ baseURL: BASE });
 
@@ -213,6 +225,51 @@ export const getPlaces = () => api.get<Place[]>("/places").then((r) => r.data);
 
 export const getPlace = (id: string) => api.get<Place>(`/places/${id}`).then((r) => r.data);
 
+export const recordPlaceVisit = (id: string) =>
+  api.post<{ visitCount: number }>(`/places/${id}/visit`).then((r) => r.data);
+
+export const getPlaceReviews = (id: string) => api.get<PlaceReview[]>(`/places/${id}/reviews`).then((r) => r.data);
+
+export const createPlaceReview = (id: string, rating: number, comment?: string) =>
+  api.post<PlaceReview>(`/places/${id}/reviews`, { rating, comment }).then((r) => r.data);
+
+export const getPlaceNotes = (id: string) => api.get<PlaceNote[]>(`/places/${id}/notes`).then((r) => r.data);
+
+export const createPlaceNote = (id: string, text: string) =>
+  api.post<PlaceNote>(`/places/${id}/notes`, { text }).then((r) => r.data);
+
+// ── Local Guides (community-shared routes) ─────────────────────────────
+export const getNearbyGuides = (lat: number, lng: number, radius = 5) =>
+  api.get<LocalGuide[]>("/guides/nearby", { params: { lat, lng, radius } }).then((r) => r.data);
+
+export const getGuide = (id: string) => api.get<LocalGuide>(`/guides/${id}`).then((r) => r.data);
+
+export const createGuide = (data: {
+  name: string;
+  description?: string;
+  category?: string;
+  waypoints: Waypoint[];
+  distanceKm?: number;
+}) => api.post<LocalGuide>("/guides", data).then((r) => r.data);
+
+export const useGuide = (id: string) => api.post<{ timesUsed: number }>(`/guides/${id}/use`).then((r) => r.data);
+
+// ── Road reports ────────────────────────────────────────────────────────
+export const getNearbyRoadReports = (lat: number, lng: number, radius = 5) =>
+  api.get<RoadReport[]>("/road-reports/nearby", { params: { lat, lng, radius } }).then((r) => r.data);
+
+export const createRoadReport = (data: { type: RoadReportType; lat: number; lng: number; description?: string }) =>
+  api.post<RoadReport>("/road-reports", data).then((r) => r.data);
+
+export const resolveRoadReport = (id: string) => api.patch<RoadReport>(`/road-reports/${id}/resolve`).then((r) => r.data);
+
+// ── Uploads ──────────────────────────────────────────────────────────────
+export const uploadImage = (file: File) => {
+  const form = new FormData();
+  form.append("file", file);
+  return api.post<{ url: string }>("/uploads/image", form, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data);
+};
+
 // ── Rides (ride-hailing) ────────────────────────────────────────────────
 export const getFareEstimates = (distance: number, category?: RideCategory) =>
   api.post<FareEstimate[]>("/rides/estimate", { distance, category }).then((r) => r.data);
@@ -227,6 +284,9 @@ export const createRide = (data: {
 
 export const sendAiChatMessage = (data: { message: string; history: AiChatMessage[]; lat: number; lng: number }) =>
   api.post<AiChatResponse>("/ai/chat", data).then((r) => r.data);
+
+export const sendNavigateChatMessage = (data: { message: string; history: AiChatMessage[]; lat: number; lng: number }) =>
+  api.post<AiNavigateChatResponse>("/ai/navigate-chat", data).then((r) => r.data);
 
 export const getRide = (id: string) => api.get<Ride>(`/rides/${id}`).then((r) => r.data);
 

@@ -17,6 +17,10 @@ interface NavigationState {
    * this false so the user picks a mode). */
   autoStart: boolean;
   setAutoStart: (autoStart: boolean) => void;
+  /** Polyline of the trip just finished in /navigate/route — read by
+   * /routes/create to offer "share this trip as a guide" right after arrival. */
+  lastCompletedRoute: { points: { lat: number; lng: number }[]; distanceKm: number | null; endLabel: string } | null;
+  setLastCompletedRoute: (route: NavigationState["lastCompletedRoute"]) => void;
 }
 
 export const useNavigationStore = create<NavigationState>((set) => ({
@@ -26,4 +30,6 @@ export const useNavigationStore = create<NavigationState>((set) => ({
   setDestination: (destination) => set({ destination }),
   autoStart: false,
   setAutoStart: (autoStart) => set({ autoStart }),
+  lastCompletedRoute: null,
+  setLastCompletedRoute: (lastCompletedRoute) => set({ lastCompletedRoute }),
 }));

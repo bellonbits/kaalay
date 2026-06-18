@@ -2,17 +2,19 @@
 import { useCallback, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Compass, Users, ShieldAlert, Share2, User, LayoutDashboard, Wallet } from "lucide-react";
+import { Map, Compass, Route, Users, ShieldAlert, User, LayoutDashboard, Wallet } from "lucide-react";
 import { useNavigationStore } from "@/features/navigation/store";
 import { useLocationStore } from "@/features/location/store";
 import { useAuthStore } from "@/features/auth/store";
 import { triggerEmergencySos } from "@/lib/api";
 
+// Uber/Bolt/Waze-style IA: the map is Home, safety tools (SOS/Share/Meet)
+// live in Profile instead of a main tab — see app/profile/page.tsx.
 const RIDER_TABS = [
-  { label: "Navigate", icon: Compass, path: "/navigate", raised: false },
-  { label: "Meet", icon: Users, path: "/meet", raised: false },
-  { label: "SOS", icon: ShieldAlert, path: "/sos", raised: true },
-  { label: "Share", icon: Share2, path: "/share", raised: false },
+  { label: "Map", icon: Map, path: "/navigate", raised: false },
+  { label: "Discover", icon: Compass, path: "/discover", raised: false },
+  { label: "Routes", icon: Route, path: "/routes", raised: false },
+  { label: "Community", icon: Users, path: "/community", raised: false },
   { label: "Profile", icon: User, path: "/profile", raised: false },
 ] as const;
 

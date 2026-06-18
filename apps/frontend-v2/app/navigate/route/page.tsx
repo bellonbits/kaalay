@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Footprints, Bike, Car, Compass, LocateFixed } from "lucide-react";
+import { ArrowLeft, Check, Footprints, Bike, Car, Compass, LocateFixed, Share2, MapPin, TriangleAlert } from "lucide-react";
 import MapBase from "@/components/shared/MapBase";
 import NavigationHud from "@/features/navigation/components/NavigationHud";
 import { useRequireAuth } from "@/features/auth/useRequireAuth";
@@ -10,6 +10,16 @@ import { useNavigationStore, type TravelMode } from "@/features/navigation/store
 import { computeRoute, type RouteResult } from "@/features/navigation/routeService";
 import { bearing, haversineMeters, formatDistance, formatDuration } from "@/features/location/geo";
 import { useVoiceGuidance, type VoiceLanguage } from "@/features/navigation/useVoiceGuidance";
+import { getNearbyRoadReports, getPlaceNotes } from "@/lib/api";
+import type { RoadReport, PlaceNote } from "@/types/api";
+
+const ROAD_ISSUE_LABEL: Record<RoadReport["type"], string> = {
+  blocked: "Road blocked",
+  flooded: "Flooded",
+  construction: "Construction",
+  accident: "Accident",
+  other: "Road issue",
+};
 
 const GOOGLE_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
@@ -31,6 +41,8 @@ export default function RoutePage() {
   const setImmersive = useNavigationStore((s) => s.setImmersive);
   const autoStart = useNavigationStore((s) => s.autoStart);
   const setAutoStart = useNavigationStore((s) => s.setAutoStart);
+  const setLastCompletedRoute = useNavigationStore((s) => s.setLastCompletedRoute);
+  const lastCompletedRoute = useNavigationStore((s) => s.lastCompletedRoute);
 
   const [phase, setPhase] = useState<"select" | "navigating" | "arrived">("select");
   const [selectedMode, setSelectedMode] = useState<TravelMode>("WALKING");
@@ -40,6 +52,8 @@ export default function RoutePage() {
   const [stepIndex, setStepIndex] = useState(0);
   const [voiceOn, setVoiceOn] = useState(true);
   const [manualPan, setManualPan] = useState(false);
+  const [roadReports, setRoadReports] = useState<RoadReport[]>([]);
+  const [placeNotes, setPlaceNotes] = useState<PlaceNote[]>([]);
 
   const approachedRef = useRef(false);
   const lastSpokenStepRef = useRef(-1);
@@ -52,6 +66,22 @@ export default function RoutePage() {
   useEffect(() => {
     if (ready && !destination) router.replace("/navigate");
   }, [ready, destination, router]);
+
+  useEffect(() => {
+    if (!destination) return;
+    getNearbyRoadReports(destination.lat, destination.lng, 5)
+      .then(setRoadReports)
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [destination?.lat, destination?.lng]);
+
+  useEffect(() => {
+    if (!destination?.placeId) {
+      setPlaceNotes([]);
+      return;
+    }
+    getPlaceNotes(destination.placeId).then(setPlaceNotes).catch(() => {});
+  }, [destination?.placeId]);
 
   // Fetch all three road-mode estimates in parallel as soon as we have a fix.
   useEffect(() => {
@@ -159,10 +189,17 @@ export default function RoutePage() {
 
   // Voice guidance + arrival detection
   useEffect(() => {
-    if (!live || phase !== "navigating") return;
+    if (!live || phase !== "navigating" || !destination) return;
 
     if (live.remainingDistanceMeters < 15) {
       setPhase("arrived");
+      if (isRoad && activeRoute) {
+        setLastCompletedRoute({
+          points: activeRoute.polylinePoints,
+          distanceKm: activeRoute.distanceMeters / 1000,
+          endLabel: destination.label,
+        });
+      }
       speak("You have arrived.", { force: true });
       return;
     }
@@ -184,6 +221,7 @@ export default function RoutePage() {
 
   const handleClose = () => {
     setDestination(null);
+    setLastCompletedRoute(null);
     router.replace("/navigate");
   };
 
@@ -199,7 +237,16 @@ export default function RoutePage() {
         onUserDrag={() => setManualPan(true)}
         showGrid
         routePoints={isRoad && activeRoute ? activeRoute.polylinePoints : []}
-        markers={[{ id: "dest", lat: destination.lat, lng: destination.lng, label: destination.label, color: "#DC2626" }]}
+        markers={[
+          { id: "dest", lat: destination.lat, lng: destination.lng, label: destination.label, color: "#DC2626" },
+          ...roadReports.map((r) => ({
+            id: `road-${r.id}`,
+            lat: r.lat,
+            lng: r.lng,
+            label: ROAD_ISSUE_LABEL[r.type],
+            color: "#F59E0B",
+          })),
+        ]}
         initialCenter={position ?? destination}
       />
 
@@ -224,7 +271,7 @@ export default function RoutePage() {
             <ArrowLeft className="h-5 w-5 text-foreground" />
           </button>
 
-          <div className="mt-auto rounded-t-3xl bg-card p-6 pb-[calc(env(safe-area-inset-bottom,0px)+6.5rem)] shadow-2xl">
+          <div className="mt-auto max-h-[75vh] overflow-y-auto rounded-t-3xl bg-card p-6 pb-[calc(env(safe-area-inset-bottom,0px)+6.5rem)] shadow-2xl">
             <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Destination</p>
             <p className="mt-1 truncate text-lg font-extrabold text-foreground">{destination.label}</p>
 
@@ -269,6 +316,37 @@ export default function RoutePage() {
             >
               GO
             </button>
+
+            {roadReports.length > 0 && (
+              <>
+                <p className="mt-6 text-xs font-bold uppercase tracking-wide text-muted-foreground">Road conditions</p>
+                <div className="mt-2 flex flex-col gap-2">
+                  {roadReports.map((r) => (
+                    <div key={r.id} className="flex items-center gap-2 rounded-2xl bg-warning/10 p-3">
+                      <TriangleAlert className="h-4 w-4 flex-shrink-0 text-warning" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-foreground">{ROAD_ISSUE_LABEL[r.type]}</p>
+                        {r.description && <p className="truncate text-xs font-medium text-muted-foreground">{r.description}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {placeNotes.length > 0 && (
+              <>
+                <p className="mt-6 text-xs font-bold uppercase tracking-wide text-muted-foreground">Community notes</p>
+                <div className="mt-2 flex flex-col gap-2">
+                  {placeNotes.map((n) => (
+                    <div key={n.id} className="flex items-start gap-2 rounded-2xl bg-secondary p-3">
+                      <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
+                      <p className="text-sm font-medium text-foreground">{n.text}</p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -308,12 +386,22 @@ export default function RoutePage() {
             <h2 className="text-2xl font-extrabold text-foreground">You have arrived</h2>
             <p className="mt-2 text-base font-medium text-muted-foreground">{destination.label}</p>
           </div>
-          <button
-            onClick={handleClose}
-            className="h-14 w-full max-w-xs rounded-2xl bg-primary text-base font-bold text-primary-foreground active:scale-95 transition-transform"
-          >
-            Done
-          </button>
+          <div className="flex w-full max-w-xs flex-col gap-3">
+            {lastCompletedRoute && (
+              <button
+                onClick={() => router.push("/routes/create")}
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl border-2 border-primary text-sm font-bold text-primary active:scale-95 transition-transform"
+              >
+                <Share2 className="h-4 w-4" /> Share this route with the community
+              </button>
+            )}
+            <button
+              onClick={handleClose}
+              className="h-14 w-full rounded-2xl bg-primary text-base font-bold text-primary-foreground active:scale-95 transition-transform"
+            >
+              Done
+            </button>
+          </div>
         </div>
       )}
     </div>

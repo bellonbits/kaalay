@@ -77,8 +77,11 @@ export default function OnboardingPage() {
             transition={{ duration: 0.3, ease: "easeOut" }}
             className="flex flex-col items-center text-center"
           >
-            <div className="flex h-28 w-28 items-center justify-center rounded-[2rem] bg-primary/10">
-              <Icon className="h-14 w-14 text-primary" strokeWidth={1.75} />
+            <div className="relative flex h-32 w-32 items-center justify-center">
+              <div className="absolute h-28 w-28 rounded-[2.25rem] bg-primary/10" />
+              <div className="absolute h-20 w-20 -translate-x-3 -translate-y-3 rounded-full bg-primary/15" />
+              <Icon className="relative h-14 w-14 text-primary" strokeWidth={1.75} />
+              <div className="absolute bottom-3 h-2.5 w-14 rounded-full bg-foreground/10 blur-[2px]" />
             </div>
             <h1 className="mt-10 text-3xl font-extrabold tracking-tight text-foreground">{slide.title}</h1>
             <p className="mt-4 max-w-xs text-base font-medium leading-relaxed text-muted-foreground">{slide.body}</p>

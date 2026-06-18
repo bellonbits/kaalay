@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from .core.config import settings
 from .core.database import engine, Base, ensure_columns
-from .routers import auth, rides, places, notifications, location, drivers, ws, admin, emergency, ai
+from .routers import auth, rides, places, notifications, location, drivers, ws, admin, emergency, ai, uploads, guides, road_reports
 from .core.sio import sio_app
 import asyncio
 import time
@@ -39,6 +40,9 @@ app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 
 # Mount Socket.io
 app.mount("/socket.io", sio_app)
+# Locally-stored community photos (place photos, review photos) — see
+# routers/uploads.py for the matching write path.
+app.mount("/uploads", StaticFiles(directory=uploads.UPLOAD_DIR), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,
@@ -70,6 +74,9 @@ app.include_router(drivers.router, prefix=V1_PREFIX)
 app.include_router(admin.router, prefix=V1_PREFIX)
 app.include_router(emergency.router, prefix=V1_PREFIX)
 app.include_router(ai.router, prefix=V1_PREFIX)
+app.include_router(uploads.router, prefix=V1_PREFIX)
+app.include_router(guides.router, prefix=V1_PREFIX)
+app.include_router(road_reports.router, prefix=V1_PREFIX)
 app.include_router(ws.router) # WS often doesn't need /api/v1 prefix but can have it. Keeping it clean at root /ws
 
 from fastapi.exceptions import RequestValidationError

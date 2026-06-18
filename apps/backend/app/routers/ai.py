@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 from typing import List, Literal, Optional
 import requests
 from ..core.config import settings
+from ..core.database import get_db
 from ..core.responses import success_response, error_response
 from ..core.deps import get_current_user
-from ..models.all import User
+from ..models.all import User, Place, PlaceNote, PlaceReview
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -180,4 +183,165 @@ async def chat(dto: ChatRequest, current_user: User = Depends(get_current_user))
     return success_response({
         "reply": "I'm having trouble finding that — could you rephrase your destination?",
         "suggestedRide": suggested_ride,
+    })
+
+
+# ── Navigation Assistant ───────────────────────────────────────────────
+# Kaalay's differentiator is reaching places Google Maps can't — so this
+# assistant always checks the community Place registry before falling back
+# to Google's general place search.
+
+NAVIGATE_SYSTEM_PROMPT = (
+    "You are Kaalay's navigation assistant. Riders ask you to find destinations, "
+    "including places ordinary map apps can't find — village roads, compounds, "
+    "markets, hidden businesses. When they name a place, call find_destination — "
+    "it checks Kaalay's own community-mapped locations first, then falls back to "
+    "general places. Once you have a destination, call get_place_guidance to check "
+    "for community notes (last-meter directions like 'after the petrol station, "
+    "turn left') and reviews. Share any guidance you get back in your reply — "
+    "it's the most valuable thing you can offer. Keep replies short and friendly. "
+    "Never state a destination or guidance you haven't actually gotten from a tool call."
+)
+
+NAVIGATE_TOOLS = [
+    {
+        "name": "find_destination",
+        "description": (
+            "Look up a destination by name or description near the rider's current "
+            "location. Checks Kaalay's community-mapped places first, then falls back "
+            "to general places. Call this whenever the user names a place they want to go."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The place name or description, e.g. 'Amina's Shop' or 'the nearest market'",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "get_place_guidance",
+        "description": (
+            "Look up community notes and reviews for a resolved Kaalay destination. "
+            "Only works for places found via find_destination with source='kaalay'. "
+            "Call this right after resolving a Kaalay place, before replying."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "place_id": {"type": "string", "description": "The Kaalay place id returned by find_destination"},
+            },
+            "required": ["place_id"],
+        },
+    },
+]
+
+
+def _find_kaalay_or_google(query: str, lat: float, lng: float, db: Session) -> dict:
+    place = (
+        db.query(Place)
+        .filter(Place.name.ilike(f"%{query}%"))
+        .order_by(func.abs(Place.latitude - lat) + func.abs(Place.longitude - lng))
+        .first()
+    )
+    if place:
+        return {
+            "found": True,
+            "source": "kaalay",
+            "id": str(place.id),
+            "name": place.name,
+            "words": place.words,
+            "lat": place.latitude,
+            "lng": place.longitude,
+        }
+    google_result = _find_destination(query, lat, lng)
+    if google_result.get("found"):
+        return {**google_result, "source": "google"}
+    return google_result
+
+
+def _get_place_guidance(place_id: str, db: Session) -> dict:
+    place = db.query(Place).filter(Place.id == place_id).first()
+    if not place:
+        return {"available": False, "reason": "Not a Kaalay place"}
+    notes = db.query(PlaceNote).filter(PlaceNote.placeId == place_id).order_by(PlaceNote.createdAt.desc()).limit(5).all()
+    avg_rating, review_count = (
+        db.query(func.avg(PlaceReview.rating), func.count(PlaceReview.id)).filter(PlaceReview.placeId == place_id).first()
+    )
+    return {
+        "available": True,
+        "notes": [n.text for n in notes],
+        "averageRating": round(avg_rating, 1) if avg_rating else None,
+        "reviewCount": review_count or 0,
+    }
+
+
+class NavigateChatRequest(BaseModel):
+    message: str
+    history: Optional[List[ChatMessage]] = []
+    lat: float
+    lng: float
+
+
+@router.post("/navigate-chat")
+async def navigate_chat(
+    dto: NavigateChatRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    if not settings.ANTHROPIC_API_KEY:
+        return error_response("AI_NOT_CONFIGURED", "The navigation assistant isn't available right now", 503)
+
+    from anthropic import Anthropic
+    client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+
+    messages = [{"role": m.role, "content": m.text} for m in (dto.history or [])]
+    messages.append({
+        "role": "user",
+        "content": f"My current position is lat={dto.lat}, lng={dto.lng}. {dto.message}",
+    })
+
+    resolved_destination = None
+
+    for _ in range(4):
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=1024,
+            system=NAVIGATE_SYSTEM_PROMPT,
+            tools=NAVIGATE_TOOLS,
+            messages=messages,
+            output_config={"effort": "low"},
+        )
+
+        if response.stop_reason != "tool_use":
+            reply_text = "".join(b.text for b in response.content if b.type == "text")
+            return success_response({"reply": reply_text, "resolvedDestination": resolved_destination})
+
+        messages.append({"role": "assistant", "content": response.content})
+        tool_results = []
+        for block in response.content:
+            if block.type != "tool_use":
+                continue
+            if block.name == "find_destination":
+                result = _find_kaalay_or_google(block.input.get("query", ""), dto.lat, dto.lng, db)
+                if result.get("found"):
+                    resolved_destination = {
+                        "source": result["source"],
+                        "id": result.get("id"),
+                        "name": result.get("name"),
+                        "lat": result["lat"],
+                        "lng": result["lng"],
+                        "words": result.get("words"),
+                    }
+            elif block.name == "get_place_guidance":
+                result = _get_place_guidance(block.input.get("place_id", ""), db)
+            else:
+                result = {"error": f"Unknown tool {block.name}"}
+            tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(result)})
+        messages.append({"role": "user", "content": tool_results})
+
+    return success_response({
+        "reply": "I'm having trouble finding that — could you rephrase your destination?",
+        "resolvedDestination": resolved_destination,
     })

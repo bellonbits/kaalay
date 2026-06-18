@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Float, JSON, Integer
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Float, JSON, Integer, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
@@ -61,6 +61,17 @@ class FacilityType(str, enum.Enum):
     POLICE = "police"
     FIRE = "fire"
     AMBULANCE = "ambulance"
+
+class RoadReportType(str, enum.Enum):
+    BLOCKED = "blocked"
+    FLOODED = "flooded"
+    CONSTRUCTION = "construction"
+    ACCIDENT = "accident"
+    OTHER = "other"
+
+class RoadReportStatus(str, enum.Enum):
+    ACTIVE = "active"
+    RESOLVED = "resolved"
 
 class User(Base):
     __tablename__ = "users"
@@ -148,6 +159,8 @@ class Place(Base):
     alwaysOpen = Column(Boolean, default=True)
     openTime = Column(String, nullable=True)   # "HH:MM", 24h, local time
     closeTime = Column(String, nullable=True)  # "HH:MM", 24h, local time
+    visitCount = Column(Integer, default=0)
+    createdBy = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     createdAt = Column(DateTime, default=datetime.utcnow)
 
 class Notification(Base):
@@ -236,3 +249,72 @@ class EmergencyFacility(Base):
     phoneNumber = Column(String, nullable=True)
     city = Column(String, nullable=True)
     createdAt = Column(DateTime, default=datetime.utcnow)
+
+class PlaceReview(Base):
+    __tablename__ = "place_reviews"
+    __table_args__ = (UniqueConstraint("placeId", "userId", name="uq_place_review_user"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    placeId = Column(UUID(as_uuid=True), ForeignKey("places.id"))
+    userId = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    rating = Column(Integer)  # 1-5
+    comment = Column(String, nullable=True)
+    createdAt = Column(DateTime, default=datetime.utcnow)
+
+    place = relationship("Place")
+    user = relationship("User")
+
+class PlaceNote(Base):
+    """Community-contributed directions for the last metres a map can't get
+    right — "after the petrol station turn left", "blue gate beside the
+    school". This is Kaalay's actual differentiator over Google Maps."""
+    __tablename__ = "place_notes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    placeId = Column(UUID(as_uuid=True), ForeignKey("places.id"))
+    userId = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    text = Column(String)
+    createdAt = Column(DateTime, default=datetime.utcnow)
+
+    place = relationship("Place")
+    user = relationship("User")
+
+class LocalGuide(Base):
+    """A community-shared route — e.g. a walking shortcut through an estate
+    or the matatu route to a market — distinct from a Ride: no driver, no
+    fare, just a path someone else found useful."""
+    __tablename__ = "local_guides"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String)
+    description = Column(String, nullable=True)
+    category = Column(String, nullable=True)  # e.g. "walking shortcut", "matatu route"
+    createdBy = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+
+    startLat = Column(Float)
+    startLng = Column(Float)
+    endLat = Column(Float)
+    endLng = Column(Float)
+    waypoints = Column(JSON, default=[])  # [{lat, lng}, ...] in order, including start/end
+    distanceKm = Column(Float, nullable=True)
+    timesUsed = Column(Integer, default=0)
+
+    createdAt = Column(DateTime, default=datetime.utcnow)
+
+    creator = relationship("User")
+
+class RoadReport(Base):
+    __tablename__ = "road_reports"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    reporterId = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    type = Column(String, default=RoadReportType.OTHER)
+    lat = Column(Float)
+    lng = Column(Float)
+    description = Column(String, nullable=True)
+    status = Column(String, default=RoadReportStatus.ACTIVE)
+
+    createdAt = Column(DateTime, default=datetime.utcnow)
+    resolvedAt = Column(DateTime, nullable=True)
+
+    reporter = relationship("User")

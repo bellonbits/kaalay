@@ -77,6 +77,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:-super-secret-key}
       W3W_API_KEY: ${W3W_API_KEY:-}
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      GOOGLE_MAPS_SERVER_KEY: ${GOOGLE_MAPS_SERVER_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - uploads_data:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -103,3 +107,4 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  uploads_data:

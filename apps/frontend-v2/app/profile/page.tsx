@@ -13,6 +13,7 @@ import {
   Check,
   Edit2,
   Car,
+  Share2,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -104,8 +105,15 @@ export default function ProfilePage() {
 
       <p className="mt-6 px-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Safety</p>
       <div className="mt-2 space-y-1 rounded-3xl bg-card p-2 shadow-sm">
+        <NavRow icon={ShieldAlert} label="SOS" onClick={() => router.push("/sos")} />
         <NavRow icon={Users} label="Trusted Contacts" onClick={() => router.push("/profile/trusted-contacts")} />
         <NavRow icon={ShieldAlert} label="Emergency Settings" onClick={() => router.push("/profile/emergency-settings")} border={false} />
+      </div>
+
+      <p className="mt-6 px-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Sharing &amp; Groups</p>
+      <div className="mt-2 space-y-1 rounded-3xl bg-card p-2 shadow-sm">
+        <NavRow icon={Share2} label="Share Location" onClick={() => router.push("/share")} />
+        <NavRow icon={Users} label="Meet" onClick={() => router.push("/meet")} border={false} />
       </div>
 
       <p className="mt-6 px-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Preferences</p>

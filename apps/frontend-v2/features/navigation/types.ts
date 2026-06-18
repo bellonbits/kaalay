@@ -1,4 +1,5 @@
 import type { Place } from "@/types/api";
+import { resolveUploadUrl } from "@/lib/api";
 import type { GooglePlaceDetail } from "./googlePlaces";
 
 export interface LocationPoint {
@@ -7,6 +8,9 @@ export interface LocationPoint {
   /** Display label — usually a Kaalay location code ("NRB-4K9PX2W8") or place name. */
   label: string;
   words?: string;
+  /** Set only when this point is a Kaalay community Place — lets /navigate/route
+   * pull in road conditions and community notes for the destination. */
+  placeId?: string;
 }
 
 /** Unified shape for the place-detail card, whether the place came from
@@ -37,9 +41,10 @@ export function kaalayPlaceToDetail(p: Place): DetailPlace {
     lng: p.longitude,
     words: p.words,
     description: p.description,
-    photos: p.photos ?? [],
+    photos: (p.photos ?? []).map(resolveUploadUrl),
     tags: p.tags ?? [],
     isOpenNow: p.isOpenNow,
+    rating: p.averageRating ?? undefined,
   };
 }
 
