@@ -16,8 +16,8 @@ MODEL = "claude-opus-4-8"
 
 # Mirrors rides.py's /rides/estimate fare math — kept as a plain function so
 # the tool doesn't need a second HTTP round trip into our own API.
-BASE_FARES = {"economy": 50.0, "motorcycle": 30.0, "xl": 100.0, "delivery": 40.0}
-PER_KM_RATES = {"economy": 40.0, "motorcycle": 20.0, "xl": 70.0, "delivery": 30.0}
+BASE_FARES = {"economy": 50.0, "motorcycle": 30.0, "xl": 100.0, "delivery": 40.0, "bike": 20.0}
+PER_KM_RATES = {"economy": 40.0, "motorcycle": 20.0, "xl": 70.0, "delivery": 30.0, "bike": 15.0}
 
 SYSTEM_PROMPT = (
     "You are Kaalay's ride-booking assistant. The rider's current position is "
@@ -64,7 +64,7 @@ TOOLS = [
                 },
                 "category": {
                     "type": "string",
-                    "enum": ["economy", "motorcycle", "xl", "delivery"],
+                    "enum": ["economy", "motorcycle", "xl", "delivery", "bike"],
                 },
             },
             "required": ["distance_km", "category"],

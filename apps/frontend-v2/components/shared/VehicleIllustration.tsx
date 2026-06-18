@@ -1,4 +1,4 @@
-import { Car, Motorbike, Bus, Package } from "lucide-react";
+import { Car, Motorbike, Bus, Package, Bike } from "lucide-react";
 import type { RideCategory } from "@/types/api";
 
 // Code-generated placeholder art per ride tier — a layered icon-on-a-blob
@@ -10,6 +10,7 @@ const ICON: Record<RideCategory, typeof Car> = {
   motorcycle: Motorbike,
   xl: Bus,
   delivery: Package,
+  bike: Bike,
 };
 
 const STYLE: Record<RideCategory, { gradient: string; iconColor: string }> = {
@@ -17,6 +18,7 @@ const STYLE: Record<RideCategory, { gradient: string; iconColor: string }> = {
   motorcycle: { gradient: "from-warning/25 to-warning/5", iconColor: "text-warning" },
   xl: { gradient: "from-blue-500/25 to-blue-500/5", iconColor: "text-blue-500" },
   delivery: { gradient: "from-violet-500/25 to-violet-500/5", iconColor: "text-violet-500" },
+  bike: { gradient: "from-success/25 to-success/5", iconColor: "text-success" },
 };
 
 export default function VehicleIllustration({ category, className }: { category: RideCategory; className?: string }) {

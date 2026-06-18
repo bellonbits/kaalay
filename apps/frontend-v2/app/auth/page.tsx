@@ -2,7 +2,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Loader2, Phone, User as UserIcon, Mail, Car, ShieldAlert, Motorbike, Package, Compass } from "lucide-react";
+import { ArrowLeft, Loader2, Phone, User as UserIcon, Mail, Car, ShieldAlert, Motorbike, Package, Compass, Bike } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,7 @@ const VEHICLE_CATEGORIES: { id: RideCategory; label: string; icon: typeof Car }[
   { id: "motorcycle", label: "Motorcycle", icon: Motorbike },
   { id: "xl", label: "XL", icon: Car },
   { id: "delivery", label: "Delivery", icon: Package },
+  { id: "bike", label: "Bike", icon: Bike },
 ];
 
 function AuthFlow() {
@@ -222,7 +223,7 @@ function AuthFlow() {
 
                 {accountType === "driver" && (
                   <>
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                       {VEHICLE_CATEGORIES.map(({ id, label, icon: Icon }) => (
                         <button
                           key={id}

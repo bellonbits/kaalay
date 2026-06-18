@@ -86,11 +86,11 @@ class EstimateRequest(BaseModel):
 @router.post("/estimate")
 async def estimate_fares(dto: EstimateRequest):
     # Basic pricing logic (should match create_ride)
-    base_fares = {"economy": 50.0, "motorcycle": 30.0, "xl": 100.0, "delivery": 40.0}
-    per_km_rates = {"economy": 40.0, "motorcycle": 20.0, "xl": 70.0, "delivery": 30.0}
-    
+    base_fares = {"economy": 50.0, "motorcycle": 30.0, "xl": 100.0, "delivery": 40.0, "bike": 20.0}
+    per_km_rates = {"economy": 40.0, "motorcycle": 20.0, "xl": 70.0, "delivery": 30.0, "bike": 15.0}
+
     estimates = []
-    for cat in ["economy", "motorcycle", "xl", "delivery"]:
+    for cat in ["economy", "motorcycle", "xl", "delivery", "bike"]:
         base = base_fares.get(cat, 50.0)
         per_km = per_km_rates.get(cat, 40.0)
         fare = base + (per_km * (dto.distance or 0))
@@ -113,13 +113,15 @@ async def create_ride(
         "economy": 50.0,
         "motorcycle": 30.0,
         "xl": 100.0,
-        "delivery": 40.0
+        "delivery": 40.0,
+        "bike": 20.0
     }
     per_km_rates = {
         "economy": 40.0,
         "motorcycle": 20.0,
         "xl": 70.0,
-        "delivery": 30.0
+        "delivery": 30.0,
+        "bike": 15.0
     }
     
     category = dto.category.lower() if dto.category else "economy"

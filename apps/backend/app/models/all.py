@@ -32,6 +32,7 @@ class RideCategory(str, enum.Enum):
     MOTORCYCLE = "motorcycle"
     XL = "xl"
     DELIVERY = "delivery"
+    BIKE = "bike"
 
 class EmergencyType(str, enum.Enum):
     MEDICAL = "medical"

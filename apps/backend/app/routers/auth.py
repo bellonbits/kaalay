@@ -81,10 +81,16 @@ async def login(dto: LoginRequest, db: Session = Depends(get_db)):
             "isNewUser": True
         })
 
+PUBLIC_SIGNUP_ROLES = {"rider", "driver", "emergency_operator"}
+
 @router.post("/register")
 async def register(dto: RegisterRequest, db: Session = Depends(get_db)):
     phone = dto.phoneNumber.strip()
-    
+
+    role = (dto.role or "rider").lower()
+    if role not in PUBLIC_SIGNUP_ROLES:
+        return error_response("INVALID_ROLE", "role must be one of: rider, driver, emergency_operator", 400)
+
     # Check if user exists
     existing = db.query(User).filter(User.phoneNumber == phone).first()
     if existing:
@@ -103,14 +109,14 @@ async def register(dto: RegisterRequest, db: Session = Depends(get_db)):
         phoneNumber=phone,
         email=dto.email,
         hashedPassword=None, # passwordless flow
-        role=dto.role
+        role=role
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-    
-    # If driver/helper, set up driver profile
-    if dto.role in ["driver", "helper"]:
+
+    # If driver, set up driver profile
+    if role == "driver":
         driver = Driver(
             userId=user.id,
             vehicleModel=dto.vehicleModel,

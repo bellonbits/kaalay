@@ -222,7 +222,7 @@ export interface AiNavigateChatResponse {
 
 export type RideStatus = "requested" | "accepted" | "arriving" | "arrived" | "started" | "completed" | "cancelled";
 
-export type RideCategory = "economy" | "motorcycle" | "xl" | "delivery";
+export type RideCategory = "economy" | "motorcycle" | "xl" | "delivery" | "bike";
 
 export interface RideDriverSummary {
   id: string;

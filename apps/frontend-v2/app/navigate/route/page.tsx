@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Footprints, Bike, Car, Compass, LocateFixed, Share2, MapPin, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Check, Footprints, Bike, Car, Compass, LocateFixed, Share2, MapPin, TriangleAlert, X } from "lucide-react";
 import MapBase from "@/components/shared/MapBase";
 import NavigationHud from "@/features/navigation/components/NavigationHud";
+import DestinationSearch from "@/features/navigation/components/DestinationSearch";
 import { useRequireAuth } from "@/features/auth/useRequireAuth";
 import { useLocationStore } from "@/features/location/store";
 import { useNavigationStore, type TravelMode } from "@/features/navigation/store";
@@ -12,6 +13,7 @@ import { bearing, haversineMeters, formatDistance, formatDuration } from "@/feat
 import { useVoiceGuidance, type VoiceLanguage } from "@/features/navigation/useVoiceGuidance";
 import { getNearbyRoadReports, getPlaceNotes } from "@/lib/api";
 import type { RoadReport, PlaceNote } from "@/types/api";
+import type { LocationPoint, DetailPlace } from "@/features/navigation/types";
 
 const ROAD_ISSUE_LABEL: Record<RoadReport["type"], string> = {
   blocked: "Road blocked",
@@ -54,6 +56,10 @@ export default function RoutePage() {
   const [manualPan, setManualPan] = useState(false);
   const [roadReports, setRoadReports] = useState<RoadReport[]>([]);
   const [placeNotes, setPlaceNotes] = useState<PlaceNote[]>([]);
+  const [customOrigin, setCustomOrigin] = useState<LocationPoint | null>(null);
+  const [originSearchOpen, setOriginSearchOpen] = useState(false);
+
+  const origin = customOrigin ?? position;
 
   const approachedRef = useRef(false);
   const lastSpokenStepRef = useRef(-1);
@@ -85,13 +91,13 @@ export default function RoutePage() {
 
   // Fetch all three road-mode estimates in parallel as soon as we have a fix.
   useEffect(() => {
-    if (!position || !destination) return;
+    if (!origin || !destination) return;
     let cancelled = false;
     setEstimates(Object.fromEntries(ROAD_MODES.map((m) => [m.mode, "loading" as const])));
 
     Promise.all(
       ROAD_MODES.map(async ({ mode }) => {
-        const result = await computeRoute(position, destination, mode as "WALKING" | "BICYCLING" | "DRIVING", GOOGLE_KEY);
+        const result = await computeRoute(origin, destination, mode as "WALKING" | "BICYCLING" | "DRIVING", GOOGLE_KEY);
         return [mode, result] as const;
       })
     ).then((results) => {
@@ -126,9 +132,10 @@ export default function RoutePage() {
     return () => {
       cancelled = true;
     };
-    // Only recompute when the destination changes, not on every GPS tick.
+    // Only recompute when the destination or an explicitly-set origin changes —
+    // not on every GPS tick (origin falls back to live position via closure).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [destination?.lat, destination?.lng]);
+  }, [destination?.lat, destination?.lng, customOrigin?.lat, customOrigin?.lng]);
 
   const startNavigation = (mode: TravelMode, route: RouteResult | null) => {
     setSelectedMode(mode);
@@ -141,6 +148,21 @@ export default function RoutePage() {
   };
 
   const handleGo = () => startNavigation(selectedMode, selectedMode === "PRECISION" ? null : routes[selectedMode] ?? null);
+
+  const handleOriginSelect = (point: LocationPoint) => {
+    setCustomOrigin(point);
+    setOriginSearchOpen(false);
+  };
+
+  const handleOriginPlaceSelect = (place: DetailPlace) => {
+    handleOriginSelect({
+      lat: place.lat,
+      lng: place.lng,
+      label: place.name,
+      words: place.words,
+      placeId: place.source === "kaalay" ? place.id : undefined,
+    });
+  };
 
   useEffect(() => {
     setImmersive(phase === "navigating" || phase === "arrived");
@@ -236,9 +258,16 @@ export default function RoutePage() {
         follow={phase === "navigating" && !manualPan}
         onUserDrag={() => setManualPan(true)}
         showGrid
-        routePoints={isRoad && activeRoute ? activeRoute.polylinePoints : []}
+        routePoints={
+          isRoad && activeRoute
+            ? activeRoute.polylinePoints
+            : phase === "select" && selectedMode !== "PRECISION"
+              ? routes[selectedMode]?.polylinePoints ?? []
+              : []
+        }
         markers={[
           { id: "dest", lat: destination.lat, lng: destination.lng, label: destination.label, color: "#DC2626" },
+          ...(customOrigin ? [{ id: "origin", lat: customOrigin.lat, lng: customOrigin.lng, label: customOrigin.label, color: "#16A34A" }] : []),
           ...roadReports.map((r) => ({
             id: `road-${r.id}`,
             lat: r.lat,
@@ -272,8 +301,46 @@ export default function RoutePage() {
           </button>
 
           <div className="mt-auto max-h-[75vh] overflow-y-auto rounded-t-3xl bg-card p-6 pb-[calc(env(safe-area-inset-bottom,0px)+6.5rem)] shadow-2xl">
-            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Destination</p>
-            <p className="mt-1 truncate text-lg font-extrabold text-foreground">{destination.label}</p>
+            <div className="flex items-stretch gap-2">
+              <button
+                onClick={() => setOriginSearchOpen(true)}
+                className="min-w-0 flex-1 rounded-2xl bg-secondary px-4 py-2.5 text-left active:scale-[0.98] transition-transform"
+              >
+                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">From</p>
+                <p className="truncate text-sm font-bold text-foreground">{customOrigin?.label ?? "Current location"}</p>
+              </button>
+              {customOrigin && (
+                <button
+                  onClick={() => setCustomOrigin(null)}
+                  aria-label="Reset to current location"
+                  className="flex h-auto w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-secondary active:scale-95 transition-transform"
+                >
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </button>
+              )}
+            </div>
+
+            <div className="mt-2 rounded-2xl bg-secondary px-4 py-2.5">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">To</p>
+              <p className="truncate text-sm font-bold text-foreground">{destination.label}</p>
+            </div>
+
+            {selectedMode !== "PRECISION" && estimates[selectedMode] && estimates[selectedMode] !== "loading" && estimates[selectedMode] !== "unavailable" && (
+              <div className="mt-4 flex items-center gap-6">
+                <div>
+                  <p className="text-2xl font-extrabold text-foreground">
+                    {formatDistance((estimates[selectedMode] as { distanceMeters: number }).distanceMeters)}
+                  </p>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Distance</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-extrabold text-foreground">
+                    {formatDuration((estimates[selectedMode] as { durationSeconds: number }).durationSeconds)}
+                  </p>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">ETA</p>
+                </div>
+              </div>
+            )}
 
             <div className="mt-5 grid grid-cols-4 gap-2">
               {ROAD_MODES.map(({ mode, label, icon: Icon }) => {
@@ -292,7 +359,7 @@ export default function RoutePage() {
                     <Icon className="h-5 w-5" />
                     {label}
                     <span className="text-[10px] font-semibold opacity-80">
-                      {est === "loading" ? "…" : est === "unavailable" || !est ? "N/A" : formatDuration(est.durationSeconds)}
+                      {est === "loading" ? "…" : est === "unavailable" || !est ? "N/A" : `${formatDuration(est.durationSeconds)} · ${formatDistance(est.distanceMeters)}`}
                     </span>
                   </button>
                 );
@@ -404,6 +471,14 @@ export default function RoutePage() {
           </div>
         </div>
       )}
+
+      <DestinationSearch
+        open={originSearchOpen}
+        onClose={() => setOriginSearchOpen(false)}
+        onSelect={handleOriginSelect}
+        onPlaceSelect={handleOriginPlaceSelect}
+        near={position ?? destination}
+      />
     </div>
   );
 }

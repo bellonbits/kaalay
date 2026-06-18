@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Car, Motorbike, Package } from "lucide-react";
+import { Car, Motorbike, Package, Bike } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useRequireAuth } from "@/features/auth/useRequireAuth";
 import { useAuthStore } from "@/features/auth/store";
@@ -14,6 +14,7 @@ const CATEGORIES: { id: RideCategory; label: string; icon: typeof Car }[] = [
   { id: "xl", label: "XL car", icon: Car },
   { id: "motorcycle", label: "Motorcycle", icon: Motorbike },
   { id: "delivery", label: "Delivery", icon: Package },
+  { id: "bike", label: "Bicycle", icon: Bike },
 ];
 
 export default function DriverRegisterPage() {
@@ -56,7 +57,7 @@ export default function DriverRegisterPage() {
       <h1 className="text-2xl font-extrabold text-foreground">Become a Kaalay driver</h1>
       <p className="mt-1 text-sm font-medium text-muted-foreground">Tell us about your vehicle to start accepting rides.</p>
 
-      <div className="mt-6 grid grid-cols-4 gap-2">
+      <div className="mt-6 grid grid-cols-3 gap-2">
         {CATEGORIES.map(({ id, label, icon: Icon }) => (
           <button
             key={id}

@@ -6,6 +6,7 @@ export const RIDE_CATEGORY_INFO: Record<RideCategory, { label: string; descripti
   motorcycle: { label: "Kaalay Moto", description: "Fast pickup, quick trips" },
   xl: { label: "Kaalay Comfort", description: "More room, smoother ride" },
   delivery: { label: "Kaalay Premium", description: "Top-rated drivers" },
+  bike: { label: "Kaalay Bike", description: "Cheapest, short trips" },
 };
 
 export const RIDE_CATEGORIES = Object.keys(RIDE_CATEGORY_INFO) as RideCategory[];
