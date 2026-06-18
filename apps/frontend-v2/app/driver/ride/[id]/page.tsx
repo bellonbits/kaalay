@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Phone } from "lucide-react";
+import { Phone, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import MapBase from "@/components/shared/MapBase";
 import NavigationHud from "@/features/navigation/components/NavigationHud";
@@ -188,15 +188,24 @@ export default function DriverActiveTripPage() {
             <p className="truncate text-base font-extrabold text-foreground">
               {ride.rider?.fullName ?? "Rider"}
             </p>
-            {ride.rider?.phoneNumber && (
-              <a
-                href={`tel:${ride.rider.phoneNumber}`}
-                className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground active:scale-95 transition-transform"
-                aria-label="Call rider"
+            <div className="flex flex-shrink-0 items-center gap-2">
+              <button
+                onClick={() => router.push(`/driver/ride/${ride.id}/chat`)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary text-foreground active:scale-95 transition-transform"
+                aria-label="Message rider"
               >
-                <Phone className="h-4 w-4" />
-              </a>
-            )}
+                <MessageCircle className="h-4 w-4" />
+              </button>
+              {ride.rider?.phoneNumber && (
+                <a
+                  href={`tel:${ride.rider.phoneNumber}`}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground active:scale-95 transition-transform"
+                  aria-label="Call rider"
+                >
+                  <Phone className="h-4 w-4" />
+                </a>
+              )}
+            </div>
           </div>
 
           {ride.status === "accepted" || ride.status === "arriving" ? (

@@ -11,11 +11,10 @@ import {
   Bookmark,
   TriangleAlert,
   Car,
-  Bot,
+  MessageCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import MapBase from "@/components/shared/MapBase";
-import DestinationSearch from "@/features/navigation/components/DestinationSearch";
 import PlaceDetailSheet from "@/features/navigation/components/PlaceDetailSheet";
 import PlanTripSheet from "@/features/navigation/components/PlanTripSheet";
 import { useRequireAuth } from "@/features/auth/useRequireAuth";
@@ -55,7 +54,6 @@ export default function NavigatePage() {
   const setOrigin = useNavigationStore((s) => s.setOrigin);
   const setAutoStart = useNavigationStore((s) => s.setAutoStart);
 
-  const [searchOpen, setSearchOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<DetailPlace | null>(null);
   const [following, setFollowing] = useState(true);
@@ -83,12 +81,6 @@ export default function NavigatePage() {
   }, [position]);
 
   const WeatherIcon = weather ? weatherIcon(weather.condition) : null;
-
-  const goToDestination = (point: LocationPoint) => {
-    setOrigin(null);
-    setDestination(point);
-    router.push("/navigate/route");
-  };
 
   const handlePlanGo = (origin: LocationPoint | null, destination: LocationPoint) => {
     setOrigin(origin);
@@ -175,33 +167,32 @@ export default function NavigatePage() {
       {/* Header */}
       <div className="absolute inset-x-4 top-[calc(env(safe-area-inset-top,0px)+1rem)] z-20 flex items-center justify-between gap-2">
         <div className="flex items-center gap-3 rounded-2xl bg-card px-3 py-2 shadow-lg">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-sm font-extrabold text-primary-foreground">
+          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-sm font-extrabold text-primary-foreground">
             {user?.fullName?.charAt(0).toUpperCase() ?? "K"}
           </div>
-          <p className="text-sm font-extrabold text-foreground">Hey {user?.fullName?.split(" ")[0] ?? "there"}</p>
+          <div className="min-w-0">
+            <p className="text-sm font-extrabold leading-tight text-foreground">Hey {user?.fullName?.split(" ")[0] ?? "there"}</p>
+            {weather && WeatherIcon && (
+              <p className="flex items-center gap-1 text-[11px] font-semibold leading-tight text-muted-foreground" title={weather.description}>
+                <WeatherIcon className="h-3 w-3 text-primary" /> {weather.tempC}°C
+              </p>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {weather && WeatherIcon && (
-            <div className="flex items-center gap-1.5 rounded-2xl bg-card px-3 py-2 shadow-lg" title={weather.description}>
-              <WeatherIcon className="h-4 w-4 text-primary" />
-              <span className="text-sm font-extrabold text-foreground">{weather.tempC}°C</span>
-            </div>
-          )}
-          <button
-            onClick={() => router.push("/profile")}
-            className="relative flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform"
-            aria-label="Notifications"
-          >
-            <Bell className="h-5 w-5 text-foreground" />
-            <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-emergency" />
-          </button>
-        </div>
+        <button
+          onClick={() => router.push("/profile")}
+          className="relative flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform"
+          aria-label="Notifications"
+        >
+          <Bell className="h-5 w-5 text-foreground" />
+          <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-emergency" />
+        </button>
       </div>
 
       {/* Search bar */}
       <button
-        onClick={() => setSearchOpen(true)}
-        className="absolute inset-x-4 top-[calc(env(safe-area-inset-top,0px)+4.25rem)] z-20 flex h-14 items-center gap-3 rounded-2xl bg-card px-4 shadow-lg active:scale-[0.99] transition-transform"
+        onClick={() => setPlanOpen(true)}
+        className="absolute inset-x-4 top-[calc(env(safe-area-inset-top,0px)+5.5rem)] z-20 flex h-14 items-center gap-3 rounded-2xl bg-card px-4 shadow-lg active:scale-[0.99] transition-transform"
       >
         <Search className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
         <span className="flex-1 text-left text-base font-semibold text-muted-foreground">Where do you want to go?</span>
@@ -218,14 +209,14 @@ export default function NavigatePage() {
         <LocateFixed className={`h-5 w-5 ${following ? "text-primary" : "text-foreground"}`} />
       </button>
 
-      {/* Navigation Assistant entry point */}
+      {/* Messages — chat with the Kaalay assistant or your driver */}
       <button
-        onClick={() => router.push("/assistant")}
-        className="absolute left-1/2 z-20 flex h-12 -translate-x-1/2 items-center gap-2 rounded-full bg-foreground px-5 text-white shadow-lg active:scale-95 transition-transform"
+        onClick={() => router.push("/messages")}
+        aria-label="Messages"
+        className="absolute left-4 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-foreground shadow-lg active:scale-95 transition-transform"
         style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 15.5rem)" }}
       >
-        <Bot className="h-4 w-4" />
-        <span className="text-xs font-bold">Ask Kaalay anything</span>
+        <MessageCircle className="h-5 w-5 text-white" />
       </button>
 
       {/* Bottom sheet: quick actions */}
@@ -245,14 +236,6 @@ export default function NavigatePage() {
           ))}
         </div>
       </div>
-
-      <DestinationSearch
-        open={searchOpen}
-        onClose={() => setSearchOpen(false)}
-        onSelect={goToDestination}
-        onPlaceSelect={(place) => setSelectedPlace(place)}
-        near={position}
-      />
 
       <PlaceDetailSheet
         place={selectedPlace}

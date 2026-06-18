@@ -143,6 +143,19 @@ class Ride(Base):
     rider = relationship("User", back_populates="rides")
     driver = relationship("Driver", back_populates="rides")
 
+class Message(Base):
+    """Rider<->driver chat, scoped to a single ride. One per text bubble."""
+    __tablename__ = "messages"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    rideId = Column(UUID(as_uuid=True), ForeignKey("rides.id"))
+    senderId = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    text = Column(String)
+    createdAt = Column(DateTime, default=datetime.utcnow)
+
+    ride = relationship("Ride")
+    sender = relationship("User")
+
 class Place(Base):
     __tablename__ = "places"
 

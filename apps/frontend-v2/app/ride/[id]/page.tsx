@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { X, Phone, Star, Check } from "lucide-react";
+import { X, Phone, MessageCircle, Star, Check } from "lucide-react";
 import { toast } from "sonner";
 import MapBase from "@/components/shared/MapBase";
 import { useRequireAuth } from "@/features/auth/useRequireAuth";
@@ -171,6 +171,13 @@ export default function RideTrackingPage() {
                 {[ride.driver.vehicleModel, ride.driver.licensePlate].filter(Boolean).join(" · ") || "On the way"}
               </p>
             </div>
+            <button
+              onClick={() => router.push(`/ride/${ride.id}/chat`)}
+              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-secondary text-foreground active:scale-95 transition-transform"
+              aria-label="Message driver"
+            >
+              <MessageCircle className="h-4 w-4" />
+            </button>
             {ride.driver.phoneNumber && (
               <a
                 href={`tel:${ride.driver.phoneNumber}`}

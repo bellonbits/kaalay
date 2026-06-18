@@ -263,6 +263,15 @@ export interface Ride {
   rider: RideRiderSummary | null;
 }
 
+export interface RideChatMessage {
+  id: string;
+  rideId: string;
+  senderId: string;
+  senderName: string | null;
+  text: string;
+  createdAt: string | null;
+}
+
 export interface FareEstimate {
   category: RideCategory;
   fare: number;

@@ -26,6 +26,7 @@ import type {
   PlaceReview,
   Ride,
   RideCategory,
+  RideChatMessage,
   RideStatus,
   RoadReport,
   RoadReportType,
@@ -313,6 +314,11 @@ export const cancelRide = (id: string) => api.patch<Ride>(`/rides/${id}/cancel`)
 
 export const rateRide = (id: string, rating: number, comment?: string) =>
   api.post(`/rides/${id}/rating`, { rating, comment }).then((r) => r.data);
+
+export const getRideMessages = (id: string) => api.get<RideChatMessage[]>(`/rides/${id}/messages`).then((r) => r.data);
+
+export const sendRideMessage = (id: string, text: string) =>
+  api.post<RideChatMessage>(`/rides/${id}/messages`, { text }).then((r) => r.data);
 
 export const updateDriverRideLocation = (
   id: string,
