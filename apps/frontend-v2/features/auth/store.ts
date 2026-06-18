@@ -1,11 +1,12 @@
 import { create } from "zustand";
 import { getMe, loginUser, registerUser } from "@/lib/api";
-import type { User } from "@/types/api";
+import type { RideCategory, User } from "@/types/api";
 
 /** Where a signed-in user should land — admins and drivers get their own apps. */
 export function homeRouteForRole(role?: string | null): string {
   if (role === "admin") return "/admin";
   if (role === "driver") return "/driver";
+  if (role === "emergency_operator") return "/operator";
   return "/navigate";
 }
 
@@ -15,7 +16,16 @@ interface AuthState {
   hydrated: boolean;
   /** Sends the phone number; backend returns isNewUser if registration is required. */
   requestLogin: (phoneNumber: string) => Promise<{ isNewUser: boolean }>;
-  register: (data: { phoneNumber: string; fullName: string; email?: string; role?: string }) => Promise<void>;
+  register: (data: {
+    phoneNumber: string;
+    fullName: string;
+    email?: string;
+    role?: string;
+    vehicleModel?: string;
+    vehicleColor?: string;
+    vehicleCategory?: RideCategory;
+    licensePlate?: string;
+  }) => Promise<void>;
   logout: () => void;
   /** Verifies the stored token against the backend on app start. */
   hydrate: () => Promise<void>;

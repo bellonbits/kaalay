@@ -2,11 +2,27 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Loader2, Phone, User as UserIcon, Mail } from "lucide-react";
+import { ArrowLeft, Loader2, Phone, User as UserIcon, Mail, Car, ShieldAlert, Motorbike, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { homeRouteForRole, useAuthStore } from "@/features/auth/store";
+import type { RideCategory } from "@/types/api";
+
+type AccountType = "rider" | "driver" | "emergency_operator";
+
+const ACCOUNT_TYPES: { id: AccountType; label: string; icon: typeof UserIcon }[] = [
+  { id: "rider", label: "Rider", icon: UserIcon },
+  { id: "driver", label: "Driver", icon: Car },
+  { id: "emergency_operator", label: "Emergency Operator", icon: ShieldAlert },
+];
+
+const VEHICLE_CATEGORIES: { id: RideCategory; label: string; icon: typeof Car }[] = [
+  { id: "economy", label: "Economy", icon: Car },
+  { id: "motorcycle", label: "Motorcycle", icon: Motorbike },
+  { id: "xl", label: "XL", icon: Car },
+  { id: "delivery", label: "Delivery", icon: Package },
+];
 
 function AuthFlow() {
   const router = useRouter();
@@ -18,6 +34,11 @@ function AuthFlow() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [accountType, setAccountType] = useState<AccountType>("rider");
+  const [vehicleModel, setVehicleModel] = useState("");
+  const [vehicleColor, setVehicleColor] = useState("");
+  const [vehicleCategory, setVehicleCategory] = useState<RideCategory>("economy");
+  const [licensePlate, setLicensePlate] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const phoneValid = phoneNumber.replace(/\D/g, "").length >= 9;
@@ -45,20 +66,37 @@ function AuthFlow() {
       setError("Tell us your name");
       return;
     }
+    if (accountType === "driver" && (!vehicleModel.trim() || !vehicleColor.trim() || !licensePlate.trim())) {
+      setError("Fill in your vehicle details to register as a driver");
+      return;
+    }
     setError(null);
     try {
-      await register({ phoneNumber: phoneNumber.trim(), fullName: fullName.trim(), email: email.trim() || undefined });
-      router.replace("/navigate");
+      await register({
+        phoneNumber: phoneNumber.trim(),
+        fullName: fullName.trim(),
+        email: email.trim() || undefined,
+        role: accountType,
+        ...(accountType === "driver"
+          ? {
+              vehicleModel: vehicleModel.trim(),
+              vehicleColor: vehicleColor.trim(),
+              vehicleCategory,
+              licensePlate: licensePlate.trim().toUpperCase(),
+            }
+          : {}),
+      });
+      router.replace(homeRouteForRole(accountType));
     } catch {
       setError("Couldn't create your account. Try again.");
     }
   };
 
   return (
-    <div className="flex h-full w-full flex-col bg-background px-6 pb-10 pt-14">
+    <div className="flex h-full w-full flex-col overflow-y-auto bg-background px-6 pb-10 pt-14">
       <button
         onClick={() => (step === "register" ? setStep("phone") : router.push("/welcome"))}
-        className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary active:scale-95 transition-transform"
+        className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-secondary active:scale-95 transition-transform"
         aria-label="Back"
       >
         <ArrowLeft className="h-5 w-5 text-foreground" />
@@ -123,7 +161,25 @@ function AuthFlow() {
               <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Create your account</h1>
               <p className="mt-2 text-base font-medium text-muted-foreground">Just a couple details and you&apos;re in.</p>
 
-              <div className="mt-8 space-y-5">
+              <div className="mt-6 space-y-2">
+                <Label className="text-sm font-bold text-foreground">I want to sign up as a</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {ACCOUNT_TYPES.map(({ id, label, icon: Icon }) => (
+                    <button
+                      key={id}
+                      onClick={() => setAccountType(id)}
+                      className={`flex h-20 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-center text-[11px] font-bold leading-tight transition-all ${
+                        accountType === id ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
+                      }`}
+                    >
+                      <Icon className="h-5 w-5" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-6 space-y-5">
                 <div className="space-y-2">
                   <Label htmlFor="fullName" className="text-sm font-bold text-foreground">
                     Full name
@@ -132,7 +188,6 @@ function AuthFlow() {
                     <UserIcon className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
                     <Input
                       id="fullName"
-                      autoFocus
                       placeholder="Your full name"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
@@ -153,11 +208,70 @@ function AuthFlow() {
                       placeholder="you@example.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleRegisterSubmit()}
+                      onKeyDown={(e) => e.key === "Enter" && accountType !== "driver" && handleRegisterSubmit()}
                       className="h-full border-0 p-0 text-base font-semibold shadow-none focus-visible:ring-0"
                     />
                   </div>
                 </div>
+
+                {accountType === "driver" && (
+                  <>
+                    <div className="grid grid-cols-4 gap-2">
+                      {VEHICLE_CATEGORIES.map(({ id, label, icon: Icon }) => (
+                        <button
+                          key={id}
+                          onClick={() => setVehicleCategory(id)}
+                          className={`flex h-16 flex-col items-center justify-center gap-1 rounded-2xl text-[10px] font-bold transition-all ${
+                            vehicleCategory === id ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
+                          }`}
+                        >
+                          <Icon className="h-4 w-4" />
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="vehicleModel" className="text-sm font-bold text-foreground">
+                        Vehicle model
+                      </Label>
+                      <Input
+                        id="vehicleModel"
+                        placeholder="e.g. Toyota Probox"
+                        value={vehicleModel}
+                        onChange={(e) => setVehicleModel(e.target.value)}
+                        className="h-14 rounded-2xl border-2 border-input px-4 text-base font-semibold"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="vehicleColor" className="text-sm font-bold text-foreground">
+                        Vehicle color
+                      </Label>
+                      <Input
+                        id="vehicleColor"
+                        placeholder="e.g. White"
+                        value={vehicleColor}
+                        onChange={(e) => setVehicleColor(e.target.value)}
+                        className="h-14 rounded-2xl border-2 border-input px-4 text-base font-semibold"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="licensePlate" className="text-sm font-bold text-foreground">
+                        License plate
+                      </Label>
+                      <Input
+                        id="licensePlate"
+                        placeholder="e.g. KDA 123A"
+                        value={licensePlate}
+                        onChange={(e) => setLicensePlate(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleRegisterSubmit()}
+                        className="h-14 rounded-2xl border-2 border-input px-4 text-base font-semibold"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               {error && <p className="mt-3 text-sm font-semibold text-danger">{error}</p>}

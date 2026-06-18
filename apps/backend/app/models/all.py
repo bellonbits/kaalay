@@ -11,6 +11,7 @@ class UserRole(str, enum.Enum):
     RIDER = "rider"
     DRIVER = "driver"
     ADMIN = "admin"
+    EMERGENCY_OPERATOR = "emergency_operator"
 
 class RideStatus(str, enum.Enum):
     REQUESTED = "requested"
@@ -28,7 +29,7 @@ class DriverStatus(str, enum.Enum):
 
 class RideCategory(str, enum.Enum):
     ECONOMY = "economy"
-    BIKE = "bike"
+    MOTORCYCLE = "motorcycle"
     XL = "xl"
     DELIVERY = "delivery"
 

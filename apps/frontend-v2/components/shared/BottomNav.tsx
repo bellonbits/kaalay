@@ -29,6 +29,11 @@ const ADMIN_TABS = [
   { label: "Profile", icon: User, path: "/profile", raised: false },
 ] as const;
 
+const OPERATOR_TABS = [
+  { label: "Incidents", icon: ShieldAlert, path: "/operator", raised: false },
+  { label: "Profile", icon: User, path: "/profile", raised: false },
+] as const;
+
 const HIDDEN_ON = ["/", "/welcome", "/auth"];
 const LONG_PRESS_MS = 650;
 
@@ -39,7 +44,11 @@ export default function BottomNav() {
   const position = useLocationStore((s) => s.position);
   const role = useAuthStore((s) => s.user?.role);
 
-  const TABS = role === "admin" ? ADMIN_TABS : role === "driver" ? DRIVER_TABS : RIDER_TABS;
+  const TABS =
+    role === "admin" ? ADMIN_TABS
+    : role === "driver" ? DRIVER_TABS
+    : role === "emergency_operator" ? OPERATOR_TABS
+    : RIDER_TABS;
 
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);

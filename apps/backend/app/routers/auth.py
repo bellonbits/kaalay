@@ -30,6 +30,8 @@ class RegisterRequest(BaseModel):
     email: Optional[EmailStr] = None
     vehicleCategory: Optional[str] = None
     licensePlate: Optional[str] = None
+    vehicleModel: Optional[str] = None
+    vehicleColor: Optional[str] = None
 
 class UpdateProfileRequest(BaseModel):
     fullName: Optional[str] = None
@@ -111,6 +113,8 @@ async def register(dto: RegisterRequest, db: Session = Depends(get_db)):
     if dto.role in ["driver", "helper"]:
         driver = Driver(
             userId=user.id,
+            vehicleModel=dto.vehicleModel,
+            vehicleColor=dto.vehicleColor,
             vehicleCategory=dto.vehicleCategory or "economy",
             licensePlate=dto.licensePlate,
             status="offline"

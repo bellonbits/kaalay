@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Car, Bike, Package } from "lucide-react";
+import { Car, Motorbike, Package } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useRequireAuth } from "@/features/auth/useRequireAuth";
 import { useAuthStore } from "@/features/auth/store";
@@ -12,7 +12,7 @@ import type { RideCategory } from "@/types/api";
 const CATEGORIES: { id: RideCategory; label: string; icon: typeof Car }[] = [
   { id: "economy", label: "Economy car", icon: Car },
   { id: "xl", label: "XL car", icon: Car },
-  { id: "bike", label: "Bike", icon: Bike },
+  { id: "motorcycle", label: "Motorcycle", icon: Motorbike },
   { id: "delivery", label: "Delivery", icon: Package },
 ];
 

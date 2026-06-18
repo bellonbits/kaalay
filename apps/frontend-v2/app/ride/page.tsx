@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, MapPin, Search, Navigation as NavIcon, Car, Bike, Package, X } from "lucide-react";
+import { ArrowLeft, MapPin, Search, Navigation as NavIcon, Car, Motorbike, Package, X } from "lucide-react";
 import { toast } from "sonner";
 import MapBase from "@/components/shared/MapBase";
 import DestinationSearch from "@/features/navigation/components/DestinationSearch";
@@ -14,7 +14,7 @@ import type { FareEstimate, RideCategory } from "@/types/api";
 
 const CATEGORIES: { id: RideCategory; label: string; icon: typeof Car }[] = [
   { id: "economy", label: "Economy", icon: Car },
-  { id: "bike", label: "Bike", icon: Bike },
+  { id: "motorcycle", label: "Motorcycle", icon: Motorbike },
   { id: "xl", label: "XL", icon: Car },
   { id: "delivery", label: "Delivery", icon: Package },
 ];

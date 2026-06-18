@@ -1,7 +1,7 @@
 // TS interfaces mirroring the FastAPI backend's models/enums exactly
 // (apps/backend/app/models/all.py). Keep in sync if the backend changes.
 
-export type UserRole = "user" | "rider" | "driver" | "admin";
+export type UserRole = "user" | "rider" | "driver" | "admin" | "emergency_operator";
 
 export type EmergencyType =
   | "medical"
@@ -123,7 +123,7 @@ export interface EmergencyContact {
 
 export type RideStatus = "requested" | "accepted" | "arriving" | "arrived" | "started" | "completed" | "cancelled";
 
-export type RideCategory = "economy" | "bike" | "xl" | "delivery";
+export type RideCategory = "economy" | "motorcycle" | "xl" | "delivery";
 
 export interface RideDriverSummary {
   id: string;
@@ -226,6 +226,14 @@ export interface AdminDashboardStats {
   totalDrivers: number;
   verifiedDrivers: number;
   totalRevenue: number;
+}
+
+export interface AdminIncidentStats {
+  open: number;
+  dispatched: number;
+  resolved: number;
+  bySeverity: Record<string, number>;
+  byType: Record<string, number>;
 }
 
 export interface AdminTrip {

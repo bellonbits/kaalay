@@ -16,6 +16,13 @@ def is_admin(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
 
+def is_admin_or_operator(current_user: User = Depends(get_current_user)):
+    """Incident management is shared between full admins and the scoped
+    Emergency Operator role — everything else under /admin stays admin-only."""
+    if current_user.role not in ("admin", "emergency_operator"):
+        raise HTTPException(status_code=403, detail="Admin or emergency operator access required")
+    return current_user
+
 @router.get("/dashboard-stats")
 async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depends(is_admin)):
     # Calculate key metrics for the ops dashboard
@@ -60,7 +67,7 @@ async def get_active_trips(db: Session = Depends(get_db), admin: User = Depends(
     return success_response(result)
 
 @router.get("/incidents")
-async def list_incidents(status: str = None, db: Session = Depends(get_db), admin: User = Depends(is_admin)):
+async def list_incidents(status: str = None, db: Session = Depends(get_db), admin: User = Depends(is_admin_or_operator)):
     query = db.query(Incident)
     if status:
         query = query.filter(Incident.status == status)
@@ -86,7 +93,7 @@ async def list_incidents(status: str = None, db: Session = Depends(get_db), admi
     return success_response(result)
 
 @router.get("/incidents/stats")
-async def get_incident_stats(db: Session = Depends(get_db), admin: User = Depends(is_admin)):
+async def get_incident_stats(db: Session = Depends(get_db), admin: User = Depends(is_admin_or_operator)):
     open_count = db.query(Incident).filter(Incident.status == IncidentStatus.OPEN).count()
     dispatched_count = db.query(Incident).filter(Incident.status == IncidentStatus.DISPATCHED).count()
     resolved_count = db.query(Incident).filter(Incident.status == IncidentStatus.RESOLVED).count()
@@ -229,7 +236,7 @@ class IncidentUpdate(BaseModel):
     status: str
 
 @router.patch("/incidents/{id}")
-async def update_incident(id: uuid.UUID, dto: IncidentUpdate, db: Session = Depends(get_db), admin: User = Depends(is_admin)):
+async def update_incident(id: uuid.UUID, dto: IncidentUpdate, db: Session = Depends(get_db), admin: User = Depends(is_admin_or_operator)):
     from datetime import datetime
     incident = db.query(Incident).filter(Incident.id == id).first()
     if not incident:

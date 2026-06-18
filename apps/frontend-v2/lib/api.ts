@@ -2,6 +2,7 @@ import axios, { type AxiosError } from "axios";
 import type {
   AdminDashboardStats,
   AdminDriver,
+  AdminIncidentStats,
   AdminTrip,
   AdminUser,
   AuthResponse,
@@ -84,8 +85,16 @@ api.interceptors.response.use(
 export const loginUser = (phoneNumber: string) =>
   api.post<AuthResponse>("/auth/login", { phoneNumber }).then((r) => r.data);
 
-export const registerUser = (data: { phoneNumber: string; fullName: string; email?: string; role?: string }) =>
-  api.post<AuthResponse>("/auth/register", data).then((r) => r.data);
+export const registerUser = (data: {
+  phoneNumber: string;
+  fullName: string;
+  email?: string;
+  role?: string;
+  vehicleModel?: string;
+  vehicleColor?: string;
+  vehicleCategory?: RideCategory;
+  licensePlate?: string;
+}) => api.post<AuthResponse>("/auth/register", data).then((r) => r.data);
 
 export const getMe = () => api.get<User>("/auth/me").then((r) => r.data);
 
@@ -279,6 +288,9 @@ export const forceCancelAdminRide = (id: string) => api.patch<Ride>(`/admin/ride
 
 export const getAdminIncidents = (status?: IncidentStatus) =>
   api.get<Incident[]>("/admin/incidents", { params: { status } }).then((r) => r.data);
+
+export const getAdminIncidentStats = () =>
+  api.get<AdminIncidentStats>("/admin/incidents/stats").then((r) => r.data);
 
 export const updateAdminIncident = (id: string, status: IncidentStatus) =>
   api.patch<{ id: string; status: IncidentStatus; resolvedAt: string | null }>(`/admin/incidents/${id}`, { status }).then((r) => r.data);
