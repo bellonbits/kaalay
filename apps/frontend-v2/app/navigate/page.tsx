@@ -8,26 +8,25 @@ import {
   LocateFixed,
   Navigation as NavIcon,
   Share2,
-  Compass,
   Bookmark,
-  Route as RouteIcon,
   TriangleAlert,
   Car,
   Bot,
-  Star,
 } from "lucide-react";
 import { toast } from "sonner";
 import MapBase from "@/components/shared/MapBase";
 import DestinationSearch from "@/features/navigation/components/DestinationSearch";
 import PlaceDetailSheet from "@/features/navigation/components/PlaceDetailSheet";
+import PlanTripSheet from "@/features/navigation/components/PlanTripSheet";
 import { useRequireAuth } from "@/features/auth/useRequireAuth";
 import { useLocationStore } from "@/features/location/store";
 import { useNavigationStore } from "@/features/navigation/store";
-import { getNearbyPlaces, getNearbyRoadReports, resolveUploadUrl } from "@/lib/api";
+import { getNearbyPlaces, getNearbyRoadReports, getWeather } from "@/lib/api";
 import { addRecent } from "@/features/navigation/recents";
 import { haversineKm } from "@/features/location/geo";
 import { kaalayPlaceToDetail, type LocationPoint, type DetailPlace } from "@/features/navigation/types";
-import type { Place, RoadReport } from "@/types/api";
+import { weatherIcon } from "@/features/weather/weatherIcon";
+import type { Place, RoadReport, WeatherInfo } from "@/types/api";
 
 const ROAD_ISSUE_LABEL: Record<RoadReport["type"], string> = {
   blocked: "Road blocked",
@@ -37,12 +36,12 @@ const ROAD_ISSUE_LABEL: Record<RoadReport["type"], string> = {
   other: "Road issue",
 };
 
+// Discover and Local Guides already have their own bottom-nav tabs — kept
+// out of here so the same icon doesn't appear twice on the home screen.
 const QUICK_ACTIONS = [
-  { label: "Navigate", icon: NavIcon, kind: "search" as const },
+  { label: "Navigate", icon: NavIcon, kind: "plan" as const },
   { label: "Share Location", icon: Share2, path: "/share" },
-  { label: "Discover", icon: Compass, path: "/discover" },
   { label: "Saved Places", icon: Bookmark, path: "/profile/saved-locations" },
-  { label: "Local Guides", icon: RouteIcon, path: "/routes" },
   { label: "Report Road", icon: TriangleAlert, path: "/community/report-road" },
   { label: "Book a Ride", icon: Car, path: "/ride" },
 ];
@@ -53,13 +52,16 @@ export default function NavigatePage() {
   // Road-snapped when on a road (see useRoadSnap) — falls back to raw GPS off-road.
   const position = useLocationStore((s) => s.displayPosition);
   const setDestination = useNavigationStore((s) => s.setDestination);
+  const setOrigin = useNavigationStore((s) => s.setOrigin);
   const setAutoStart = useNavigationStore((s) => s.setAutoStart);
 
   const [searchOpen, setSearchOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<DetailPlace | null>(null);
   const [following, setFollowing] = useState(true);
   const [nearbyPlaces, setNearbyPlaces] = useState<Place[]>([]);
   const [roadReports, setRoadReports] = useState<RoadReport[]>([]);
+  const [weather, setWeather] = useState<WeatherInfo | null>(null);
 
   const lastNearbyFetchRef = useRef<{ lat: number; lng: number } | null>(null);
 
@@ -75,15 +77,30 @@ export default function NavigatePage() {
     getNearbyRoadReports(position.lat, position.lng, 5)
       .then(setRoadReports)
       .catch(() => {});
+    getWeather(position.lat, position.lng)
+      .then(setWeather)
+      .catch(() => {});
   }, [position]);
 
+  const WeatherIcon = weather ? weatherIcon(weather.condition) : null;
+
   const goToDestination = (point: LocationPoint) => {
+    setOrigin(null);
     setDestination(point);
+    router.push("/navigate/route");
+  };
+
+  const handlePlanGo = (origin: LocationPoint | null, destination: LocationPoint) => {
+    setOrigin(origin);
+    setDestination(destination);
+    setAutoStart(false);
+    setPlanOpen(false);
     router.push("/navigate/route");
   };
 
   const handlePlaceDirections = (place: DetailPlace) => {
     addRecent({ kind: "place", key: `${place.source}-${place.id}`, place });
+    setOrigin(null);
     setDestination({
       lat: place.lat,
       lng: place.lng,
@@ -98,6 +115,7 @@ export default function NavigatePage() {
 
   const handlePlaceStart = (place: DetailPlace) => {
     addRecent({ kind: "place", key: `${place.source}-${place.id}`, place });
+    setOrigin(null);
     setDestination({
       lat: place.lat,
       lng: place.lng,
@@ -112,7 +130,7 @@ export default function NavigatePage() {
 
   const handleQuickAction = useCallback(
     (action: (typeof QUICK_ACTIONS)[number]) => {
-      if (action.kind === "search") setSearchOpen(true);
+      if (action.kind === "plan") setPlanOpen(true);
       else router.push(action.path);
     },
     [router]
@@ -155,21 +173,29 @@ export default function NavigatePage() {
       />
 
       {/* Header */}
-      <div className="absolute inset-x-4 top-[calc(env(safe-area-inset-top,0px)+1rem)] z-20 flex items-center justify-between">
+      <div className="absolute inset-x-4 top-[calc(env(safe-area-inset-top,0px)+1rem)] z-20 flex items-center justify-between gap-2">
         <div className="flex items-center gap-3 rounded-2xl bg-card px-3 py-2 shadow-lg">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-sm font-extrabold text-primary-foreground">
             {user?.fullName?.charAt(0).toUpperCase() ?? "K"}
           </div>
           <p className="text-sm font-extrabold text-foreground">Hey {user?.fullName?.split(" ")[0] ?? "there"}</p>
         </div>
-        <button
-          onClick={() => router.push("/profile")}
-          className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform"
-          aria-label="Notifications"
-        >
-          <Bell className="h-5 w-5 text-foreground" />
-          <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-emergency" />
-        </button>
+        <div className="flex items-center gap-2">
+          {weather && WeatherIcon && (
+            <div className="flex items-center gap-1.5 rounded-2xl bg-card px-3 py-2 shadow-lg" title={weather.description}>
+              <WeatherIcon className="h-4 w-4 text-primary" />
+              <span className="text-sm font-extrabold text-foreground">{weather.tempC}°C</span>
+            </div>
+          )}
+          <button
+            onClick={() => router.push("/profile")}
+            className="relative flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform"
+            aria-label="Notifications"
+          >
+            <Bell className="h-5 w-5 text-foreground" />
+            <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-emergency" />
+          </button>
+        </div>
       </div>
 
       {/* Search bar */}
@@ -202,7 +228,7 @@ export default function NavigatePage() {
         <span className="text-xs font-bold">Ask Kaalay anything</span>
       </button>
 
-      {/* Bottom sheet: quick actions + community locations */}
+      {/* Bottom sheet: quick actions */}
       <div className="absolute inset-x-0 bottom-0 z-20 rounded-t-3xl bg-card px-4 pb-[calc(env(safe-area-inset-bottom,0px)+6rem)] pt-4 shadow-2xl">
         <div className="flex gap-3 overflow-x-auto pb-1">
           {QUICK_ACTIONS.map((action) => (
@@ -218,41 +244,6 @@ export default function NavigatePage() {
             </button>
           ))}
         </div>
-
-        {nearbyPlaces.length > 0 && (
-          <>
-            <p className="mt-4 text-xs font-bold uppercase tracking-wide text-muted-foreground">Community locations near you</p>
-            <div className="mt-2 flex gap-3 overflow-x-auto pb-1">
-              {nearbyPlaces.slice(0, 8).map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setSelectedPlace(kaalayPlaceToDetail(p))}
-                  className="flex w-36 flex-shrink-0 flex-col overflow-hidden rounded-2xl bg-secondary text-left active:scale-95 transition-transform"
-                >
-                  <div className="h-20 w-full bg-muted">
-                    {p.photos[0] && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={resolveUploadUrl(p.photos[0])} alt={p.name} className="h-full w-full object-cover" />
-                    )}
-                  </div>
-                  <div className="p-2.5">
-                    <p className="truncate text-xs font-extrabold text-foreground">{p.name}</p>
-                    <div className="mt-1 flex items-center justify-between">
-                      <span className="text-[10px] font-semibold text-muted-foreground">
-                        {position ? `${haversineKm(position.lat, position.lng, p.latitude, p.longitude).toFixed(1)} km` : ""}
-                      </span>
-                      {p.averageRating && (
-                        <span className="flex items-center gap-0.5 text-[10px] font-bold text-foreground">
-                          <Star className="h-2.5 w-2.5 fill-warning text-warning" /> {p.averageRating}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
       </div>
 
       <DestinationSearch
@@ -270,6 +261,8 @@ export default function NavigatePage() {
         onDirections={handlePlaceDirections}
         onStart={handlePlaceStart}
       />
+
+      <PlanTripSheet open={planOpen} onClose={() => setPlanOpen(false)} near={position} onGo={handlePlanGo} />
     </div>
   );
 }

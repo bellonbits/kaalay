@@ -11,8 +11,9 @@ import { useNavigationStore, type TravelMode } from "@/features/navigation/store
 import { computeRoute, type RouteResult } from "@/features/navigation/routeService";
 import { bearing, haversineMeters, formatDistance, formatDuration } from "@/features/location/geo";
 import { useVoiceGuidance, type VoiceLanguage } from "@/features/navigation/useVoiceGuidance";
-import { getNearbyRoadReports, getPlaceNotes } from "@/lib/api";
-import type { RoadReport, PlaceNote } from "@/types/api";
+import { getNearbyRoadReports, getPlaceNotes, getWeather } from "@/lib/api";
+import { weatherIcon } from "@/features/weather/weatherIcon";
+import type { RoadReport, PlaceNote, WeatherInfo } from "@/types/api";
 import type { LocationPoint, DetailPlace } from "@/features/navigation/types";
 
 const ROAD_ISSUE_LABEL: Record<RoadReport["type"], string> = {
@@ -40,6 +41,8 @@ export default function RoutePage() {
   const position = useLocationStore((s) => s.displayPosition);
   const destination = useNavigationStore((s) => s.destination);
   const setDestination = useNavigationStore((s) => s.setDestination);
+  const customOrigin = useNavigationStore((s) => s.origin);
+  const setCustomOrigin = useNavigationStore((s) => s.setOrigin);
   const setImmersive = useNavigationStore((s) => s.setImmersive);
   const autoStart = useNavigationStore((s) => s.autoStart);
   const setAutoStart = useNavigationStore((s) => s.setAutoStart);
@@ -56,7 +59,7 @@ export default function RoutePage() {
   const [manualPan, setManualPan] = useState(false);
   const [roadReports, setRoadReports] = useState<RoadReport[]>([]);
   const [placeNotes, setPlaceNotes] = useState<PlaceNote[]>([]);
-  const [customOrigin, setCustomOrigin] = useState<LocationPoint | null>(null);
+  const [destinationWeather, setDestinationWeather] = useState<WeatherInfo | null>(null);
   const [originSearchOpen, setOriginSearchOpen] = useState(false);
 
   const origin = customOrigin ?? position;
@@ -78,6 +81,9 @@ export default function RoutePage() {
     getNearbyRoadReports(destination.lat, destination.lng, 5)
       .then(setRoadReports)
       .catch(() => {});
+    getWeather(destination.lat, destination.lng)
+      .then(setDestinationWeather)
+      .catch(() => setDestinationWeather(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destination?.lat, destination?.lng]);
 
@@ -243,6 +249,7 @@ export default function RoutePage() {
 
   const handleClose = () => {
     setDestination(null);
+    setCustomOrigin(null);
     setLastCompletedRoute(null);
     router.replace("/navigate");
   };
@@ -293,7 +300,10 @@ export default function RoutePage() {
       {phase === "select" && (
         <div className="absolute inset-0 z-20 flex flex-col">
           <button
-            onClick={() => router.push("/navigate")}
+            onClick={() => {
+              setCustomOrigin(null);
+              router.push("/navigate");
+            }}
             className="m-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform"
             aria-label="Back"
           >
@@ -320,9 +330,20 @@ export default function RoutePage() {
               )}
             </div>
 
-            <div className="mt-2 rounded-2xl bg-secondary px-4 py-2.5">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">To</p>
-              <p className="truncate text-sm font-bold text-foreground">{destination.label}</p>
+            <div className="mt-2 flex items-center justify-between gap-2 rounded-2xl bg-secondary px-4 py-2.5">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">To</p>
+                <p className="truncate text-sm font-bold text-foreground">{destination.label}</p>
+              </div>
+              {destinationWeather && (
+                <div className="flex flex-shrink-0 items-center gap-1.5" title={destinationWeather.description}>
+                  {(() => {
+                    const Icon = weatherIcon(destinationWeather.condition);
+                    return <Icon className="h-4 w-4 text-primary" />;
+                  })()}
+                  <span className="text-sm font-extrabold text-foreground">{destinationWeather.tempC}°C</span>
+                </div>
+              )}
             </div>
 
             {selectedMode !== "PRECISION" && estimates[selectedMode] && estimates[selectedMode] !== "loading" && estimates[selectedMode] !== "unavailable" && (

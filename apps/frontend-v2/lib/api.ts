@@ -36,6 +36,7 @@ import type {
   W3WConvertToCoordsResponse,
   W3WConvertToWordsResponse,
   Waypoint,
+  WeatherInfo,
 } from "@/types/api";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://app.suqafuran.com/api/v1";
@@ -201,6 +202,10 @@ export const getNearestFacilities = (lat: number, lng: number, type?: FacilityTy
   api.get<EmergencyFacility[]>("/emergency/nearest", { params: { lat, lng, type, limit } }).then((r) => r.data);
 
 type FacilityTypeParam = "hospital" | "clinic" | "police" | "fire" | "ambulance" | undefined;
+
+// ── Weather ──────────────────────────────────────────────────────────────
+export const getWeather = (lat: number, lng: number) =>
+  api.get<WeatherInfo>("/weather/current", { params: { lat, lng } }).then((r) => r.data);
 
 // ── Places (search destination by name, saved locations) ──────────────
 export const getNearbyPlaces = (lat: number, lng: number, radius = 0.1) =>

@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # Deliberately separate from GOOGLE_MAPS_API_KEY, which is sent to the browser.
     GOOGLE_MAPS_SERVER_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
+    # Server-side only — weather lookups are proxied through our own API so
+    # this key is never shipped to the browser.
+    OPENWEATHER_API_KEY: Optional[str] = None
 
     # Database connection details (fallback)
     DATABASE_HOST: Optional[str] = None

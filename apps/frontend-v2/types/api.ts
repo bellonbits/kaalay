@@ -355,3 +355,13 @@ export interface EmergencyFacility {
   city?: string | null;
   distanceKm: number;
 }
+
+export interface WeatherInfo {
+  tempC: number;
+  feelsLikeC: number;
+  condition: string;
+  description: string;
+  humidity: number;
+  windKph: number;
+  cityName: string;
+}
