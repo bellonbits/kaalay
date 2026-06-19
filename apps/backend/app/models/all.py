@@ -288,6 +288,12 @@ class PlaceNote(Base):
     placeId = Column(UUID(as_uuid=True), ForeignKey("places.id"))
     userId = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     text = Column(String)
+    # "general" | "entrance" | "floor" | "room" | "landmark" — lets the last
+    # stretch of guidance for interior/private destinations (which gate,
+    # which floor, which room) be grouped distinctly instead of one flat
+    # list. Free string, not a DB enum, matching every other "kind"-style
+    # field in this codebase (RideCategory etc. are validated app-side).
+    kind = Column(String, default="general")
     createdAt = Column(DateTime, default=datetime.utcnow)
 
     place = relationship("Place")

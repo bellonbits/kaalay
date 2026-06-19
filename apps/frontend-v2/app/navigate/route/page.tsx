@@ -1,7 +1,24 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Footprints, Bike, Car, Compass, LocateFixed, Share2, MapPin, TriangleAlert, X, ShieldAlert } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  Footprints,
+  Bike,
+  Car,
+  Compass,
+  LocateFixed,
+  Share2,
+  MapPin,
+  TriangleAlert,
+  X,
+  ShieldAlert,
+  Search,
+  Bookmark,
+  MapPinned,
+} from "lucide-react";
+import { toast } from "sonner";
 import MapBase from "@/components/shared/MapBase";
 import NavigationHud from "@/features/navigation/components/NavigationHud";
 import DestinationSearch from "@/features/navigation/components/DestinationSearch";
@@ -9,11 +26,12 @@ import { useRequireAuth } from "@/features/auth/useRequireAuth";
 import { useLocationStore } from "@/features/location/store";
 import { useNavigationStore, type TravelMode } from "@/features/navigation/store";
 import { computeRoute, type RouteResult } from "@/features/navigation/routeService";
-import { bearing, haversineMeters, formatDistance, formatDuration } from "@/features/location/geo";
+import { bearing, haversineMeters, formatDistance, formatDuration, distanceToPolyline } from "@/features/location/geo";
 import { useVoiceGuidance, type VoiceLanguage } from "@/features/navigation/useVoiceGuidance";
-import { getNearbyRoadReports, getPlaceNotes, getWeather } from "@/lib/api";
+import { getNearbyRoadReports, getPlaceNotes, getWeather, convertToWords, getPlaces } from "@/lib/api";
 import { weatherIcon } from "@/features/weather/weatherIcon";
-import type { RoadReport, PlaceNote, WeatherInfo } from "@/types/api";
+import { NOTE_KIND_LABEL, NOTE_KIND_ORDER } from "@/features/navigation/noteKinds";
+import type { RoadReport, PlaceNote, WeatherInfo, Place } from "@/types/api";
 import type { LocationPoint, DetailPlace } from "@/features/navigation/types";
 
 const ROAD_ISSUE_LABEL: Record<RoadReport["type"], string> = {
@@ -49,7 +67,7 @@ export default function RoutePage() {
   const setLastCompletedRoute = useNavigationStore((s) => s.setLastCompletedRoute);
   const lastCompletedRoute = useNavigationStore((s) => s.lastCompletedRoute);
 
-  const [phase, setPhase] = useState<"select" | "navigating" | "arrived">("select");
+  const [phase, setPhase] = useState<"select" | "navigating" | "preview" | "arrived">("select");
   const [selectedMode, setSelectedMode] = useState<TravelMode>("WALKING");
   const [estimates, setEstimates] = useState<Record<string, Estimate>>({});
   const [routes, setRoutes] = useState<Record<string, RouteResult>>({});
@@ -61,11 +79,27 @@ export default function RoutePage() {
   const [placeNotes, setPlaceNotes] = useState<PlaceNote[]>([]);
   const [destinationWeather, setDestinationWeather] = useState<WeatherInfo | null>(null);
   const [originSearchOpen, setOriginSearchOpen] = useState(false);
+  const [originMenuOpen, setOriginMenuOpen] = useState(false);
+  const [savedPlacesOpen, setSavedPlacesOpen] = useState(false);
+  const [savedPlaces, setSavedPlaces] = useState<Place[]>([]);
+  const [pickingOrigin, setPickingOrigin] = useState(false);
+  const [originPinDraft, setOriginPinDraft] = useState<LocationPoint | null>(null);
+  const [resolvingOriginPin, setResolvingOriginPin] = useState(false);
 
   const origin = customOrigin ?? position;
 
+  // A custom "From" that's actually close to where the device really is
+  // (or no custom From at all) still gets real live GPS tracking. A custom
+  // From meaningfully far away can only ever be a route preview — there's
+  // no honest way to "live track" a route the device isn't physically on.
+  const usingLiveGps = !customOrigin || (!!position && haversineMeters(customOrigin.lat, customOrigin.lng, position.lat, position.lng) < 300);
+
   const approachedRef = useRef(false);
   const lastSpokenStepRef = useRef(-1);
+  const offRouteStreakRef = useRef(0);
+  const reroutingRef = useRef(false);
+  const lastResolvedPinRef = useRef<string | null>(null);
+  const pinDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const voiceLang: VoiceLanguage =
     (typeof window !== "undefined" && (localStorage.getItem("kaalay_voice_lang") as VoiceLanguage)) || "en";
@@ -131,7 +165,11 @@ export default function RoutePage() {
 
       if (autoStart) {
         setAutoStart(false);
-        startNavigation(firstAvailable, firstAvailable === "PRECISION" ? null : nextRoutes[firstAvailable]);
+        startNavigation(
+          firstAvailable,
+          firstAvailable === "PRECISION" ? null : nextRoutes[firstAvailable],
+          usingLiveGps ? "navigating" : "preview"
+        );
       }
     });
 
@@ -143,17 +181,24 @@ export default function RoutePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destination?.lat, destination?.lng, customOrigin?.lat, customOrigin?.lng]);
 
-  const startNavigation = (mode: TravelMode, route: RouteResult | null) => {
+  const startNavigation = (mode: TravelMode, route: RouteResult | null, targetPhase: "navigating" | "preview" = "navigating") => {
     setSelectedMode(mode);
     setActiveRoute(mode === "PRECISION" ? null : route);
     approachedRef.current = false;
     lastSpokenStepRef.current = -1;
+    offRouteStreakRef.current = 0;
     setStepIndex(0);
     setManualPan(false);
-    setPhase("navigating");
+    setPhase(targetPhase);
   };
 
-  const handleGo = () => startNavigation(selectedMode, selectedMode === "PRECISION" ? null : routes[selectedMode] ?? null);
+  const handleGo = () =>
+    startNavigation(selectedMode, selectedMode === "PRECISION" ? null : routes[selectedMode] ?? null, usingLiveGps ? "navigating" : "preview");
+
+  const handleUseCurrentLocation = () => {
+    setCustomOrigin(null);
+    setPhase("select");
+  };
 
   const handleOriginSelect = (point: LocationPoint) => {
     setCustomOrigin(point);
@@ -168,6 +213,61 @@ export default function RoutePage() {
       words: place.words,
       placeId: place.source === "kaalay" ? place.id : undefined,
     });
+  };
+
+  const openOriginMenu = () => setOriginMenuOpen(true);
+
+  const handleOriginMenuSearch = () => {
+    setOriginMenuOpen(false);
+    setOriginSearchOpen(true);
+  };
+
+  const handleOriginMenuCurrentLocation = () => {
+    setOriginMenuOpen(false);
+    setCustomOrigin(null);
+  };
+
+  const handleOriginMenuSaved = () => {
+    setOriginMenuOpen(false);
+    setSavedPlacesOpen(true);
+    getPlaces().then(setSavedPlaces).catch(() => {});
+  };
+
+  const handleSavedPlaceSelect = (p: Place) => {
+    setCustomOrigin({ lat: p.latitude, lng: p.longitude, label: p.name, words: p.words, placeId: p.id });
+    setSavedPlacesOpen(false);
+  };
+
+  const handleOriginMenuDropPin = () => {
+    setOriginMenuOpen(false);
+    lastResolvedPinRef.current = null;
+    setOriginPinDraft(customOrigin ?? (position ? { lat: position.lat, lng: position.lng, label: "Locating…" } : null));
+    setPickingOrigin(true);
+  };
+
+  const handlePinCenterChange = (lat: number, lng: number) => {
+    setOriginPinDraft((prev) => ({ lat, lng, label: prev?.label ?? "Locating…" }));
+    const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+    if (pinDebounceRef.current) clearTimeout(pinDebounceRef.current);
+    pinDebounceRef.current = setTimeout(async () => {
+      if (key === lastResolvedPinRef.current) return;
+      setResolvingOriginPin(true);
+      try {
+        const res = await convertToWords(lat, lng);
+        lastResolvedPinRef.current = key;
+        setOriginPinDraft({ lat, lng, label: res.words, words: res.words });
+      } catch {
+        setOriginPinDraft({ lat, lng, label: `${lat.toFixed(5)}, ${lng.toFixed(5)}` });
+      } finally {
+        setResolvingOriginPin(false);
+      }
+    }, 450);
+  };
+
+  const confirmOriginPin = () => {
+    if (!originPinDraft) return;
+    setCustomOrigin(originPinDraft);
+    setPickingOrigin(false);
   };
 
   useEffect(() => {
@@ -215,6 +315,32 @@ export default function RoutePage() {
     }
   }, [live, activeRoute, stepIndex]);
 
+  // Auto-reroute on deviation — if the live GPS fix sits more than 40m off
+  // the active polyline for 3 consecutive ticks (filters out single noisy
+  // fixes), recompute the route fresh from the current position.
+  useEffect(() => {
+    if (phase !== "navigating" || !isRoad || !activeRoute || !position || !destination || reroutingRef.current) {
+      return;
+    }
+    const offRoute = distanceToPolyline(position, activeRoute.polylinePoints) > 40;
+    offRouteStreakRef.current = offRoute ? offRouteStreakRef.current + 1 : 0;
+    if (offRouteStreakRef.current < 3) return;
+
+    offRouteStreakRef.current = 0;
+    reroutingRef.current = true;
+    toast.info("Recalculating route…");
+    computeRoute(position, destination, selectedMode as "WALKING" | "BICYCLING" | "DRIVING", GOOGLE_KEY)
+      .then((result) => {
+        if (!result) return;
+        setActiveRoute(result);
+        setStepIndex(0);
+        lastSpokenStepRef.current = -1;
+      })
+      .finally(() => {
+        reroutingRef.current = false;
+      });
+  }, [position, isRoad, activeRoute, phase, selectedMode, destination]);
+
   // Voice guidance + arrival detection
   useEffect(() => {
     if (!live || phase !== "navigating" || !destination) return;
@@ -261,29 +387,42 @@ export default function RoutePage() {
   return (
     <div className="relative h-full w-full">
       <MapBase
+        key={pickingOrigin ? "picking-origin" : "view"}
         me={position}
         follow={phase === "navigating" && !manualPan}
+        lookAheadMeters={phase === "navigating" && isRoad ? 30 : 0}
         onUserDrag={() => setManualPan(true)}
         showGrid
+        pickingMode={pickingOrigin}
+        onCenterChange={pickingOrigin ? handlePinCenterChange : undefined}
         routePoints={
-          isRoad && activeRoute
-            ? activeRoute.polylinePoints
-            : phase === "select" && selectedMode !== "PRECISION"
-              ? routes[selectedMode]?.polylinePoints ?? []
-              : []
+          pickingOrigin
+            ? []
+            : isRoad && activeRoute
+              ? activeRoute.polylinePoints
+              : phase === "select" && selectedMode !== "PRECISION"
+                ? routes[selectedMode]?.polylinePoints ?? []
+                : []
         }
-        markers={[
-          { id: "dest", lat: destination.lat, lng: destination.lng, label: destination.label, color: "#DC2626" },
-          ...(customOrigin ? [{ id: "origin", lat: customOrigin.lat, lng: customOrigin.lng, label: customOrigin.label, color: "#16A34A" }] : []),
-          ...roadReports.map((r) => ({
-            id: `road-${r.id}`,
-            lat: r.lat,
-            lng: r.lng,
-            label: ROAD_ISSUE_LABEL[r.type],
-            color: "#F59E0B",
-          })),
-        ]}
-        initialCenter={position ?? destination}
+        markers={
+          pickingOrigin
+            ? []
+            : [
+                { id: "dest", lat: destination.lat, lng: destination.lng, label: destination.label, color: "#DC2626" },
+                ...(customOrigin
+                  ? [{ id: "origin", lat: customOrigin.lat, lng: customOrigin.lng, label: customOrigin.label, color: "#16A34A" }]
+                  : []),
+                ...roadReports.map((r) => ({
+                  id: `road-${r.id}`,
+                  lat: r.lat,
+                  lng: r.lng,
+                  label: ROAD_ISSUE_LABEL[r.type],
+                  color: "#F59E0B",
+                })),
+              ]
+        }
+        fitBounds={phase === "preview" && customOrigin ? [customOrigin, destination] : undefined}
+        initialCenter={pickingOrigin ? (originPinDraft ?? position ?? destination) : (position ?? destination)}
       />
 
       {/* SOS — left-aligned and clear of the top turn-by-turn pill so it
@@ -321,9 +460,17 @@ export default function RoutePage() {
           </button>
 
           <div className="mt-auto max-h-[75vh] overflow-y-auto rounded-t-3xl bg-card p-6 pb-[calc(env(safe-area-inset-bottom,0px)+6.5rem)] shadow-2xl">
+            {customOrigin && !usingLiveGps && (
+              <div className="mb-2 flex items-center justify-between gap-2 rounded-2xl bg-warning/10 px-3 py-2">
+                <p className="text-xs font-bold text-warning">Navigating from Custom Start Point</p>
+                <button onClick={handleUseCurrentLocation} className="text-xs font-bold text-primary underline active:opacity-70">
+                  Use current location
+                </button>
+              </div>
+            )}
             <div className="flex items-stretch gap-2">
               <button
-                onClick={() => setOriginSearchOpen(true)}
+                onClick={openOriginMenu}
                 className="min-w-0 flex-1 rounded-2xl bg-secondary px-4 py-2.5 text-left active:scale-[0.98] transition-transform"
               >
                 <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">From</p>
@@ -435,16 +582,72 @@ export default function RoutePage() {
             {placeNotes.length > 0 && (
               <>
                 <p className="mt-6 text-xs font-bold uppercase tracking-wide text-muted-foreground">Community notes</p>
-                <div className="mt-2 flex flex-col gap-2">
-                  {placeNotes.map((n) => (
-                    <div key={n.id} className="flex items-start gap-2 rounded-2xl bg-secondary p-3">
-                      <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
-                      <p className="text-sm font-medium text-foreground">{n.text}</p>
+                {NOTE_KIND_ORDER.filter((k) => placeNotes.some((n) => n.kind === k)).map((k) => (
+                  <div key={k} className="mt-2">
+                    {k !== "general" && <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-primary">{NOTE_KIND_LABEL[k]}</p>}
+                    <div className="flex flex-col gap-2">
+                      {placeNotes
+                        .filter((n) => n.kind === k)
+                        .map((n) => (
+                          <div key={n.id} className="flex items-start gap-2 rounded-2xl bg-secondary p-3">
+                            <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
+                            <p className="text-sm font-medium text-foreground">{n.text}</p>
+                          </div>
+                        ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {phase === "preview" && (
+        <div className="absolute inset-0 z-20 flex flex-col">
+          <button
+            onClick={handleCancel}
+            className="m-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform"
+            aria-label="Back"
+          >
+            <ArrowLeft className="h-5 w-5 text-foreground" />
+          </button>
+
+          <div className="mt-auto rounded-t-3xl bg-card p-6 pb-[calc(env(safe-area-inset-bottom,0px)+6.5rem)] shadow-2xl">
+            <div className="flex items-center justify-between gap-2 rounded-2xl bg-warning/10 px-3 py-2">
+              <p className="text-xs font-bold text-warning">Navigating from Custom Start Point</p>
+              <button onClick={handleUseCurrentLocation} className="flex-shrink-0 text-xs font-bold text-primary underline active:opacity-70">
+                Use current location
+              </button>
+            </div>
+
+            <p className="mt-4 text-xs font-bold uppercase tracking-wide text-muted-foreground">Route preview</p>
+            <p className="mt-1 truncate text-lg font-extrabold text-foreground">
+              {customOrigin?.label ?? "Custom start"} → {destination.label}
+            </p>
+            <p className="mt-1 text-xs font-medium text-muted-foreground">
+              You&apos;re not at the start point, so this is a preview — distance and time below, no live tracking.
+            </p>
+
+            {selectedMode !== "PRECISION" && routes[selectedMode] && (
+              <div className="mt-4 flex items-center gap-6">
+                <div>
+                  <p className="text-2xl font-extrabold text-foreground">{formatDistance(routes[selectedMode].distanceMeters)}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Distance</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-extrabold text-foreground">{formatDuration(routes[selectedMode].durationSeconds)}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Duration</p>
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={handleClose}
+              className="mt-6 h-14 w-full rounded-2xl bg-primary text-base font-bold text-primary-foreground active:scale-95 transition-transform"
+            >
+              Done
+            </button>
           </div>
         </div>
       )}
@@ -484,6 +687,27 @@ export default function RoutePage() {
             <h2 className="text-2xl font-extrabold text-foreground">You have arrived</h2>
             <p className="mt-2 text-base font-medium text-muted-foreground">{destination.label}</p>
           </div>
+
+          {placeNotes.some((n) => n.kind !== "general") && (
+            <div className="w-full max-w-xs max-h-[30vh] overflow-y-auto rounded-2xl bg-card p-4 text-left shadow-lg">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Finding your way in</p>
+              {NOTE_KIND_ORDER.filter((k) => k !== "general" && placeNotes.some((n) => n.kind === k)).map((k) => (
+                <div key={k} className="mt-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-primary">{NOTE_KIND_LABEL[k]}</p>
+                  <div className="mt-1 flex flex-col gap-1.5">
+                    {placeNotes
+                      .filter((n) => n.kind === k)
+                      .map((n) => (
+                        <p key={n.id} className="text-sm font-medium text-foreground">
+                          {n.text}
+                        </p>
+                      ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="flex w-full max-w-xs flex-col gap-3">
             {lastCompletedRoute && (
               <button
@@ -503,6 +727,59 @@ export default function RoutePage() {
         </div>
       )}
 
+      {originMenuOpen && (
+        <>
+          <div className="absolute inset-0 z-40 bg-black/20" onClick={() => setOriginMenuOpen(false)} />
+          <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] z-40 rounded-3xl bg-card p-3 shadow-2xl">
+            <p className="px-3 pb-2 pt-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">Start from</p>
+            <MenuRow icon={LocateFixed} label="Current Location" onClick={handleOriginMenuCurrentLocation} />
+            <MenuRow icon={Search} label="Search" onClick={handleOriginMenuSearch} />
+            <MenuRow icon={Bookmark} label="Saved Place" onClick={handleOriginMenuSaved} />
+            <MenuRow icon={MapPinned} label="Drop a Pin" onClick={handleOriginMenuDropPin} border={false} />
+          </div>
+        </>
+      )}
+
+      {savedPlacesOpen && (
+        <>
+          <div className="absolute inset-0 z-40 bg-black/20" onClick={() => setSavedPlacesOpen(false)} />
+          <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] z-40 max-h-[60vh] overflow-y-auto rounded-3xl bg-card p-3 shadow-2xl">
+            <p className="px-3 pb-2 pt-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">Saved places</p>
+            {savedPlaces.length === 0 && <p className="px-3 py-4 text-sm font-medium text-muted-foreground">No saved places yet.</p>}
+            {savedPlaces.map((p) => (
+              <MenuRow key={p.id} icon={Bookmark} label={p.name} onClick={() => handleSavedPlaceSelect(p)} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {pickingOrigin && (
+        <>
+          <div className="absolute inset-x-4 top-[calc(env(safe-area-inset-top,0px)+1rem)] z-30">
+            <button
+              onClick={() => setPickingOrigin(false)}
+              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform"
+              aria-label="Cancel"
+            >
+              <X className="h-5 w-5 text-foreground" />
+            </button>
+          </div>
+          <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+2rem)] z-30 rounded-3xl bg-card p-5 shadow-2xl">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Drop the pin on your start point</p>
+            <p className="mt-1 truncate text-lg font-extrabold text-foreground">
+              {resolvingOriginPin ? "Locating…" : originPinDraft?.label ?? "Locating…"}
+            </p>
+            <button
+              onClick={confirmOriginPin}
+              disabled={!originPinDraft}
+              className="mt-4 h-14 w-full rounded-2xl bg-primary text-base font-bold text-primary-foreground active:scale-95 transition-transform disabled:opacity-40"
+            >
+              Use this location
+            </button>
+          </div>
+        </>
+      )}
+
       <DestinationSearch
         open={originSearchOpen}
         onClose={() => setOriginSearchOpen(false)}
@@ -511,5 +788,29 @@ export default function RoutePage() {
         near={position ?? destination}
       />
     </div>
+  );
+}
+
+function MenuRow({
+  icon: Icon,
+  label,
+  onClick,
+  border = true,
+}: {
+  icon: typeof LocateFixed;
+  label: string;
+  onClick: () => void;
+  border?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex w-full items-center gap-3 px-3 py-3 text-left active:scale-[0.98] transition-transform ${
+        border ? "border-b border-border" : ""
+      }`}
+    >
+      <Icon className="h-4 w-4 flex-shrink-0 text-primary" />
+      <span className="truncate text-sm font-bold text-foreground">{label}</span>
+    </button>
   );
 }

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useGoogleMaps } from "./GoogleMapsProvider";
 import { getGridSection } from "@/lib/api";
+import { destinationPoint } from "@/features/location/geo";
 
 export interface MapMarkerData {
   id: string;
@@ -25,6 +26,10 @@ interface MapBaseProps {
   onCenterChange?: (lat: number, lng: number) => void;
   /** Keeps the camera centered + rotated on `me` (turn-by-turn follow mode). */
   follow?: boolean;
+  /** Biases the follow camera this many metres ahead of `me` along the
+   * current heading, so more of the upcoming route is visible instead of
+   * the live dot sitting dead-center — the "pan forward" turn-by-turn feel. */
+  lookAheadMeters?: number;
   /** Fired the instant the user drags the map themselves (not a
    * programmatic pan) — callers use this to drop out of follow mode so
    * a touch-drag isn't fought by the camera snapping back every frame. */
@@ -33,6 +38,12 @@ interface MapBaseProps {
   showGrid?: boolean;
   initialCenter?: { lat: number; lng: number };
   initialZoom?: number;
+  /** When set, the camera fits to contain every point in this list — for
+   * showing a route preview that spans two points far apart instead of
+   * forcing a single center+zoom. Re-fits whenever the array reference
+   * changes (callers should memoize/only pass a new array when the
+   * points actually change). */
+  fitBounds?: { lat: number; lng: number }[];
   className?: string;
 }
 
@@ -54,10 +65,12 @@ export default function MapBase({
   pickingMode,
   onCenterChange,
   follow,
+  lookAheadMeters,
   onUserDrag,
   showGrid,
   initialCenter,
   initialZoom = 16,
+  fitBounds,
   className,
 }: MapBaseProps) {
   const { isLoaded } = useGoogleMaps();
@@ -73,6 +86,7 @@ export default function MapBase({
   const rafRef = useRef<number | null>(null);
   const wasFollowingRef = useRef(false);
   const followRef = useRef(false);
+  const lookAheadRef = useRef(0);
   const gridLayerRef = useRef<google.maps.Data | null>(null);
   const gridDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastGridBoundsRef = useRef<string | null>(null);
@@ -181,6 +195,20 @@ export default function MapBase({
     polylineBorderRef.current?.setPath(path);
   }, [mapReady, routePoints]);
 
+  // ── Fit camera to a set of points (e.g. a route preview spanning a
+  //    custom origin and a destination far apart) instead of forcing a
+  //    single center+zoom. ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !fitBounds || fitBounds.length === 0) return;
+    if (fitBounds.length === 1) {
+      mapRef.current.panTo(fitBounds[0]);
+      return;
+    }
+    const bounds = new google.maps.LatLngBounds();
+    for (const point of fitBounds) bounds.extend(point);
+    mapRef.current.fitBounds(bounds, 64);
+  }, [mapReady, fitBounds]);
+
   // ── "Me" marker + accuracy circle — updates the target the animation
   //    loop below interpolates toward. Deliberately does NOT touch rafRef:
   //    restarting requestAnimationFrame on every GPS tick (every 1-3s)
@@ -236,6 +264,10 @@ export default function MapBase({
     wasFollowingRef.current = !!follow;
   }, [follow]);
 
+  useEffect(() => {
+    lookAheadRef.current = lookAheadMeters ?? 0;
+  }, [lookAheadMeters]);
+
   // ── Continuous LERP animation loop — started once the map is ready and
   //    left running for the component's lifetime, reading targetRef/
   //    followRef fresh every frame instead of being torn down and rebuilt
@@ -254,7 +286,11 @@ export default function MapBase({
         meMarkerRef.current.position = { lat: nextLat, lng: nextLng };
 
         if (followRef.current && mapRef.current) {
-          mapRef.current.moveCamera({ center: { lat: nextLat, lng: nextLng }, heading: nextHeading });
+          const center =
+            lookAheadRef.current > 0
+              ? destinationPoint(nextLat, nextLng, nextHeading, lookAheadRef.current)
+              : { lat: nextLat, lng: nextLng };
+          mapRef.current.moveCamera({ center, heading: nextHeading });
         }
       }
       rafRef.current = requestAnimationFrame(tick);

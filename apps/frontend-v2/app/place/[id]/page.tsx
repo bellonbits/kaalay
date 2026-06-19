@@ -16,7 +16,8 @@ import {
   resolveUploadUrl,
 } from "@/lib/api";
 import { addRecent } from "@/features/navigation/recents";
-import type { Place, PlaceReview, PlaceNote } from "@/types/api";
+import { NOTE_KIND_LABEL, NOTE_KIND_ORDER } from "@/features/navigation/noteKinds";
+import type { Place, PlaceReview, PlaceNote, NoteKind } from "@/types/api";
 
 export default function PlaceDetailPage() {
   const { ready } = useRequireAuth();
@@ -34,6 +35,7 @@ export default function PlaceDetailPage() {
   const [reviewComment, setReviewComment] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
   const [noteText, setNoteText] = useState("");
+  const [noteKind, setNoteKind] = useState<NoteKind>("general");
   const [submittingNote, setSubmittingNote] = useState(false);
 
   useEffect(() => {
@@ -95,9 +97,10 @@ export default function PlaceDetailPage() {
     if (!placeId || !noteText.trim()) return;
     setSubmittingNote(true);
     try {
-      const note = await createPlaceNote(placeId, noteText.trim());
+      const note = await createPlaceNote(placeId, noteText.trim(), noteKind);
       setNotes((prev) => [note, ...prev]);
       setNoteText("");
+      setNoteKind("general");
     } catch {
       toast.error("Couldn't post your note");
     } finally {
@@ -178,16 +181,37 @@ export default function PlaceDetailPage() {
 
         <p className="mt-8 text-sm font-extrabold text-foreground">Community guidance</p>
         <p className="text-xs font-medium text-muted-foreground">The last-meter directions a map alone can&apos;t give you.</p>
-        <div className="mt-3 flex flex-col gap-2">
-          {notes.length === 0 && <p className="text-xs font-medium text-muted-foreground">No notes yet — add the first one.</p>}
-          {notes.map((n) => (
-            <div key={n.id} className="rounded-2xl bg-secondary p-3">
-              <p className="text-sm font-medium text-foreground">{n.text}</p>
-              <p className="mt-1 text-[10px] font-semibold text-muted-foreground">{n.userName ?? "Someone nearby"}</p>
+        {notes.length === 0 && <p className="mt-3 text-xs font-medium text-muted-foreground">No notes yet — add the first one.</p>}
+        {NOTE_KIND_ORDER.filter((k) => notes.some((n) => n.kind === k)).map((k) => (
+          <div key={k} className="mt-3">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{NOTE_KIND_LABEL[k]}</p>
+            <div className="mt-1 flex flex-col gap-2">
+              {notes
+                .filter((n) => n.kind === k)
+                .map((n) => (
+                  <div key={n.id} className="rounded-2xl bg-secondary p-3">
+                    <p className="text-sm font-medium text-foreground">{n.text}</p>
+                    <p className="mt-1 text-[10px] font-semibold text-muted-foreground">{n.userName ?? "Someone nearby"}</p>
+                  </div>
+                ))}
             </div>
+          </div>
+        ))}
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {NOTE_KIND_ORDER.map((k) => (
+            <button
+              key={k}
+              onClick={() => setNoteKind(k)}
+              className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                noteKind === k ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
+              }`}
+            >
+              {NOTE_KIND_LABEL[k]}
+            </button>
           ))}
         </div>
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-2 flex items-center gap-2">
           <input
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}

@@ -31,6 +31,49 @@ export function bearing(lat1: number, lng1: number, lat2: number, lng2: number):
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
+/** Forward geodesic — the point `distanceMeters` away from (lat, lng) along
+ * `bearingDeg`. Used to bias the follow-camera ahead of the live position so
+ * more of the upcoming route is visible, and to project a point onto a
+ * route polyline for deviation checks. */
+export function destinationPoint(lat: number, lng: number, bearingDeg: number, distanceMeters: number): { lat: number; lng: number } {
+  const delta = distanceMeters / (R_KM * 1000);
+  const theta = toRad(bearingDeg);
+  const phi1 = toRad(lat);
+  const lambda1 = toRad(lng);
+
+  const phi2 = Math.asin(Math.sin(phi1) * Math.cos(delta) + Math.cos(phi1) * Math.sin(delta) * Math.cos(theta));
+  const lambda2 =
+    lambda1 + Math.atan2(Math.sin(theta) * Math.sin(delta) * Math.cos(phi1), Math.cos(delta) - Math.sin(phi1) * Math.sin(phi2));
+
+  return { lat: toDeg(phi2), lng: toDeg(lambda2) };
+}
+
+/** Shortest distance from a point to a polyline (sequence of segments),
+ * approximated by checking distance to every segment via the nearest point
+ * on that segment — fine-grained enough for route-deviation detection at
+ * walking/driving GPS update rates without needing a full geodesic
+ * point-to-line projection. */
+export function distanceToPolyline(point: { lat: number; lng: number }, polyline: { lat: number; lng: number }[]): number {
+  if (polyline.length === 0) return Infinity;
+  if (polyline.length === 1) return haversineMeters(point.lat, point.lng, polyline[0].lat, polyline[0].lng);
+
+  let min = Infinity;
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const a = polyline[i];
+    const b = polyline[i + 1];
+    // Project point onto segment a-b in a local equirectangular approximation
+    // (fine over the short segment lengths route polylines use).
+    const ax = a.lng, ay = a.lat, bx = b.lng, by = b.lat, px = point.lng, py = point.lat;
+    const dx = bx - ax, dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+    const closest = { lat: ay + t * dy, lng: ax + t * dx };
+    const dist = haversineMeters(point.lat, point.lng, closest.lat, closest.lng);
+    if (dist < min) min = dist;
+  }
+  return min;
+}
+
 const CARDINALS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 
 /** Maps a bearing (0-360) to one of 8 cardinal directions. */

@@ -108,12 +108,15 @@ export interface PlaceReview {
   createdAt: string | null;
 }
 
+export type NoteKind = "general" | "entrance" | "floor" | "room" | "landmark";
+
 export interface PlaceNote {
   id: string;
   placeId: string;
   userId: string;
   userName: string | null;
   text: string;
+  kind: NoteKind;
   createdAt: string | null;
 }
 

@@ -216,6 +216,8 @@ async def list_reviews(id: str, db: Session = Depends(get_db)):
 
 # ── Community notes (the last-meter directions Google Maps can't give) ────
 
+NOTE_KINDS = {"general", "entrance", "floor", "room", "landmark"}
+
 def _note_out(note: PlaceNote) -> dict:
     return {
         "id": str(note.id),
@@ -223,11 +225,13 @@ def _note_out(note: PlaceNote) -> dict:
         "userId": str(note.userId),
         "userName": note.user.fullName if note.user else None,
         "text": note.text,
+        "kind": note.kind or "general",
         "createdAt": note.createdAt.isoformat() if note.createdAt else None,
     }
 
 class NoteCreate(BaseModel):
     text: str
+    kind: Optional[str] = "general"
 
 @router.post("/{id}/notes")
 async def create_note(
@@ -236,7 +240,8 @@ async def create_note(
     place = db.query(Place).filter(Place.id == id).first()
     if not place:
         return error_response("PLACE_NOT_FOUND", "Place not found", 404)
-    note = PlaceNote(placeId=id, userId=current_user.id, text=dto.text.strip())
+    kind = dto.kind if dto.kind in NOTE_KINDS else "general"
+    note = PlaceNote(placeId=id, userId=current_user.id, text=dto.text.strip(), kind=kind)
     db.add(note)
     db.commit()
     db.refresh(note)

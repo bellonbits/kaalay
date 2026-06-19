@@ -21,6 +21,7 @@ import type {
   Incident,
   IncidentStatus,
   LocalGuide,
+  NoteKind,
   Place,
   PlaceNote,
   PlaceReview,
@@ -241,8 +242,8 @@ export const createPlaceReview = (id: string, rating: number, comment?: string) 
 
 export const getPlaceNotes = (id: string) => api.get<PlaceNote[]>(`/places/${id}/notes`).then((r) => r.data);
 
-export const createPlaceNote = (id: string, text: string) =>
-  api.post<PlaceNote>(`/places/${id}/notes`, { text }).then((r) => r.data);
+export const createPlaceNote = (id: string, text: string, kind: NoteKind = "general") =>
+  api.post<PlaceNote>(`/places/${id}/notes`, { text, kind }).then((r) => r.data);
 
 // ── Local Guides (community-shared routes) ─────────────────────────────
 export const getNearbyGuides = (lat: number, lng: number, radius = 5) =>

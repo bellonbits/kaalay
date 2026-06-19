@@ -126,7 +126,7 @@ function VoiceToggle({ on, available, onToggle, dark }: { on: boolean; available
     <button
       onClick={onToggle}
       aria-label={on ? "Mute voice guidance" : "Unmute voice guidance"}
-      className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full active:scale-90 transition-transform ${
+      className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full active:scale-90 transition-transform ${
         dark ? "bg-white/15" : "bg-secondary"
       }`}
       title={!available ? "Voice not available in this language on this device — using English" : undefined}

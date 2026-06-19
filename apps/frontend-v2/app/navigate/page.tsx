@@ -13,6 +13,7 @@ import {
   Car,
   MessageCircle,
   ShieldAlert,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import MapBase from "@/components/shared/MapBase";
@@ -21,7 +22,7 @@ import PlanTripSheet from "@/features/navigation/components/PlanTripSheet";
 import { useRequireAuth } from "@/features/auth/useRequireAuth";
 import { useLocationStore } from "@/features/location/store";
 import { useNavigationStore } from "@/features/navigation/store";
-import { getNearbyPlaces, getNearbyRoadReports, getWeather } from "@/lib/api";
+import { getNearbyPlaces, getNearbyRoadReports, getWeather, convertToWords } from "@/lib/api";
 import { addRecent } from "@/features/navigation/recents";
 import { haversineKm } from "@/features/location/geo";
 import { kaalayPlaceToDetail, type LocationPoint, type DetailPlace } from "@/features/navigation/types";
@@ -61,8 +62,14 @@ export default function NavigatePage() {
   const [nearbyPlaces, setNearbyPlaces] = useState<Place[]>([]);
   const [roadReports, setRoadReports] = useState<RoadReport[]>([]);
   const [weather, setWeather] = useState<WeatherInfo | null>(null);
+  const [pickingPlanOrigin, setPickingPlanOrigin] = useState(false);
+  const [planPinDraft, setPlanPinDraft] = useState<LocationPoint | null>(null);
+  const [resolvingPlanPin, setResolvingPlanPin] = useState(false);
 
   const lastNearbyFetchRef = useRef<{ lat: number; lng: number } | null>(null);
+  const planPinResolveRef = useRef<((point: LocationPoint | null) => void) | null>(null);
+  const lastResolvedPlanPinRef = useRef<string | null>(null);
+  const planPinDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Same 300m-moved gate used elsewhere — avoids refetching on every GPS tick.
   useEffect(() => {
@@ -89,6 +96,45 @@ export default function NavigatePage() {
     setAutoStart(false);
     setPlanOpen(false);
     router.push("/navigate/route");
+  };
+
+  const handlePlanRequestPinDrop = (resolve: (point: LocationPoint | null) => void) => {
+    planPinResolveRef.current = resolve;
+    lastResolvedPlanPinRef.current = null;
+    setPlanPinDraft(position ? { lat: position.lat, lng: position.lng, label: "Locating…" } : null);
+    setPickingPlanOrigin(true);
+  };
+
+  const handlePlanPinCenterChange = (lat: number, lng: number) => {
+    setPlanPinDraft((prev) => ({ lat, lng, label: prev?.label ?? "Locating…" }));
+    const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+    if (planPinDebounceRef.current) clearTimeout(planPinDebounceRef.current);
+    planPinDebounceRef.current = setTimeout(async () => {
+      if (key === lastResolvedPlanPinRef.current) return;
+      setResolvingPlanPin(true);
+      try {
+        const res = await convertToWords(lat, lng);
+        lastResolvedPlanPinRef.current = key;
+        setPlanPinDraft({ lat, lng, label: res.words, words: res.words });
+      } catch {
+        setPlanPinDraft({ lat, lng, label: `${lat.toFixed(5)}, ${lng.toFixed(5)}` });
+      } finally {
+        setResolvingPlanPin(false);
+      }
+    }, 450);
+  };
+
+  const confirmPlanPin = () => {
+    if (!planPinDraft) return;
+    planPinResolveRef.current?.(planPinDraft);
+    planPinResolveRef.current = null;
+    setPickingPlanOrigin(false);
+  };
+
+  const cancelPlanPin = () => {
+    planPinResolveRef.current?.(null);
+    planPinResolveRef.current = null;
+    setPickingPlanOrigin(false);
   };
 
   const handlePlaceDirections = (place: DetailPlace) => {
@@ -148,21 +194,28 @@ export default function NavigatePage() {
     <div className="relative h-full w-full">
       {/* Map is the hero — fills the whole screen behind the floating chrome */}
       <MapBase
+        key={pickingPlanOrigin ? "picking-plan-origin" : "view"}
         me={position}
-        follow={following}
+        follow={following && !pickingPlanOrigin}
         onUserDrag={() => setFollowing(false)}
-        initialCenter={position ?? undefined}
-        markers={[
-          ...nearbyPlaces.map((p) => ({ id: p.id, lat: p.latitude, lng: p.longitude, label: p.name, color: "#16A34A" })),
-          ...roadReports.map((r) => ({
-            id: `road-${r.id}`,
-            lat: r.lat,
-            lng: r.lng,
-            label: ROAD_ISSUE_LABEL[r.type],
-            color: "#F59E0B",
-          })),
-        ]}
-        onMarkerClick={handleMarkerClick}
+        initialCenter={pickingPlanOrigin ? (planPinDraft ?? position ?? undefined) : (position ?? undefined)}
+        pickingMode={pickingPlanOrigin}
+        onCenterChange={pickingPlanOrigin ? handlePlanPinCenterChange : undefined}
+        markers={
+          pickingPlanOrigin
+            ? []
+            : [
+                ...nearbyPlaces.map((p) => ({ id: p.id, lat: p.latitude, lng: p.longitude, label: p.name, color: "#16A34A" })),
+                ...roadReports.map((r) => ({
+                  id: `road-${r.id}`,
+                  lat: r.lat,
+                  lng: r.lng,
+                  label: ROAD_ISSUE_LABEL[r.type],
+                  color: "#F59E0B",
+                })),
+              ]
+        }
+        onMarkerClick={pickingPlanOrigin ? undefined : handleMarkerClick}
       />
 
       {/* Header */}
@@ -256,7 +309,40 @@ export default function NavigatePage() {
         onStart={handlePlaceStart}
       />
 
-      <PlanTripSheet open={planOpen} onClose={() => setPlanOpen(false)} near={position} onGo={handlePlanGo} />
+      <PlanTripSheet
+        open={planOpen}
+        onClose={() => setPlanOpen(false)}
+        near={position}
+        onGo={handlePlanGo}
+        onRequestPinDrop={handlePlanRequestPinDrop}
+      />
+
+      {pickingPlanOrigin && (
+        <>
+          <div className="absolute inset-x-4 top-[calc(env(safe-area-inset-top,0px)+1rem)] z-50">
+            <button
+              onClick={cancelPlanPin}
+              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform"
+              aria-label="Cancel"
+            >
+              <X className="h-5 w-5 text-foreground" />
+            </button>
+          </div>
+          <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+2rem)] z-50 rounded-3xl bg-card p-5 shadow-2xl">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Drop the pin on your start point</p>
+            <p className="mt-1 truncate text-lg font-extrabold text-foreground">
+              {resolvingPlanPin ? "Locating…" : planPinDraft?.label ?? "Locating…"}
+            </p>
+            <button
+              onClick={confirmPlanPin}
+              disabled={!planPinDraft}
+              className="mt-4 h-14 w-full rounded-2xl bg-primary text-base font-bold text-primary-foreground active:scale-95 transition-transform disabled:opacity-40"
+            >
+              Use this location
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
