@@ -4,9 +4,6 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Check,
-  Footprints,
-  Bike,
-  Car,
   LocateFixed,
   Share2,
   MapPin,
@@ -65,10 +62,10 @@ function getNearestCityName(lat: number, lng: number): string {
 
 const GOOGLE_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
-const ROAD_MODES: { mode: TravelMode; label: string; icon: typeof Footprints }[] = [
-  { mode: "WALKING", label: "Walking", icon: Footprints },
-  { mode: "TWO_WHEELER", label: "Motorcycle", icon: Bike },
-  { mode: "DRIVING", label: "Car", icon: Car },
+const ROAD_MODES: { mode: TravelMode; label: string; icon: string }[] = [
+  { mode: "WALKING", label: "Walking", icon: "/walking.png" },
+  { mode: "TWO_WHEELER", label: "Motorcycle", icon: "/bike.png" },
+  { mode: "DRIVING", label: "Car", icon: "/ride.png" },
 ];
 
 const BASE_SPEEDS_MPS: Record<TravelMode, number> = {
@@ -708,7 +705,7 @@ export default function RoutePage() {
             )}
 
             <div className="mt-5 grid grid-cols-3 gap-2">
-              {ROAD_MODES.map(({ mode, label, icon: Icon }) => {
+              {ROAD_MODES.map(({ mode, label, icon }) => {
                 const est = estimates[mode];
                 const unavailable = est === "unavailable";
                 const active = selectedMode === mode;
@@ -717,11 +714,14 @@ export default function RoutePage() {
                     key={mode}
                     disabled={unavailable}
                     onClick={() => setSelectedMode(mode)}
-                    className={`flex h-24 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-bold transition-all disabled:opacity-40 ${
-                      active ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
+                    className={`flex h-28 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-black transition-all disabled:opacity-40 border-2 active:scale-95 duration-200 ${
+                      active
+                        ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20 scale-[1.02]"
+                        : "bg-secondary text-foreground border-transparent hover:border-muted-foreground/20"
                     }`}
                   >
-                    <Icon className="h-5 w-5" />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={icon} alt={label} className="h-10 w-10 object-contain mb-1" />
                     {label}
                     <span className="text-[10px] font-semibold opacity-80">
                       {est === "loading" ? "…" : est === "unavailable" || !est ? "N/A" : `${formatDuration(est.durationSeconds)} · ${formatDistance(est.distanceMeters)}`}

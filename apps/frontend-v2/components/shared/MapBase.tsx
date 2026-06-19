@@ -10,6 +10,7 @@ export interface MapMarkerData {
   lng: number;
   label?: string;
   color?: string;
+  iconUrl?: string;
 }
 
 interface MapBaseProps {
@@ -287,9 +288,9 @@ export default function MapBase({
 
         if (followRef.current && mapRef.current) {
           const center =
-            lookAheadRef.current > 0
-              ? destinationPoint(nextLat, nextLng, nextHeading, lookAheadRef.current)
-              : { lat: nextLat, lng: nextLng };
+              lookAheadRef.current > 0
+                ? destinationPoint(nextLat, nextLng, nextHeading, lookAheadRef.current)
+                : { lat: nextLat, lng: nextLng };
           mapRef.current.moveCamera({ center, heading: nextHeading });
         }
       }
@@ -314,12 +315,23 @@ export default function MapBase({
       let marker = markersRef.current.get(m.id);
       if (!marker) {
         const pin = document.createElement("div");
-        pin.style.width = "14px";
-        pin.style.height = "14px";
-        pin.style.borderRadius = "50%";
-        pin.style.background = m.color ?? "#0F172A";
-        pin.style.border = "2px solid white";
-        pin.style.boxShadow = "0 1px 3px rgba(0,0,0,0.4)";
+        if (m.iconUrl) {
+          pin.style.width = "38px";
+          pin.style.height = "38px";
+          pin.style.backgroundImage = `url(${m.iconUrl})`;
+          pin.style.backgroundSize = "contain";
+          pin.style.backgroundPosition = "center";
+          pin.style.backgroundRepeat = "no-repeat";
+          // Add smooth transition for marker movements
+          pin.style.transition = "transform 0.4s ease-out";
+        } else {
+          pin.style.width = "14px";
+          pin.style.height = "14px";
+          pin.style.borderRadius = "50%";
+          pin.style.background = m.color ?? "#0F172A";
+          pin.style.border = "2px solid white";
+          pin.style.boxShadow = "0 1px 3px rgba(0,0,0,0.4)";
+        }
         if (onMarkerClick) pin.style.cursor = "pointer";
         marker = new google.maps.marker.AdvancedMarkerElement({
           map: mapRef.current,

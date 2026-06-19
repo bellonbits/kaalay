@@ -7,6 +7,7 @@ import { useLocationStore } from "@/features/location/store";
 import { useShareStore } from "@/features/share/store";
 import { useSessionSocket } from "@/features/location/useSessionSocket";
 import { createShareSession, updateShareSession } from "@/lib/api";
+import { getSocket } from "@/lib/socket";
 
 const DURATIONS: { label: string; seconds: number | null }[] = [
   { label: "15 min", seconds: 15 * 60 },
@@ -34,6 +35,30 @@ export default function SharePage() {
     setShareUrl(url);
     QRCode.toDataURL(url, { margin: 1, width: 240 }).then(setQrDataUrl);
   }, [activeToken]);
+
+  // Periodically stream host's position to socket room
+  useEffect(() => {
+    if (!activeToken || !position) return;
+    const socket = getSocket();
+
+    // Join room so we can broadcast
+    socket.emit("join", activeToken);
+
+    const interval = setInterval(() => {
+      socket.emit("push-location", {
+        code: activeToken,
+        lat: position.lat,
+        lng: position.lng,
+        accuracy: position.accuracy,
+        heading: position.heading,
+        timestamp: Date.now(),
+      });
+    }, 2000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [activeToken, position]);
 
   const handleStart = async () => {
     if (!position || starting) return;

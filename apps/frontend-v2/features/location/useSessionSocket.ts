@@ -17,6 +17,7 @@ export interface ViewerLocationUpdate {
   lng: number;
   accuracy?: number;
   timestamp: number;
+  mode?: string;
 }
 
 /**
