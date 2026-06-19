@@ -50,6 +50,13 @@ const ROAD_MODES: { mode: TravelMode; label: string; icon: typeof Footprints }[]
   { mode: "DRIVING", label: "Car", icon: Car },
 ];
 
+const BASE_SPEEDS_MPS: Record<TravelMode, number> = {
+  WALKING: 1.4,
+  BICYCLING: 5.0,
+  DRIVING: 13.8,
+  PRECISION: 1.4,
+};
+
 type Estimate = { distanceMeters: number; durationSeconds: number } | "loading" | "unavailable";
 
 export default function RoutePage() {
@@ -86,6 +93,13 @@ export default function RoutePage() {
   const [originPinDraft, setOriginPinDraft] = useState<LocationPoint | null>(null);
   const [resolvingOriginPin, setResolvingOriginPin] = useState(false);
 
+  // Simulation states
+  const [simulating, setSimulating] = useState(false);
+  const [simulatedDistance, setSimulatedDistance] = useState(0);
+  const [simulationSpeed, setSimulationSpeed] = useState(5); // default 5x
+  const [simulatedPaused, setSimulatedPaused] = useState(false);
+  const [simulatedPosition, setSimulatedPosition] = useState<{ lat: number; lng: number; heading?: number; accuracy?: number } | null>(null);
+
   const origin = customOrigin ?? position;
 
   // A custom "From" that's actually close to where the device really is
@@ -94,12 +108,102 @@ export default function RoutePage() {
   // no honest way to "live track" a route the device isn't physically on.
   const usingLiveGps = !customOrigin || (!!position && haversineMeters(customOrigin.lat, customOrigin.lng, position.lat, position.lng) < 300);
 
+  const activePosition = simulating && simulatedPosition ? simulatedPosition : position;
+
   const approachedRef = useRef(false);
   const lastSpokenStepRef = useRef(-1);
   const offRouteStreakRef = useRef(0);
   const reroutingRef = useRef(false);
   const lastResolvedPinRef = useRef<string | null>(null);
   const pinDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const isRoad = selectedMode !== "PRECISION" && !!activeRoute;
+
+  const simulationPoints = useMemo(() => {
+    if (isRoad && activeRoute) {
+      return activeRoute.polylinePoints;
+    }
+    if (origin && destination) {
+      return [origin, destination];
+    }
+    return [];
+  }, [isRoad, activeRoute, origin, destination]);
+
+  const cumulativeDistances = useMemo(() => {
+    if (simulationPoints.length === 0) return [];
+    const dists = [0];
+    for (let i = 1; i < simulationPoints.length; i++) {
+      dists.push(
+        dists[i - 1] +
+          haversineMeters(
+            simulationPoints[i - 1].lat,
+            simulationPoints[i - 1].lng,
+            simulationPoints[i].lat,
+            simulationPoints[i].lng
+          )
+      );
+    }
+    return dists;
+  }, [simulationPoints]);
+
+  useEffect(() => {
+    if (!simulating || simulatedPaused || cumulativeDistances.length === 0 || phase !== "navigating") {
+      return;
+    }
+
+    const pts = simulationPoints;
+    const totalDist = cumulativeDistances[cumulativeDistances.length - 1];
+    if (totalDist <= 0) return;
+
+    const baseSpeed = BASE_SPEEDS_MPS[selectedMode] ?? 1.4;
+    const speedMps = baseSpeed * simulationSpeed;
+    const intervalMs = 100;
+
+    const interval = setInterval(() => {
+      setSimulatedDistance((prev) => {
+        const nextDist = prev + speedMps * (intervalMs / 1000);
+        if (nextDist >= totalDist) {
+          clearInterval(interval);
+          setPhase("arrived");
+          setSimulating(false);
+          return totalDist;
+        }
+
+        let idx = 0;
+        while (idx < cumulativeDistances.length - 1 && cumulativeDistances[idx + 1] < nextDist) {
+          idx++;
+        }
+
+        const p1 = pts[idx];
+        const p2 = pts[idx + 1] ?? p1;
+        const segmentDist = cumulativeDistances[idx + 1] - cumulativeDistances[idx];
+
+        let lat = p1.lat;
+        let lng = p1.lng;
+        let heading = 0;
+
+        if (segmentDist > 0) {
+          const ratio = (nextDist - cumulativeDistances[idx]) / segmentDist;
+          lat = p1.lat + ratio * (p2.lat - p1.lat);
+          lng = p1.lng + ratio * (p2.lng - p1.lng);
+          heading = bearing(p1.lat, p1.lng, p2.lat, p2.lng);
+        } else if (pts[idx + 1]) {
+          heading = bearing(p1.lat, p1.lng, p2.lat, p2.lng);
+        }
+
+        setSimulatedPosition({
+          lat,
+          lng,
+          heading,
+          accuracy: 10,
+        });
+
+        return nextDist;
+      });
+    }, intervalMs);
+
+    return () => clearInterval(interval);
+  }, [simulating, simulatedPaused, simulationPoints, cumulativeDistances, simulationSpeed, selectedMode, phase]);
 
   const voiceLang: VoiceLanguage =
     (typeof window !== "undefined" && (localStorage.getItem("kaalay_voice_lang") as VoiceLanguage)) || "en";
@@ -195,6 +299,41 @@ export default function RoutePage() {
   const handleGo = () =>
     startNavigation(selectedMode, selectedMode === "PRECISION" ? null : routes[selectedMode] ?? null, usingLiveGps ? "navigating" : "preview");
 
+  const handleStartSimulation = () => {
+    const route = selectedMode === "PRECISION" ? null : routes[selectedMode] ?? null;
+    setSelectedMode(selectedMode);
+    setActiveRoute(route);
+    approachedRef.current = false;
+    lastSpokenStepRef.current = -1;
+    offRouteStreakRef.current = 0;
+    setStepIndex(0);
+    setManualPan(false);
+
+    // Initialize simulation
+    const startPoint = customOrigin ?? position ?? destination;
+    const pts = (selectedMode !== "PRECISION" && route) ? route.polylinePoints : [startPoint, destination];
+    if (pts.length > 0 && pts[0]) {
+      const p = pts[0];
+      const p2 = pts[1] ?? p;
+      if (p && p2) {
+        setSimulatedPosition({
+          lat: p.lat,
+          lng: p.lng,
+          heading: bearing(p.lat, p.lng, p2.lat, p2.lng),
+          accuracy: 10,
+        });
+      } else {
+        setSimulatedPosition(null);
+      }
+    } else {
+      setSimulatedPosition(null);
+    }
+    setSimulatedDistance(0);
+    setSimulatedPaused(false);
+    setSimulating(true);
+    setPhase("navigating");
+  };
+
   const handleUseCurrentLocation = () => {
     setCustomOrigin(null);
     setPhase("select");
@@ -276,17 +415,15 @@ export default function RoutePage() {
   }, [phase, setImmersive]);
 
   // ── Live navigation math ─────────────────────────────────────────────
-  const isRoad = selectedMode !== "PRECISION" && !!activeRoute;
-
   const live = useMemo(() => {
-    if (!position || !destination) return null;
+    if (!activePosition || !destination) return null;
 
     if (isRoad && activeRoute) {
       const steps = activeRoute.steps;
       const idx = Math.min(stepIndex, steps.length - 1);
       const step = steps[idx];
       if (!step) return null;
-      const distToStepEnd = haversineMeters(position.lat, position.lng, step.endLat, step.endLng);
+      const distToStepEnd = haversineMeters(activePosition.lat, activePosition.lng, step.endLat, step.endLng);
       const remainingSteps = steps.slice(idx + 1).reduce((sum, s) => sum + s.distanceMeters, 0);
       const remainingDistanceMeters = distToStepEnd + remainingSteps;
       const avgSpeed = activeRoute.distanceMeters / Math.max(1, activeRoute.durationSeconds); // m/s
@@ -302,10 +439,10 @@ export default function RoutePage() {
       };
     }
 
-    const remainingDistanceMeters = haversineMeters(position.lat, position.lng, destination.lat, destination.lng);
-    const bearingDeg = bearing(position.lat, position.lng, destination.lat, destination.lng);
+    const remainingDistanceMeters = haversineMeters(activePosition.lat, activePosition.lng, destination.lat, destination.lng);
+    const bearingDeg = bearing(activePosition.lat, activePosition.lng, destination.lat, destination.lng);
     return { mode: "precision" as const, remainingDistanceMeters, bearingDeg };
-  }, [position, destination, isRoad, activeRoute, stepIndex]);
+  }, [activePosition, destination, isRoad, activeRoute, stepIndex]);
 
   // Step auto-advance (road mode) — within 20m of a step's end, move to the next one.
   useEffect(() => {
@@ -319,7 +456,7 @@ export default function RoutePage() {
   // the active polyline for 3 consecutive ticks (filters out single noisy
   // fixes), recompute the route fresh from the current position.
   useEffect(() => {
-    if (phase !== "navigating" || !isRoad || !activeRoute || !position || !destination || reroutingRef.current) {
+    if (phase !== "navigating" || simulating || !isRoad || !activeRoute || !position || !destination || reroutingRef.current) {
       return;
     }
     const offRoute = distanceToPolyline(position, activeRoute.polylinePoints) > 40;
@@ -339,7 +476,7 @@ export default function RoutePage() {
       .finally(() => {
         reroutingRef.current = false;
       });
-  }, [position, isRoad, activeRoute, phase, selectedMode, destination]);
+  }, [position, isRoad, activeRoute, phase, selectedMode, destination, simulating]);
 
   // Voice guidance + arrival detection
   useEffect(() => {
@@ -371,24 +508,35 @@ export default function RoutePage() {
   const handleCancel = () => {
     setPhase("select");
     setActiveRoute(null);
+    setSimulating(false);
+    setSimulatedPosition(null);
   };
 
   const handleClose = () => {
     setDestination(null);
     setCustomOrigin(null);
     setLastCompletedRoute(null);
+    setSimulating(false);
+    setSimulatedPosition(null);
     router.replace("/navigate");
   };
 
   if (!ready || !destination) return null;
 
-  const speedKmh = position?.speed != null ? position.speed * 3.6 : null;
+  const speedKmh = simulating
+    ? (BASE_SPEEDS_MPS[selectedMode] ?? 1.4) * 3.6
+    : position?.speed != null
+      ? position.speed * 3.6
+      : null;
+
+  const totalSimDist = cumulativeDistances[cumulativeDistances.length - 1] ?? 0;
+  const simulatedProgressPct = totalSimDist > 0 ? Math.min(100, Math.round((simulatedDistance / totalSimDist) * 100)) : 0;
 
   return (
     <div className="relative h-full w-full">
       <MapBase
         key={pickingOrigin ? "picking-origin" : "view"}
-        me={position}
+        me={activePosition}
         follow={phase === "navigating" && !manualPan}
         lookAheadMeters={phase === "navigating" && isRoad ? 30 : 0}
         onUserDrag={() => setManualPan(true)}
@@ -642,12 +790,20 @@ export default function RoutePage() {
               </div>
             )}
 
-            <button
-              onClick={handleClose}
-              className="mt-6 h-14 w-full rounded-2xl bg-primary text-base font-bold text-primary-foreground active:scale-95 transition-transform"
-            >
-              Done
-            </button>
+            <div className="mt-6 flex flex-col gap-3">
+              <button
+                onClick={handleStartSimulation}
+                className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-base font-bold text-primary-foreground active:scale-95 transition-transform"
+              >
+                Start Simulation
+              </button>
+              <button
+                onClick={handleClose}
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-secondary text-sm font-bold text-foreground active:scale-95 transition-transform"
+              >
+                Close Preview
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -676,6 +832,35 @@ export default function RoutePage() {
           onToggleVoice={() => setVoiceOn((v) => !v)}
           onCancel={handleCancel}
         />
+      )}
+
+      {phase === "navigating" && simulating && (
+        <div
+          className="absolute left-4 right-4 z-30 flex items-center justify-between gap-3 rounded-2xl bg-card/90 p-4 shadow-lg backdrop-blur"
+          style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 13.5rem)" }}
+        >
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Simulation Mode</p>
+            <p className="truncate text-xs font-semibold text-muted-foreground">
+              {simulatedPaused ? "Paused" : `Simulating @ ${simulationSpeed}x speed (${simulatedProgressPct}%)`}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSimulationSpeed((s) => (s === 1 ? 2 : s === 2 ? 5 : s === 5 ? 10 : 1))}
+              className="h-10 px-3 rounded-xl bg-secondary text-xs font-bold text-foreground active:scale-95 transition-transform"
+              title="Cycle speed multiplier"
+            >
+              {simulationSpeed}x
+            </button>
+            <button
+              onClick={() => setSimulatedPaused((p) => !p)}
+              className="flex h-10 w-20 items-center justify-center rounded-xl bg-primary text-xs font-bold text-primary-foreground active:scale-95 transition-transform"
+            >
+              {simulatedPaused ? "Resume" : "Pause"}
+            </button>
+          </div>
+        </div>
       )}
 
       {phase === "arrived" && (
