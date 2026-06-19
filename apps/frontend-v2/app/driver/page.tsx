@@ -24,7 +24,8 @@ import {
   acceptRide,
   getNearbyRides,
   createRoadReport,
-  triggerEmergencySos
+  triggerEmergencySos,
+  getRide
 } from "@/lib/api";
 import type { DriverProfile, Ride, RoadReportType } from "@/types/api";
 
@@ -389,11 +390,28 @@ export default function DriverDashboardPage() {
 
             {/* Quick Contact buttons */}
             <div className="flex justify-center gap-4 mt-1">
-              <button onClick={() => toast.info("Call simulation")} className="flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-foreground">
+              <button
+                onClick={async () => {
+                  try {
+                    const fullRide = await getRide(offer.rideId);
+                    if (fullRide.rider?.phoneNumber) {
+                      window.location.href = `tel:${fullRide.rider.phoneNumber}`;
+                    } else {
+                      toast.error("Rider phone number not available");
+                    }
+                  } catch {
+                    toast.error("Could not place call");
+                  }
+                }}
+                className="flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-foreground"
+              >
                 <Phone className="h-3.5 w-3.5" /> Call Passenger
               </button>
               <span className="text-muted-foreground/30">|</span>
-              <button onClick={() => toast.info("Chat simulation")} className="flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-foreground">
+              <button
+                onClick={() => router.push(`/driver/ride/${offer.rideId}/chat`)}
+                className="flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-foreground"
+              >
                 <MessageSquare className="h-3.5 w-3.5" /> Chat Passenger
               </button>
             </div>

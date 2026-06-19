@@ -25,7 +25,7 @@ import { useNavigationStore } from "@/features/navigation/store";
 import { computeRoute, type RouteResult } from "@/features/navigation/routeService";
 import { haversineMeters, formatDistance, formatDuration } from "@/features/location/geo";
 import { useVoiceGuidance, type VoiceLanguage } from "@/features/navigation/useVoiceGuidance";
-import { getRide, signalRideArrived, startRide, completeRide } from "@/lib/api";
+import { getRide, signalRideArrived, startRide, completeRide, triggerEmergencySos } from "@/lib/api";
 import type { Ride, RideStatus } from "@/types/api";
 
 const GOOGLE_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
@@ -331,7 +331,7 @@ export default function DriverActiveTripPage() {
 
             <div className="flex items-center gap-1.5 flex-shrink-0">
               <button
-                onClick={() => toast.info("Messaging Passenger")}
+                onClick={() => router.push(`/driver/ride/${ride.id}/chat`)}
                 className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary hover:bg-secondary/80 text-foreground active:scale-90 transition-transform"
                 aria-label="Message passenger"
               >
@@ -443,7 +443,7 @@ export default function DriverActiveTripPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => toast.info("Messaging Passenger")}
+                    onClick={() => router.push(`/driver/ride/${ride.id}/chat`)}
                     className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary hover:bg-secondary/80 text-foreground active:scale-95 transition-transform"
                     aria-label="Message passenger"
                   >
@@ -521,8 +521,23 @@ export default function DriverActiveTripPage() {
             {/* Quick SafetySOS & trip recording tools */}
             <div className="flex gap-2">
               <button
-                onClick={() => {
-                  toast.error("SOS Alert Dispatched to Emergency Responders!", { duration: 5000 });
+                onClick={async () => {
+                  if (!position) {
+                    toast.error("Location details unavailable");
+                    return;
+                  }
+                  try {
+                    await triggerEmergencySos({
+                      lat: position.lat,
+                      lng: position.lng,
+                      message: `Active Ride SOS triggered for Ride ID: ${rideId}`,
+                      severity: "red",
+                      type: "police"
+                    });
+                    toast.error("SOS Alert Dispatched to Emergency Responders!", { duration: 5000 });
+                  } catch {
+                    toast.error("SOS request failed");
+                  }
                   setBottomSheetOpen(false);
                 }}
                 className="flex-1 h-12 rounded-xl bg-emergency text-xs font-black text-emergency-foreground flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
