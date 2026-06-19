@@ -38,6 +38,27 @@ const ROAD_ISSUE_LABEL: Record<RoadReport["type"], string> = {
   other: "Road issue",
 };
 
+const CITIES = [
+  { name: "Nairobi", lat: -1.2921, lng: 36.8219 },
+  { name: "Mombasa", lat: -4.05, lng: 39.67 },
+  { name: "Kisumu", lat: -0.09, lng: 34.77 },
+  { name: "Nakuru", lat: -0.30, lng: 36.07 },
+  { name: "Mogadishu", lat: 2.04, lng: 45.34 }
+];
+
+function getNearestCityName(lat: number, lng: number): string {
+  let bestCity = CITIES[0].name;
+  let minDistance = Infinity;
+  for (const city of CITIES) {
+    const dist = Math.pow(city.lat - lat, 2) + Math.pow(city.lng - lng, 2);
+    if (dist < minDistance) {
+      minDistance = dist;
+      bestCity = city.name;
+    }
+  }
+  return bestCity;
+}
+
 // Discover and Local Guides already have their own bottom-nav tabs — kept
 // out of here so the same icon doesn't appear twice on the home screen.
 const QUICK_ACTIONS = [
@@ -103,7 +124,7 @@ export default function NavigatePage() {
           description: "sunny and clear",
           humidity: 60,
           windKph: 12.0,
-          cityName: "Mogadishu",
+          cityName: getNearestCityName(position.lat, position.lng),
         });
       });
   }, [position]);
@@ -245,7 +266,16 @@ export default function NavigatePage() {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-extrabold leading-tight text-foreground">Hey {user?.fullName?.split(" ")[0] ?? "there"}</p>
-            <p className="text-[10px] font-semibold text-muted-foreground">Mogadishu, SO</p>
+            <p className="text-[10px] font-semibold text-muted-foreground">
+              {weather ? (
+                weather.cityName.toLowerCase() === "mogadishu" ? "Mogadishu, SO" :
+                weather.cityName.toLowerCase() === "nairobi" ? "Nairobi, KE" :
+                weather.cityName.toLowerCase() === "mombasa" ? "Mombasa, KE" :
+                weather.cityName.toLowerCase() === "kisumu" ? "Kisumu, KE" :
+                weather.cityName.toLowerCase() === "nakuru" ? "Nakuru, KE" :
+                weather.cityName
+              ) : "Locating…"}
+            </p>
           </div>
         </div>
 
