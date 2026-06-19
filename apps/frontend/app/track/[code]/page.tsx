@@ -119,6 +119,7 @@ function LiveTracker({ code }: { code: string }) {
   const [isNavigating, setIsNavigating] = useState(false);
   const [mapMode, setMapMode] = useState<'focus' | 'overview'>('overview');
   const [sharingBack, setSharingBack] = useState(false);
+  const [myTravelMode, setMyTravelMode] = useState<'walking' | 'car' | 'bike'>('walking');
   const [activeRouteFrom, setActiveRouteFrom] = useState<{ lat: number; lng: number } | null>(null);
   const [activeRouteTo, setActiveRouteTo] = useState<{ lat: number; lng: number } | null>(null);
   const { position: me } = useGeolocation(true);
@@ -164,11 +165,12 @@ function LiveTracker({ code }: { code: string }) {
     const interval = setInterval(() => {
       s.emit('viewer-location', {
         code, viewerId: user.id || 'anon', name: user.fullName || 'Someone',
-        lat: me.lat, lng: me.lng, accuracy: me.accuracy
+        lat: me.lat, lng: me.lng, accuracy: me.accuracy,
+        category: myTravelMode
       });
     }, 3000);
     return () => clearInterval(interval);
-  }, [sharingBack, me, code, user.id, user.fullName]);
+  }, [sharingBack, me, code, user.id, user.fullName, myTravelMode]);
 
   useSessionSocket(
     code,
@@ -193,11 +195,12 @@ function LiveTracker({ code }: { code: string }) {
     setActiveRouteTo({ lat: tracked.lat, lng: tracked.lng });
 
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
+    const apiMode = myTravelMode === 'car' ? 'DRIVING' : myTravelMode === 'bike' ? 'BICYCLING' : 'WALKING';
     try {
       const result = await computeRoute(
         { lat: me.lat, lng: me.lng },
         { lat: tracked.lat, lng: tracked.lng },
-        'WALKING',
+        apiMode,
         apiKey
       );
 
@@ -213,17 +216,17 @@ function LiveTracker({ code }: { code: string }) {
       }
     } catch (err) {
       console.warn('Routes API failed, using off-road haversine fallback:', err);
-      // Fallback for off-road/remote regions: straight line walking guidance!
+      // Fallback for off-road/remote regions: straight line walking/driving guidance!
       const dKm = dist(me, tracked);
       const dStr = dKm < 1 ? `${Math.round(dKm * 1000)} m` : `${dKm.toFixed(1)} km`;
-      const walkMins = Math.max(1, Math.round(dKm * 12));
+      const walkMins = Math.max(1, Math.round(dKm * (myTravelMode === 'car' ? 2 : myTravelMode === 'bike' ? 4 : 12)));
       setNavRouteDetails({
         distance: dStr + ' (direct)',
         duration: `${walkMins} mins`
       });
       setNavSteps([
         {
-          instruction: 'Walk straight towards the tracked person',
+          instruction: myTravelMode === 'car' ? 'Drive straight towards the tracked person' : myTravelMode === 'bike' ? 'Ride straight towards the tracked person' : 'Walk straight towards the tracked person',
           distance: dStr,
           duration: `${walkMins} mins`,
           lat: tracked.lat,
@@ -232,7 +235,7 @@ function LiveTracker({ code }: { code: string }) {
       ]);
       setCurrentStepIndex(0);
     }
-  }, [me?.lat, me?.lng, tracked?.lat, tracked?.lng]);
+  }, [me?.lat, me?.lng, tracked?.lat, tracked?.lng, myTravelMode]);
 
   const resetNavigation = useCallback(() => {
     setIsNavigating(false);
@@ -244,12 +247,12 @@ function LiveTracker({ code }: { code: string }) {
     setActiveRouteTo(null);
   }, []);
 
-  // Trigger directions calculation exactly once when navigation is engaged
+  // Trigger directions calculation when navigation is engaged or travel mode changes
   useEffect(() => {
-    if (isNavigating && navSteps.length === 0) {
+    if (isNavigating) {
       recalculateRoute();
     }
-  }, [isNavigating, recalculateRoute, navSteps.length]);
+  }, [isNavigating, recalculateRoute, myTravelMode]);
 
   // Step advancement effect
   useEffect(() => {
@@ -278,8 +281,8 @@ function LiveTracker({ code }: { code: string }) {
   const eta = km ? Math.round((km / 40) * 60) : null;
 
   const markers: MarkerData[] = [
-    ...(me      ? [{ lat: me.lat,      lng: me.lng,      type: 'me'      as const, accuracy: me.accuracy }] : []),
-    ...(tracked ? [{ lat: tracked.lat, lng: tracked.lng, heading: (tracked as any).heading, type: (session?.status === 'accepted' || session?.status === 'started' || session?.status === 'arriving') ? 'car' as const : 'tracked' as const }] : []),
+    ...(me      ? [{ lat: me.lat,      lng: me.lng,      type: 'me'      as const, accuracy: me.accuracy, category: myTravelMode }] : []),
+    ...(tracked ? [{ lat: tracked.lat, lng: tracked.lng, heading: (tracked as any).heading, type: (session?.status === 'accepted' || session?.status === 'started' || session?.status === 'arriving') ? 'car' as const : 'tracked' as const, category: (session?.status === 'accepted' || session?.status === 'started' || session?.status === 'arriving') ? 'car' : 'walking' }] : []),
   ];
 
   const typeMeta = TYPE_META[session?.requestType ?? 'general'] ?? TYPE_META.general;
@@ -301,7 +304,7 @@ function LiveTracker({ code }: { code: string }) {
               markers={markers}
               routeFrom={isNavigating && activeRouteFrom ? activeRouteFrom : (me ? { lat: me.lat, lng: me.lng } : undefined)}
               routeTo={isNavigating && activeRouteTo ? activeRouteTo : (tracked ? { lat: tracked.lat, lng: tracked.lng } : undefined)}
-              travelMode={isNavigating ? 'WALKING' : undefined}
+              travelMode={isNavigating ? (myTravelMode === 'car' ? 'DRIVING' : myTravelMode === 'bike' ? 'BICYCLING' : 'WALKING') : undefined}
               zoomState={isNavigating ? (mapMode === 'overview' ? 'tracking' : 'navigation') : undefined}
               followMode={isNavigating && mapMode === 'focus'}
               onFollowModeChange={(active: boolean) => {
@@ -530,6 +533,33 @@ function LiveTracker({ code }: { code: string }) {
                 </div>
               </div>
             )}
+
+            {/* Travel Mode Selector */}
+            <div className="mb-6 p-4 bg-gray-50 rounded-3xl border border-gray-100 flex flex-col gap-2.5">
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest text-left">My Travel Mode</p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'walking', label: 'Walking', icon: '🚶' },
+                  { id: 'car', label: 'Car', icon: '🚗' },
+                  { id: 'bike', label: 'Bike', icon: '🚲' }
+                ].map(mode => (
+                  <button
+                    key={mode.id}
+                    onClick={() => {
+                      setMyTravelMode(mode.id as 'walking' | 'car' | 'bike');
+                    }}
+                    className={`py-2.5 px-3 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 border active:scale-95 transition-all ${
+                      myTravelMode === mode.id
+                        ? 'bg-black text-yellow-400 border-black shadow-md'
+                        : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <span className="text-sm">{mode.icon}</span>
+                    <span>{mode.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {/* Action Row */}
             <div className="grid grid-cols-2 gap-4 mb-8">

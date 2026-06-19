@@ -295,6 +295,9 @@ export interface DriverProfile {
   acceptanceRate: number;
   currentLat: number | null;
   currentLng: number | null;
+  completedTripsToday?: number;
+  earningsToday?: number;
+  walletBalance?: number;
 }
 
 export interface DriverWallet {
@@ -376,4 +379,7 @@ export interface WeatherInfo {
   humidity: number;
   windKph: number;
   cityName: string;
+  rainProbability?: number;
+  visibilityMeters?: number;
+  alerts?: string[];
 }

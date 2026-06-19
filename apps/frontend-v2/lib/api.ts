@@ -343,6 +343,12 @@ export const updateDriverStatus = (status: "online" | "offline" | "busy") =>
 
 export const getDriverWallet = () => api.get<DriverWallet>("/drivers/wallet").then((r) => r.data);
 
+export const withdrawEarnings = (method: string, amount: number, recipient: string) =>
+  api.post<{ message: string; newBalance: number; transaction: any }>("/drivers/withdraw", { method, amount, recipient }).then((r) => r.data);
+
+export const getWithdrawalTransactions = () =>
+  api.get<any[]>("/drivers/transactions").then((r) => r.data);
+
 // ── Admin ────────────────────────────────────────────────────────────────
 export const getAdminDashboardStats = () => api.get<AdminDashboardStats>("/admin/dashboard-stats").then((r) => r.data);
 

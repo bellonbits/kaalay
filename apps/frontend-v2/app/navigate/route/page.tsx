@@ -101,15 +101,8 @@ export default function RoutePage() {
   const [manualPan, setManualPan] = useState(false);
   const [roadReports, setRoadReports] = useState<RoadReport[]>([]);
   const [placeNotes, setPlaceNotes] = useState<PlaceNote[]>([]);
-  const [destinationWeather, setDestinationWeather] = useState<WeatherInfo | null>({
-    tempC: 28,
-    feelsLikeC: 30,
-    condition: "Clear",
-    description: "sunny and clear",
-    humidity: 60,
-    windKph: 12.0,
-    cityName: "Mogadishu",
-  });
+  const [destinationWeather, setDestinationWeather] = useState<WeatherInfo | null>(null);
+  const [destinationWeatherError, setDestinationWeatherError] = useState<boolean>(false);
   const [weatherOpen, setWeatherOpen] = useState(false);
   const [originSearchOpen, setOriginSearchOpen] = useState(false);
   const [originMenuOpen, setOriginMenuOpen] = useState(false);
@@ -246,17 +239,13 @@ export default function RoutePage() {
       .then(setRoadReports)
       .catch(() => {});
     getWeather(destination.lat, destination.lng)
-      .then(setDestinationWeather)
+      .then((data) => {
+        setDestinationWeather(data);
+        setDestinationWeatherError(false);
+      })
       .catch(() => {
-        setDestinationWeather({
-          tempC: 28,
-          feelsLikeC: 30,
-          condition: "Clear",
-          description: "sunny and clear",
-          humidity: 60,
-          windKph: 12.0,
-          cityName: getNearestCityName(destination.lat, destination.lng),
-        });
+        setDestinationWeather(null);
+        setDestinationWeatherError(true);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destination?.lat, destination?.lng]);
@@ -671,7 +660,7 @@ export default function RoutePage() {
                 <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">To</p>
                 <p className="truncate text-sm font-bold text-foreground">{destination.label}</p>
               </div>
-              {destinationWeather && (
+              {destinationWeather ? (
                 <button
                   type="button"
                   onClick={() => setWeatherOpen(true)}
@@ -684,6 +673,14 @@ export default function RoutePage() {
                   })()}
                   <span className="text-xs font-extrabold text-foreground">{destinationWeather.tempC}°C</span>
                 </button>
+              ) : destinationWeatherError ? (
+                <div className="flex flex-shrink-0 items-center justify-center rounded-xl bg-card px-2.5 py-1.5 shadow-sm border border-border/40 text-[10px] font-bold text-muted-foreground">
+                  Weather unavailable
+                </div>
+              ) : (
+                <div className="flex flex-shrink-0 items-center justify-center rounded-xl bg-card px-2.5 py-1.5 shadow-sm border border-border/40 text-[10px] font-bold text-muted-foreground animate-pulse">
+                  Loading weather…
+                </div>
               )}
             </div>
 

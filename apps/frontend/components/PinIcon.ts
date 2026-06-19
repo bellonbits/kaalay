@@ -93,6 +93,30 @@ const PinIcon = {
     />`;
     return el;
   },
+
+  /** Walking person marker */
+  person(): HTMLElement {
+    const el = document.createElement('div');
+    el.innerHTML = `<img
+      src="/icon-person.png"
+      alt="person"
+      style="width:40px;height:40px;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.3));"
+      draggable="false"
+    />`;
+    return el;
+  },
+
+  /** Bike marker */
+  bike(): HTMLElement {
+    const el = document.createElement('div');
+    el.innerHTML = `<img
+      src="/icon-bike.png"
+      alt="bike"
+      style="width:44px;height:44px;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.3));"
+      draggable="false"
+    />`;
+    return el;
+  },
 };
 
 export default PinIcon;

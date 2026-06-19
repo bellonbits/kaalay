@@ -62,7 +62,7 @@ export default function SharePage() {
   const [addressText, setAddressText] = useState('');
 
   const [viewerCount, setViewerCount] = useState(0);
-  const [viewers,     setViewers]     = useState<Record<string, { viewerId: string; lat: number; lng: number; name: string; timestamp: number }>>({});
+  const [viewers,     setViewers]     = useState<Record<string, { viewerId: string; lat: number; lng: number; name: string; timestamp: number; category?: string }>>({});
   const [arrivals,    setArrivals]    = useState<{ name: string; timestamp: number }[]>([]);
 
   // Sync with global session if it exists on mount
@@ -91,7 +91,7 @@ export default function SharePage() {
     if (!s) return;
     
     const onViewerCount = (d: { count: number }) => setViewerCount(d.count);
-    const onViewerLoc   = (d: { viewerId: string; lat: number; lng: number; name: string; timestamp: number }) => {
+    const onViewerLoc   = (d: { viewerId: string; lat: number; lng: number; name: string; timestamp: number; category?: string }) => {
       setViewers(prev => ({ ...prev, [d.viewerId]: d }));
     };
     const onArrived     = (d: { name: string; timestamp: number }) => {
@@ -180,11 +180,11 @@ export default function SharePage() {
     ...(manualPosition 
       ? [
           { lat: manualPosition.lat, lng: manualPosition.lng, type: 'request' as const, label: 'Broadcasting Point' },
-          ...(position ? [{ lat: position.lat, lng: position.lng, type: 'me' as const, accuracy: position.accuracy }] : [])
+          ...(position ? [{ lat: position.lat, lng: position.lng, type: 'me' as const, accuracy: position.accuracy, category: 'walking' }] : [])
         ]
-      : (position ? [{ lat: position.lat, lng: position.lng, type: 'me' as const, accuracy: position.accuracy }] : [])
+      : (position ? [{ lat: position.lat, lng: position.lng, type: 'me' as const, accuracy: position.accuracy, category: 'walking' }] : [])
     ),
-    ...Object.values(viewers).map(v => ({ lat: v.lat, lng: v.lng, type: 'tracked' as const, label: v.name })),
+    ...Object.values(viewers).map(v => ({ lat: v.lat, lng: v.lng, type: 'tracked' as const, label: v.name, category: v.category })),
   ];
 
   const selT = TYPES.find(t => t.id === type)!;

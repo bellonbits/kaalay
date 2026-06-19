@@ -83,15 +83,8 @@ export default function NavigatePage() {
   const [following, setFollowing] = useState(true);
   const [nearbyPlaces, setNearbyPlaces] = useState<Place[]>([]);
   const [roadReports, setRoadReports] = useState<RoadReport[]>([]);
-  const [weather, setWeather] = useState<WeatherInfo | null>({
-    tempC: 28,
-    feelsLikeC: 30,
-    condition: "Clear",
-    description: "sunny and clear",
-    humidity: 60,
-    windKph: 12.0,
-    cityName: "Mogadishu",
-  });
+  const [weather, setWeather] = useState<WeatherInfo | null>(null);
+  const [weatherError, setWeatherError] = useState(false);
   const [weatherOpen, setWeatherOpen] = useState(false);
   const [pickingPlanOrigin, setPickingPlanOrigin] = useState(false);
   const [planPinDraft, setPlanPinDraft] = useState<LocationPoint | null>(null);
@@ -102,7 +95,7 @@ export default function NavigatePage() {
   const lastResolvedPlanPinRef = useRef<string | null>(null);
   const planPinDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Same 300m-moved gate used elsewhere — avoids refetching on every GPS tick.
+  // Fetch nearby places and road reports on 300m distance threshold
   useEffect(() => {
     if (!position) return;
     const last = lastNearbyFetchRef.current;
@@ -114,20 +107,29 @@ export default function NavigatePage() {
     getNearbyRoadReports(position.lat, position.lng, 5)
       .then(setRoadReports)
       .catch(() => {});
-    getWeather(position.lat, position.lng)
-      .then(setWeather)
-      .catch(() => {
-        setWeather({
-          tempC: 28,
-          feelsLikeC: 30,
-          condition: "Clear",
-          description: "sunny and clear",
-          humidity: 60,
-          windKph: 12.0,
-          cityName: getNearestCityName(position.lat, position.lng),
-        });
-      });
   }, [position]);
+
+  // Real weather fetch and 5-minute auto-refresh loop
+  useEffect(() => {
+    if (!position) return;
+
+    const fetchWeather = () => {
+      getWeather(position.lat, position.lng)
+        .then((w) => {
+          setWeather(w);
+          setWeatherError(false);
+        })
+        .catch(() => {
+          setWeather(null);
+          setWeatherError(true);
+        });
+    };
+
+    fetchWeather();
+    const interval = setInterval(fetchWeather, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(interval);
+  }, [position?.lat, position?.lng]);
 
 
   const handlePlanGo = (origin: LocationPoint | null, destination: LocationPoint) => {
@@ -274,13 +276,13 @@ export default function NavigatePage() {
                 weather.cityName.toLowerCase() === "kisumu" ? "Kisumu, KE" :
                 weather.cityName.toLowerCase() === "nakuru" ? "Nakuru, KE" :
                 weather.cityName
-              ) : "Locating…"}
+              ) : position ? `${getNearestCityName(position.lat, position.lng)}` : "Locating…"}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {weather && (
+          {weather ? (
             <button
               onClick={() => setWeatherOpen(true)}
               className="flex h-14 items-center gap-2 rounded-2xl bg-card px-4 shadow-lg active:scale-95 transition-all duration-200 border border-border/40 hover:border-primary/30"
@@ -297,7 +299,11 @@ export default function NavigatePage() {
                 </span>
               </div>
             </button>
-          )}
+          ) : weatherError ? (
+            <div className="flex h-14 items-center justify-center rounded-2xl bg-card px-4 shadow-lg border border-border/40 text-[10px] font-bold text-muted-foreground">
+              Weather data unavailable
+            </div>
+          ) : null}
 
           <button
             onClick={() => router.push("/profile")}

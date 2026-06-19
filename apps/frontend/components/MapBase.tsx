@@ -686,20 +686,30 @@ const MapBase = forwardRef<MapHandle, Props>(({
       >
         {allRenderedMarkers.map((m, idx) => {
           let content: HTMLElement;
-          if (m.type === 'me') {
-            content = PinIcon.me();
-          } else if (m.type === 'car') {
-            content = PinIcon.car(m.category);
-          } else if (m.type === 'request') {
-            content = PinIcon.request();
-          } else if (m.type === 'place' || m.type === 'tracked') {
-            if (m.type === 'tracked' && m.label) {
-              content = PinIcon.member(getMemberColor(m.label), m.label);
-            } else {
-              content = PinIcon.place();
-            }
+          const categoryLower = m.category?.toLowerCase() || '';
+          
+          if (categoryLower === 'walking' || categoryLower === 'person') {
+            content = PinIcon.person();
+          } else if (categoryLower === 'bike' || categoryLower === 'bicycle' || categoryLower === 'motorcycle') {
+            content = PinIcon.bike();
+          } else if (categoryLower === 'car' || categoryLower === 'taxi' || categoryLower === 'driving' || categoryLower === 'ride') {
+            content = PinIcon.car('economy');
           } else {
-            content = PinIcon.request();
+            if (m.type === 'me') {
+              content = PinIcon.me();
+            } else if (m.type === 'car') {
+              content = PinIcon.car(m.category);
+            } else if (m.type === 'request') {
+              content = PinIcon.request();
+            } else if (m.type === 'place' || m.type === 'tracked') {
+              if (m.type === 'tracked' && m.label) {
+                content = PinIcon.member(getMemberColor(m.label), m.label);
+              } else {
+                content = PinIcon.place();
+              }
+            } else {
+              content = PinIcon.request();
+            }
           }
 
           return (
