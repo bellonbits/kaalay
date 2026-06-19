@@ -307,6 +307,15 @@ export interface DriverWallet {
   currency: string;
 }
 
+export interface DriverTransaction {
+  id: string;
+  method: string;
+  recipient: string;
+  amount: number;
+  timestamp: string;
+  status?: string;
+}
+
 export interface AdminUser {
   id: string;
   fullName: string;

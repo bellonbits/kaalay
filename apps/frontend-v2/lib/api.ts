@@ -39,6 +39,7 @@ import type {
   W3WConvertToWordsResponse,
   Waypoint,
   WeatherInfo,
+  DriverTransaction,
 } from "@/types/api";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://app.suqafuran.com/api/v1";
@@ -344,10 +345,10 @@ export const updateDriverStatus = (status: "online" | "offline" | "busy") =>
 export const getDriverWallet = () => api.get<DriverWallet>("/drivers/wallet").then((r) => r.data);
 
 export const withdrawEarnings = (method: string, amount: number, recipient: string) =>
-  api.post<{ message: string; newBalance: number; transaction: any }>("/drivers/withdraw", { method, amount, recipient }).then((r) => r.data);
+  api.post<{ message: string; newBalance: number; transaction: DriverTransaction }>("/drivers/withdraw", { method, amount, recipient }).then((r) => r.data);
 
 export const getWithdrawalTransactions = () =>
-  api.get<any[]>("/drivers/transactions").then((r) => r.data);
+  api.get<DriverTransaction[]>("/drivers/transactions").then((r) => r.data);
 
 // ── Admin ────────────────────────────────────────────────────────────────
 export const getAdminDashboardStats = () => api.get<AdminDashboardStats>("/admin/dashboard-stats").then((r) => r.data);

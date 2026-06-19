@@ -39,26 +39,7 @@ const ROAD_ISSUE_LABEL: Record<RoadReport["type"], string> = {
   other: "Road issue",
 };
 
-const CITIES = [
-  { name: "Nairobi", lat: -1.2921, lng: 36.8219 },
-  { name: "Mombasa", lat: -4.05, lng: 39.67 },
-  { name: "Kisumu", lat: -0.09, lng: 34.77 },
-  { name: "Nakuru", lat: -0.30, lng: 36.07 },
-  { name: "Mogadishu", lat: 2.04, lng: 45.34 }
-];
 
-function getNearestCityName(lat: number, lng: number): string {
-  let bestCity = CITIES[0].name;
-  let minDistance = Infinity;
-  for (const city of CITIES) {
-    const dist = Math.pow(city.lat - lat, 2) + Math.pow(city.lng - lng, 2);
-    if (dist < minDistance) {
-      minDistance = dist;
-      bestCity = city.name;
-    }
-  }
-  return bestCity;
-}
 
 const GOOGLE_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
