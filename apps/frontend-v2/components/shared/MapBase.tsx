@@ -72,6 +72,7 @@ export default function MapBase({
   const targetRef = useRef<{ lat: number; lng: number; heading: number } | null>(null);
   const rafRef = useRef<number | null>(null);
   const wasFollowingRef = useRef(false);
+  const followRef = useRef(false);
   const gridLayerRef = useRef<google.maps.Data | null>(null);
   const gridDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastGridBoundsRef = useRef<string | null>(null);
@@ -180,7 +181,11 @@ export default function MapBase({
     polylineBorderRef.current?.setPath(path);
   }, [mapReady, routePoints]);
 
-  // ── "Me" marker + accuracy circle, LERP-animated for smooth motion ──
+  // ── "Me" marker + accuracy circle — updates the target the animation
+  //    loop below interpolates toward. Deliberately does NOT touch rafRef:
+  //    restarting requestAnimationFrame on every GPS tick (every 1-3s)
+  //    used to cancel-and-relaunch the LERP loop constantly, which is
+  //    wasteful and risks visible stutter on slower devices. ────────────
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
     if (!me) return;
@@ -218,34 +223,43 @@ export default function MapBase({
     }
     accuracyCircleRef.current.setCenter({ lat: me.lat, lng: me.lng });
     accuracyCircleRef.current.setRadius(me.accuracy ?? 15);
+  }, [mapReady, me]);
 
-    // Zoom in tight the moment follow mode engages, so the user's exact
-    // position (even inside a building) is clearly visible — but only on
-    // that transition, not every frame, so it doesn't fight manual zoom.
+  // Zoom in tight the moment follow mode engages, so the user's exact
+  // position (even inside a building) is clearly visible — but only on
+  // that transition, not every frame, so it doesn't fight manual zoom.
+  useEffect(() => {
+    followRef.current = !!follow;
     if (follow && !wasFollowingRef.current && mapRef.current) {
       mapRef.current.setZoom(FOLLOW_ZOOM);
     }
     wasFollowingRef.current = !!follow;
+  }, [follow]);
 
-    if (!rafRef.current) {
-      const tick = () => {
-        const current = animatedRef.current;
-        const target = targetRef.current;
-        if (current && target && meMarkerRef.current) {
-          const nextLat = current.lat + (target.lat - current.lat) * LERP_FACTOR;
-          const nextLng = current.lng + (target.lng - current.lng) * LERP_FACTOR;
-          const nextHeading = current.heading + shortestHeadingDelta(current.heading, target.heading) * LERP_FACTOR;
-          animatedRef.current = { lat: nextLat, lng: nextLng, heading: nextHeading };
-          meMarkerRef.current.position = { lat: nextLat, lng: nextLng };
+  // ── Continuous LERP animation loop — started once the map is ready and
+  //    left running for the component's lifetime, reading targetRef/
+  //    followRef fresh every frame instead of being torn down and rebuilt
+  //    on every position update. ─────────────────────────────────────────
+  useEffect(() => {
+    if (!mapReady) return;
 
-          if (follow && mapRef.current) {
-            mapRef.current.moveCamera({ center: { lat: nextLat, lng: nextLng }, heading: nextHeading });
-          }
+    const tick = () => {
+      const current = animatedRef.current;
+      const target = targetRef.current;
+      if (current && target && meMarkerRef.current) {
+        const nextLat = current.lat + (target.lat - current.lat) * LERP_FACTOR;
+        const nextLng = current.lng + (target.lng - current.lng) * LERP_FACTOR;
+        const nextHeading = current.heading + shortestHeadingDelta(current.heading, target.heading) * LERP_FACTOR;
+        animatedRef.current = { lat: nextLat, lng: nextLng, heading: nextHeading };
+        meMarkerRef.current.position = { lat: nextLat, lng: nextLng };
+
+        if (followRef.current && mapRef.current) {
+          mapRef.current.moveCamera({ center: { lat: nextLat, lng: nextLng }, heading: nextHeading });
         }
-        rafRef.current = requestAnimationFrame(tick);
-      };
+      }
       rafRef.current = requestAnimationFrame(tick);
-    }
+    };
+    rafRef.current = requestAnimationFrame(tick);
 
     return () => {
       if (rafRef.current) {
@@ -253,7 +267,7 @@ export default function MapBase({
         rafRef.current = null;
       }
     };
-  }, [mapReady, me, follow]);
+  }, [mapReady]);
 
   // ── Static markers (places, facilities) ──────────────────────────────
   useEffect(() => {
