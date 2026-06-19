@@ -95,7 +95,7 @@ export default function BottomNav() {
     router.push("/sos");
   }, [router]);
 
-  const hardHidden = HIDDEN_ON.some((p) => pathname === p) || pathname.startsWith("/track");
+  const hardHidden = HIDDEN_ON.some((p) => pathname === p) || pathname.startsWith("/track") || pathname.includes("/chat");
   if (hardHidden) return null;
 
   return (
