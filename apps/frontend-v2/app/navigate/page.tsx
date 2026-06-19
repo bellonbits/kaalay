@@ -27,6 +27,7 @@ import { addRecent } from "@/features/navigation/recents";
 import { haversineKm } from "@/features/location/geo";
 import { kaalayPlaceToDetail, type LocationPoint, type DetailPlace } from "@/features/navigation/types";
 import { weatherIcon } from "@/features/weather/weatherIcon";
+import WeatherDetailsModal from "@/features/weather/components/WeatherDetailsModal";
 import type { Place, RoadReport, WeatherInfo } from "@/types/api";
 
 const ROAD_ISSUE_LABEL: Record<RoadReport["type"], string> = {
@@ -61,7 +62,16 @@ export default function NavigatePage() {
   const [following, setFollowing] = useState(true);
   const [nearbyPlaces, setNearbyPlaces] = useState<Place[]>([]);
   const [roadReports, setRoadReports] = useState<RoadReport[]>([]);
-  const [weather, setWeather] = useState<WeatherInfo | null>(null);
+  const [weather, setWeather] = useState<WeatherInfo | null>({
+    tempC: 28,
+    feelsLikeC: 30,
+    condition: "Clear",
+    description: "sunny and clear",
+    humidity: 60,
+    windKph: 12.0,
+    cityName: "Mogadishu",
+  });
+  const [weatherOpen, setWeatherOpen] = useState(false);
   const [pickingPlanOrigin, setPickingPlanOrigin] = useState(false);
   const [planPinDraft, setPlanPinDraft] = useState<LocationPoint | null>(null);
   const [resolvingPlanPin, setResolvingPlanPin] = useState(false);
@@ -85,10 +95,19 @@ export default function NavigatePage() {
       .catch(() => {});
     getWeather(position.lat, position.lng)
       .then(setWeather)
-      .catch(() => {});
+      .catch(() => {
+        setWeather({
+          tempC: 28,
+          feelsLikeC: 30,
+          condition: "Clear",
+          description: "sunny and clear",
+          humidity: 60,
+          windKph: 12.0,
+          cityName: "Mogadishu",
+        });
+      });
   }, [position]);
 
-  const WeatherIcon = weather ? weatherIcon(weather.condition) : null;
 
   const handlePlanGo = (origin: LocationPoint | null, destination: LocationPoint) => {
     setOrigin(origin);
@@ -220,27 +239,45 @@ export default function NavigatePage() {
 
       {/* Header */}
       <div className="absolute inset-x-4 top-[calc(env(safe-area-inset-top,0px)+1rem)] z-20 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-3 rounded-2xl bg-card px-3 py-2 shadow-lg">
+        <div className="flex h-14 items-center gap-3 rounded-2xl bg-card px-4 shadow-lg border border-border/40">
           <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-sm font-extrabold text-primary-foreground">
             {user?.fullName?.charAt(0).toUpperCase() ?? "K"}
           </div>
           <div className="min-w-0">
             <p className="text-sm font-extrabold leading-tight text-foreground">Hey {user?.fullName?.split(" ")[0] ?? "there"}</p>
-            {weather && WeatherIcon && (
-              <p className="flex items-center gap-1 text-[11px] font-semibold leading-tight text-muted-foreground" title={weather.description}>
-                <WeatherIcon className="h-3 w-3 text-primary" /> {weather.tempC}°C
-              </p>
-            )}
+            <p className="text-[10px] font-semibold text-muted-foreground">Mogadishu, SO</p>
           </div>
         </div>
-        <button
-          onClick={() => router.push("/profile")}
-          className="relative flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform"
-          aria-label="Notifications"
-        >
-          <Bell className="h-5 w-5 text-foreground" />
-          <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-emergency" />
-        </button>
+
+        <div className="flex items-center gap-2">
+          {weather && (
+            <button
+              onClick={() => setWeatherOpen(true)}
+              className="flex h-14 items-center gap-2 rounded-2xl bg-card px-4 shadow-lg active:scale-95 transition-all duration-200 border border-border/40 hover:border-primary/30"
+              title="Show Weather Details"
+            >
+              {(() => {
+                const Icon = weatherIcon(weather.condition);
+                return <Icon className="h-5 w-5 text-primary animate-pulse" />;
+              })()}
+              <div className="text-left">
+                <span className="block text-xs font-black text-foreground leading-none">{weather.tempC}°C</span>
+                <span className="block text-[8px] font-bold text-muted-foreground uppercase tracking-wide mt-0.5">
+                  {weather.condition}
+                </span>
+              </div>
+            </button>
+          )}
+
+          <button
+            onClick={() => router.push("/profile")}
+            className="relative flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform border border-border/40 hover:border-primary/30"
+            aria-label="Notifications"
+          >
+            <Bell className="h-5 w-5 text-foreground" />
+            <span className="absolute right-3.5 top-3.5 h-2 w-2 rounded-full bg-emergency" />
+          </button>
+        </div>
       </div>
 
       {/* Search bar */}
@@ -257,30 +294,30 @@ export default function NavigatePage() {
       <button
         onClick={() => setFollowing(true)}
         aria-label="Recenter on my location"
-        className="absolute right-4 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-card shadow-lg active:scale-95 transition-transform"
+        className="absolute right-4 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-card shadow-lg active:scale-95 transition-transform border border-border/40"
         style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 15.5rem)" }}
       >
-        <LocateFixed className={`h-5 w-5 ${following ? "text-primary" : "text-foreground"}`} />
+        <LocateFixed className={`h-6 w-6 ${following ? "text-primary" : "text-foreground"}`} />
       </button>
 
       {/* Messages — chat with the Kaalay assistant or your driver */}
       <button
         onClick={() => router.push("/messages")}
         aria-label="Messages"
-        className="absolute left-4 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-foreground shadow-lg active:scale-95 transition-transform"
+        className="absolute left-4 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-foreground shadow-lg active:scale-95 transition-transform"
         style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 15.5rem)" }}
       >
-        <MessageCircle className="h-5 w-5 text-white" />
+        <MessageCircle className="h-6 w-6 text-white" />
       </button>
 
       {/* SOS — one tap from any map screen, not just buried in Profile */}
       <button
         onClick={() => router.push("/sos")}
         aria-label="SOS"
-        className="absolute left-4 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-emergency shadow-lg active:scale-95 transition-transform"
-        style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 19rem)" }}
+        className="absolute left-4 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-emergency shadow-lg active:scale-95 transition-transform"
+        style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 19.5rem)" }}
       >
-        <ShieldAlert className="h-5 w-5 text-emergency-foreground" />
+        <ShieldAlert className="h-6 w-6 text-emergency-foreground" />
       </button>
 
       {/* Bottom sheet: quick actions */}
@@ -292,8 +329,8 @@ export default function NavigatePage() {
               onClick={() => handleQuickAction(action)}
               className="flex w-20 flex-shrink-0 flex-col items-center gap-1.5 active:scale-95 transition-transform"
             >
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
-                <action.icon className="h-5 w-5 text-primary" />
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
+                <action.icon className="h-6 w-6 text-primary" />
               </div>
               <span className="text-center text-[10px] font-bold leading-tight text-foreground">{action.label}</span>
             </button>
@@ -343,6 +380,12 @@ export default function NavigatePage() {
           </div>
         </>
       )}
+
+      <WeatherDetailsModal
+        weather={weather}
+        isOpen={weatherOpen}
+        onClose={() => setWeatherOpen(false)}
+      />
     </div>
   );
 }

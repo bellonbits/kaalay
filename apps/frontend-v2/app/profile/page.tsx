@@ -139,7 +139,7 @@ export default function ProfilePage() {
 
       <button
         onClick={handleLogout}
-        className="mt-8 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-secondary text-sm font-bold text-foreground active:scale-95 transition-transform"
+        className="mt-8 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-danger/10 border border-danger/25 text-sm font-extrabold text-danger active:scale-95 transition-transform"
       >
         <LogOut className="h-4 w-4" /> Logout
       </button>

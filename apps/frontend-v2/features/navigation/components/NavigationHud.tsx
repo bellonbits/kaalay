@@ -111,7 +111,7 @@ export default function NavigationHud(props: Props) {
           )}
           <button
             onClick={onCancel}
-            className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-secondary text-sm font-bold text-foreground active:scale-95 transition-transform"
+            className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-secondary text-sm font-bold text-foreground active:scale-95 transition-transform"
           >
             <X className="h-4 w-4" /> Cancel navigation
           </button>
@@ -126,15 +126,15 @@ function VoiceToggle({ on, available, onToggle, dark }: { on: boolean; available
     <button
       onClick={onToggle}
       aria-label={on ? "Mute voice guidance" : "Unmute voice guidance"}
-      className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full active:scale-90 transition-transform ${
+      className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full active:scale-90 transition-transform ${
         dark ? "bg-white/15" : "bg-secondary"
       }`}
       title={!available ? "Voice not available in this language on this device — using English" : undefined}
     >
       {on ? (
-        <Volume2 className={`h-4 w-4 ${dark ? "text-white" : "text-foreground"}`} />
+        <Volume2 className={`h-6 w-6 ${dark ? "text-white" : "text-foreground"}`} />
       ) : (
-        <VolumeX className={`h-4 w-4 ${dark ? "text-white/60" : "text-muted-foreground"}`} />
+        <VolumeX className={`h-6 w-6 ${dark ? "text-white/60" : "text-muted-foreground"}`} />
       )}
     </button>
   );

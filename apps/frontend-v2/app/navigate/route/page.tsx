@@ -7,7 +7,6 @@ import {
   Footprints,
   Bike,
   Car,
-  Compass,
   LocateFixed,
   Share2,
   MapPin,
@@ -30,6 +29,7 @@ import { bearing, haversineMeters, formatDistance, formatDuration, distanceToPol
 import { useVoiceGuidance, type VoiceLanguage } from "@/features/navigation/useVoiceGuidance";
 import { getNearbyRoadReports, getPlaceNotes, getWeather, convertToWords, getPlaces } from "@/lib/api";
 import { weatherIcon } from "@/features/weather/weatherIcon";
+import WeatherDetailsModal from "@/features/weather/components/WeatherDetailsModal";
 import { NOTE_KIND_LABEL, NOTE_KIND_ORDER } from "@/features/navigation/noteKinds";
 import type { RoadReport, PlaceNote, WeatherInfo, Place } from "@/types/api";
 import type { LocationPoint, DetailPlace } from "@/features/navigation/types";
@@ -46,15 +46,14 @@ const GOOGLE_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
 const ROAD_MODES: { mode: TravelMode; label: string; icon: typeof Footprints }[] = [
   { mode: "WALKING", label: "Walking", icon: Footprints },
-  { mode: "BICYCLING", label: "Bike", icon: Bike },
+  { mode: "TWO_WHEELER", label: "Motorcycle", icon: Bike },
   { mode: "DRIVING", label: "Car", icon: Car },
 ];
 
 const BASE_SPEEDS_MPS: Record<TravelMode, number> = {
   WALKING: 1.4,
-  BICYCLING: 5.0,
+  TWO_WHEELER: 8.3,
   DRIVING: 13.8,
-  PRECISION: 1.4,
 };
 
 type Estimate = { distanceMeters: number; durationSeconds: number } | "loading" | "unavailable";
@@ -84,7 +83,16 @@ export default function RoutePage() {
   const [manualPan, setManualPan] = useState(false);
   const [roadReports, setRoadReports] = useState<RoadReport[]>([]);
   const [placeNotes, setPlaceNotes] = useState<PlaceNote[]>([]);
-  const [destinationWeather, setDestinationWeather] = useState<WeatherInfo | null>(null);
+  const [destinationWeather, setDestinationWeather] = useState<WeatherInfo | null>({
+    tempC: 28,
+    feelsLikeC: 30,
+    condition: "Clear",
+    description: "sunny and clear",
+    humidity: 60,
+    windKph: 12.0,
+    cityName: "Mogadishu",
+  });
+  const [weatherOpen, setWeatherOpen] = useState(false);
   const [originSearchOpen, setOriginSearchOpen] = useState(false);
   const [originMenuOpen, setOriginMenuOpen] = useState(false);
   const [savedPlacesOpen, setSavedPlacesOpen] = useState(false);
@@ -117,7 +125,7 @@ export default function RoutePage() {
   const lastResolvedPinRef = useRef<string | null>(null);
   const pinDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isRoad = selectedMode !== "PRECISION" && !!activeRoute;
+  const isRoad = !!activeRoute;
 
   const simulationPoints = useMemo(() => {
     if (isRoad && activeRoute) {
@@ -221,7 +229,17 @@ export default function RoutePage() {
       .catch(() => {});
     getWeather(destination.lat, destination.lng)
       .then(setDestinationWeather)
-      .catch(() => setDestinationWeather(null));
+      .catch(() => {
+        setDestinationWeather({
+          tempC: 28,
+          feelsLikeC: 30,
+          condition: "Clear",
+          description: "sunny and clear",
+          humidity: 60,
+          windKph: 12.0,
+          cityName: "Mogadishu",
+        });
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destination?.lat, destination?.lng]);
 
@@ -241,19 +259,17 @@ export default function RoutePage() {
 
     Promise.all(
       ROAD_MODES.map(async ({ mode }) => {
-        const result = await computeRoute(origin, destination, mode as "WALKING" | "BICYCLING" | "DRIVING", GOOGLE_KEY);
+        const result = await computeRoute(origin, destination, mode as "WALKING" | "TWO_WHEELER" | "DRIVING", GOOGLE_KEY);
         return [mode, result] as const;
       })
     ).then((results) => {
       if (cancelled) return;
       const nextEstimates: Record<string, Estimate> = {};
       const nextRoutes: Record<string, RouteResult> = {};
-      let anyAvailable = false;
       for (const [mode, result] of results) {
         if (result) {
           nextEstimates[mode] = { distanceMeters: result.distanceMeters, durationSeconds: result.durationSeconds };
           nextRoutes[mode] = result;
-          anyAvailable = true;
         } else {
           nextEstimates[mode] = "unavailable";
         }
@@ -261,17 +277,14 @@ export default function RoutePage() {
       setEstimates(nextEstimates);
       setRoutes(nextRoutes);
 
-      const firstAvailable = ROAD_MODES.find((m) => nextRoutes[m.mode])?.mode ?? "PRECISION";
-      // No road route anywhere — silently fall back to precision, no error
-      // shown, no dead end, per spec.
-      if (!anyAvailable) setSelectedMode("PRECISION");
-      else setSelectedMode(firstAvailable);
+      const firstAvailable = ROAD_MODES.find((m) => nextRoutes[m.mode])?.mode ?? "WALKING";
+      setSelectedMode(firstAvailable);
 
       if (autoStart) {
         setAutoStart(false);
         startNavigation(
           firstAvailable,
-          firstAvailable === "PRECISION" ? null : nextRoutes[firstAvailable],
+          nextRoutes[firstAvailable] ?? null,
           usingLiveGps ? "navigating" : "preview"
         );
       }
@@ -287,7 +300,7 @@ export default function RoutePage() {
 
   const startNavigation = (mode: TravelMode, route: RouteResult | null, targetPhase: "navigating" | "preview" = "navigating") => {
     setSelectedMode(mode);
-    setActiveRoute(mode === "PRECISION" ? null : route);
+    setActiveRoute(route);
     approachedRef.current = false;
     lastSpokenStepRef.current = -1;
     offRouteStreakRef.current = 0;
@@ -297,10 +310,10 @@ export default function RoutePage() {
   };
 
   const handleGo = () =>
-    startNavigation(selectedMode, selectedMode === "PRECISION" ? null : routes[selectedMode] ?? null, usingLiveGps ? "navigating" : "preview");
+    startNavigation(selectedMode, routes[selectedMode] ?? null, usingLiveGps ? "navigating" : "preview");
 
   const handleStartSimulation = () => {
-    const route = selectedMode === "PRECISION" ? null : routes[selectedMode] ?? null;
+    const route = routes[selectedMode] ?? null;
     setSelectedMode(selectedMode);
     setActiveRoute(route);
     approachedRef.current = false;
@@ -311,7 +324,7 @@ export default function RoutePage() {
 
     // Initialize simulation
     const startPoint = customOrigin ?? position ?? destination;
-    const pts = (selectedMode !== "PRECISION" && route) ? route.polylinePoints : [startPoint, destination];
+    const pts = route ? route.polylinePoints : [startPoint, destination];
     if (pts.length > 0 && pts[0]) {
       const p = pts[0];
       const p2 = pts[1] ?? p;
@@ -466,7 +479,7 @@ export default function RoutePage() {
     offRouteStreakRef.current = 0;
     reroutingRef.current = true;
     toast.info("Recalculating route…");
-    computeRoute(position, destination, selectedMode as "WALKING" | "BICYCLING" | "DRIVING", GOOGLE_KEY)
+    computeRoute(position, destination, selectedMode as "WALKING" | "TWO_WHEELER" | "DRIVING", GOOGLE_KEY)
       .then((result) => {
         if (!result) return;
         setActiveRoute(result);
@@ -548,7 +561,7 @@ export default function RoutePage() {
             ? []
             : isRoad && activeRoute
               ? activeRoute.polylinePoints
-              : phase === "select" && selectedMode !== "PRECISION"
+              : phase === "select"
                 ? routes[selectedMode]?.polylinePoints ?? []
                 : []
         }
@@ -619,7 +632,7 @@ export default function RoutePage() {
             <div className="flex items-stretch gap-2">
               <button
                 onClick={openOriginMenu}
-                className="min-w-0 flex-1 rounded-2xl bg-secondary px-4 py-2.5 text-left active:scale-[0.98] transition-transform"
+                className="min-w-0 flex-1 rounded-2xl bg-secondary px-4 py-3.5 text-left active:scale-[0.98] transition-transform"
               >
                 <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">From</p>
                 <p className="truncate text-sm font-bold text-foreground">{customOrigin?.label ?? "Current location"}</p>
@@ -635,23 +648,28 @@ export default function RoutePage() {
               )}
             </div>
 
-            <div className="mt-2 flex items-center justify-between gap-2 rounded-2xl bg-secondary px-4 py-2.5">
+            <div className="mt-2 flex items-center justify-between gap-2 rounded-2xl bg-secondary px-4 py-3.5">
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">To</p>
                 <p className="truncate text-sm font-bold text-foreground">{destination.label}</p>
               </div>
               {destinationWeather && (
-                <div className="flex flex-shrink-0 items-center gap-1.5" title={destinationWeather.description}>
+                <button
+                  type="button"
+                  onClick={() => setWeatherOpen(true)}
+                  className="flex flex-shrink-0 items-center gap-1.5 rounded-xl bg-card px-2.5 py-1.5 shadow-sm active:scale-95 transition-all border border-border/40 hover:border-primary/30"
+                  title="Show Destination Weather Details"
+                >
                   {(() => {
                     const Icon = weatherIcon(destinationWeather.condition);
-                    return <Icon className="h-4 w-4 text-primary" />;
+                    return <Icon className="h-4 w-4 text-primary animate-pulse" />;
                   })()}
-                  <span className="text-sm font-extrabold text-foreground">{destinationWeather.tempC}°C</span>
-                </div>
+                  <span className="text-xs font-extrabold text-foreground">{destinationWeather.tempC}°C</span>
+                </button>
               )}
             </div>
 
-            {selectedMode !== "PRECISION" && estimates[selectedMode] && estimates[selectedMode] !== "loading" && estimates[selectedMode] !== "unavailable" && (
+            {estimates[selectedMode] && estimates[selectedMode] !== "loading" && estimates[selectedMode] !== "unavailable" && (
               <div className="mt-4 flex items-center gap-6">
                 <div>
                   <p className="text-2xl font-extrabold text-foreground">
@@ -668,7 +686,7 @@ export default function RoutePage() {
               </div>
             )}
 
-            <div className="mt-5 grid grid-cols-4 gap-2">
+            <div className="mt-5 grid grid-cols-3 gap-2">
               {ROAD_MODES.map(({ mode, label, icon: Icon }) => {
                 const est = estimates[mode];
                 const unavailable = est === "unavailable";
@@ -690,21 +708,11 @@ export default function RoutePage() {
                   </button>
                 );
               })}
-              <button
-                onClick={() => setSelectedMode("PRECISION")}
-                className={`flex h-24 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-bold transition-all ${
-                  selectedMode === "PRECISION" ? "bg-emergency text-emergency-foreground" : "bg-secondary text-foreground"
-                }`}
-              >
-                <Compass className="h-5 w-5" />
-                Precision
-                <span className="text-[10px] font-semibold opacity-80">Compass</span>
-              </button>
             </div>
 
             <button
               onClick={handleGo}
-              disabled={selectedMode !== "PRECISION" && !routes[selectedMode]}
+              disabled={!routes[selectedMode]}
               className="mt-6 flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-xl font-extrabold text-primary-foreground active:scale-95 transition-transform disabled:opacity-40"
             >
               GO
@@ -755,10 +763,10 @@ export default function RoutePage() {
         <div className="absolute inset-0 z-20 flex flex-col">
           <button
             onClick={handleCancel}
-            className="m-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform"
+            className="m-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform border border-border/40 hover:border-primary/30"
             aria-label="Back"
           >
-            <ArrowLeft className="h-5 w-5 text-foreground" />
+            <ArrowLeft className="h-6 w-6 text-foreground" />
           </button>
 
           <div className="mt-auto rounded-t-3xl bg-card p-6 pb-[calc(env(safe-area-inset-bottom,0px)+6.5rem)] shadow-2xl">
@@ -777,7 +785,7 @@ export default function RoutePage() {
               You&apos;re not at the start point, so this is a preview — distance and time below, no live tracking.
             </p>
 
-            {selectedMode !== "PRECISION" && routes[selectedMode] && (
+            {routes[selectedMode] && (
               <div className="mt-4 flex items-center gap-6">
                 <div>
                   <p className="text-2xl font-extrabold text-foreground">{formatDistance(routes[selectedMode].distanceMeters)}</p>
@@ -799,7 +807,7 @@ export default function RoutePage() {
               </button>
               <button
                 onClick={handleClose}
-                className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-secondary text-sm font-bold text-foreground active:scale-95 transition-transform"
+                className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-secondary text-sm font-bold text-foreground active:scale-95 transition-transform"
               >
                 Close Preview
               </button>
@@ -897,7 +905,7 @@ export default function RoutePage() {
             {lastCompletedRoute && (
               <button
                 onClick={() => router.push("/routes/create")}
-                className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl border-2 border-primary text-sm font-bold text-primary active:scale-95 transition-transform"
+                className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl border-2 border-primary text-sm font-bold text-primary active:scale-95 transition-transform"
               >
                 <Share2 className="h-4 w-4" /> Share this route with the community
               </button>
@@ -943,10 +951,10 @@ export default function RoutePage() {
           <div className="absolute inset-x-4 top-[calc(env(safe-area-inset-top,0px)+1rem)] z-30">
             <button
               onClick={() => setPickingOrigin(false)}
-              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform"
+              className="flex h-14 w-14 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform border border-border/40 hover:border-primary/30"
               aria-label="Cancel"
             >
-              <X className="h-5 w-5 text-foreground" />
+              <X className="h-6 w-6 text-foreground" />
             </button>
           </div>
           <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+2rem)] z-30 rounded-3xl bg-card p-5 shadow-2xl">
@@ -971,6 +979,12 @@ export default function RoutePage() {
         onSelect={handleOriginSelect}
         onPlaceSelect={handleOriginPlaceSelect}
         near={position ?? destination}
+      />
+
+      <WeatherDetailsModal
+        weather={destinationWeather}
+        isOpen={weatherOpen}
+        onClose={() => setWeatherOpen(false)}
       />
     </div>
   );

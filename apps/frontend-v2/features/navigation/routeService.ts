@@ -7,7 +7,7 @@
 
 import { haversineMeters } from "@/features/location/geo";
 
-export type ApiTravelMode = "WALK" | "BICYCLE" | "DRIVE" | "TRANSIT";
+export type ApiTravelMode = "WALK" | "BICYCLE" | "DRIVE" | "TWO_WHEELER" | "TRANSIT";
 
 export interface RouteStep {
   instruction: string;
@@ -24,15 +24,16 @@ export interface RouteResult {
   steps: RouteStep[];
 }
 
-function toApiMode(mode: "WALKING" | "BICYCLING" | "DRIVING"): ApiTravelMode {
-  if (mode === "WALKING" || mode === "BICYCLING") return mode === "WALKING" ? "WALK" : "BICYCLE";
+function toApiMode(mode: "WALKING" | "TWO_WHEELER" | "DRIVING"): ApiTravelMode {
+  if (mode === "WALKING") return "WALK";
+  if (mode === "TWO_WHEELER") return "TWO_WHEELER";
   return "DRIVE";
 }
 
 export async function computeRoute(
   origin: { lat: number; lng: number },
   destination: { lat: number; lng: number },
-  travelMode: "WALKING" | "BICYCLING" | "DRIVING",
+  travelMode: "WALKING" | "TWO_WHEELER" | "DRIVING",
   apiKey: string
 ): Promise<RouteResult | null> {
   const apiMode = toApiMode(travelMode);

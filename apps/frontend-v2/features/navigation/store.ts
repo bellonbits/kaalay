@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { LocationPoint } from "./types";
 
-export type TravelMode = "WALKING" | "BICYCLING" | "DRIVING" | "PRECISION";
+export type TravelMode = "WALKING" | "TWO_WHEELER" | "DRIVING";
 
 interface NavigationState {
   /** True while turn-by-turn is active — drives BottomNav/chrome hiding via
