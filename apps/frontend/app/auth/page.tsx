@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { homeRouteForRole, useAuthStore } from "@/features/auth/store";
+import { verifyOTP } from "@/lib/api";
 import type { RideCategory } from "@/types/api";
 
 type AccountType = "rider" | "driver" | "emergency_operator";
@@ -31,8 +32,9 @@ function AuthFlow() {
   const intent = searchParams.get("intent") === "login" ? "login" : "signup";
   const { requestLogin, register, loading } = useAuthStore();
 
-  const [step, setStep] = useState<"phone" | "register">("phone");
+  const [step, setStep] = useState<"phone" | "otp" | "register">("phone");
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [otpCode, setOtpCode] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [accountType, setAccountType] = useState<AccountType>("rider");
@@ -51,14 +53,32 @@ function AuthFlow() {
     }
     setError(null);
     try {
-      const { isNewUser } = await requestLogin(phoneNumber.trim());
-      if (isNewUser) {
-        setStep("register");
+      await requestLogin(phoneNumber.trim());
+      setStep("otp");
+    } catch {
+      setError("Couldn't send OTP. Check your connection and try again.");
+    }
+  };
+
+  const handleOtpSubmit = async () => {
+    if (!otpCode.trim() || otpCode.length < 4) {
+      setError("Enter a valid OTP");
+      return;
+    }
+    setError(null);
+    try {
+      const { user, accessToken, refreshToken } = await verifyOTP(phoneNumber, otpCode);
+      if (user) {
+        if (accessToken) localStorage.setItem("kaalay_token", accessToken);
+        if (refreshToken) localStorage.setItem("kaalay_refresh_token", refreshToken);
+        localStorage.setItem("kaalay_user", JSON.stringify(user));
+        router.replace(homeRouteForRole(user.role));
       } else {
-        router.replace(homeRouteForRole(useAuthStore.getState().user?.role));
+        // New user - go to registration
+        setStep("register");
       }
     } catch {
-      setError("Couldn't reach Kaalay. Check your connection and try again.");
+      setError("Invalid OTP. Try again.");
     }
   };
 
@@ -96,7 +116,11 @@ function AuthFlow() {
   return (
     <div className="flex h-full w-full flex-col overflow-y-auto bg-background px-6 pb-10 pt-14">
       <button
-        onClick={() => (step === "register" ? setStep("phone") : router.push("/welcome"))}
+        onClick={() => {
+          if (step === "register") setStep("otp");
+          else if (step === "otp") setStep("phone");
+          else router.push("/welcome");
+        }}
         className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-secondary active:scale-95 transition-transform"
         aria-label="Back"
       >
@@ -105,7 +129,56 @@ function AuthFlow() {
 
       <div className="mt-8 flex-1">
         <AnimatePresence mode="wait">
-          {step === "phone" ? (
+          {step === "otp" ? (
+            <motion.div
+              key="otp"
+              initial={{ opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -16 }}
+              transition={{ duration: 0.25 }}
+            >
+              <div className="flex h-16 w-16 items-center justify-center rounded-[1.5rem] bg-primary/10">
+                <Compass className="h-8 w-8 text-primary" strokeWidth={1.75} />
+              </div>
+              <h1 className="mt-6 text-3xl font-extrabold tracking-tight text-foreground">
+                Verify your number
+              </h1>
+              <p className="mt-2 text-base font-medium text-muted-foreground">
+                We sent a 6-digit code to {phoneNumber}
+              </p>
+
+              <div className="mt-8 space-y-2">
+                <Label htmlFor="otp" className="text-sm font-bold text-foreground">
+                  Verification code
+                </Label>
+                <div className="flex items-center gap-3 rounded-2xl border-2 border-input bg-background px-4 h-14">
+                  <Compass className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+                  <Input
+                    id="otp"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="000000"
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                    onKeyDown={(e) => e.key === "Enter" && handleOtpSubmit()}
+                    className="h-full border-0 p-0 text-base font-semibold shadow-none focus-visible:ring-0 tracking-widest"
+                  />
+                </div>
+              </div>
+
+              {error && <p className="mt-3 text-sm font-semibold text-danger">{error}</p>}
+
+              <Button
+                size="lg"
+                className="mt-8 h-14 w-full rounded-2xl text-base font-bold"
+                onClick={handleOtpSubmit}
+                disabled={loading || otpCode.length < 6}
+              >
+                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Verify"}
+              </Button>
+            </motion.div>
+          ) : step === "phone" ? (
             <motion.div
               key="phone"
               initial={{ opacity: 0, x: 16 }}

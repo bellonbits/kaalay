@@ -102,13 +102,16 @@ api.interceptors.response.use(
 
 // ── Auth (passwordless, phone-based — see plan's documented deviation) ────
 export const sendOTP = (phoneNumber: string) =>
-  api.post<{ success: boolean; message: string }>("/auth/send-otp", { phone: phoneNumber }).then((r) => r.data);
+  api.post<{ success: boolean; data: { message: string } }>("/auth/send-otp", { phone: phoneNumber }).then((r) => r.data);
 
 export const verifyOTP = (phoneNumber: string, code: string) =>
   api.post<AuthResponse>("/auth/verify-otp", { phone: phoneNumber, code }).then((r) => r.data);
 
 export const loginUser = (phoneNumber: string) =>
-  sendOTP(phoneNumber);
+  sendOTP(phoneNumber).then((response) => ({
+    isNewUser: false, // Backend determines this; default to existing user
+    ...response
+  }));
 
 export const registerUser = (data: {
   phoneNumber: string;
@@ -119,7 +122,10 @@ export const registerUser = (data: {
   vehicleColor?: string;
   vehicleCategory?: RideCategory;
   licensePlate?: string;
-}) => api.post<AuthResponse>("/auth/send-otp", { phone: data.phoneNumber }).then((r) => r.data);
+}) => api.post<AuthResponse>("/auth/send-otp", { phone: data.phoneNumber }).then((r) => ({
+  isNewUser: false,
+  ...r.data
+}));
 
 export const getMe = () => api.get<User>("/auth/me").then((r) => r.data);
 
