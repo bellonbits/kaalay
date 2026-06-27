@@ -21,6 +21,7 @@ import (
 	"github.com/suqafuran/express/services/auth/internal/repository"
 	"github.com/suqafuran/express/shared/middleware"
 	"github.com/suqafuran/express/shared/pkg"
+	_ "github.com/suqafuran/express/services/auth/cmd/docs"
 )
 
 func init() {

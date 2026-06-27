@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/suqafuran/express/services/gateway/config"
 	"github.com/suqafuran/express/services/gateway/internal/handler"
+	_ "github.com/suqafuran/express/services/gateway/cmd/docs"
 )
 
 func init() {
