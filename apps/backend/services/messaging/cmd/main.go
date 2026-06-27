@@ -319,7 +319,7 @@ func main() {
 				return
 			}
 
-			_ = repo.UpdateLastReadMessage(ctx, msg.ConversationID, userIDUUID, msgIDUUID)
+			_ = repo.UpdateLastReadMessage(ctx, msg.ConversationID.String(), userIDUUID.String(), msgIDUUID.String())
 
 			c.JSON(http.StatusOK, pkg.SuccessResponse(map[string]interface{}{
 				"read_at": receipt.ReadAt.Unix(),
@@ -330,7 +330,6 @@ func main() {
 		messages.GET("/ws/:conversation_id", func(c *gin.Context) {
 			userID := c.GetString("user_id")
 			userName := c.GetString("user_name")
-			conversationID := c.Param("conversation_id")
 
 			c.Set("user_id", userID)
 			c.Set("user_name", userName)
