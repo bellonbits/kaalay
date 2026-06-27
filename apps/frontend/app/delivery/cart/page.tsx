@@ -123,7 +123,7 @@ export default function CartPage() {
 
       {/* Sticky Checkout Button */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-4 md:relative md:border-0 md:bg-transparent md:px-0 md:py-0 md:mt-6">
-        <Link href={`/delivery/tracking/order-123`}>
+        <Link href={`/delivery/tracking?id=order-123`}>
           <Button
             fullWidth
             size="lg"

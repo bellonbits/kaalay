@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
@@ -15,8 +15,8 @@ import {
 import { BottomNav } from '@/components/layouts/BottomNav';
 
 export default function TrackingPage() {
-  const params = useParams();
-  const orderId = params.orderId;
+  const searchParams = useSearchParams();
+  const orderId = searchParams.get('id') || 'order-123';
 
   return (
     <motion.div
