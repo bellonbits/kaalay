@@ -9,14 +9,16 @@ type Config struct {
 	Port       int
 	DBConnStr  string
 	RedisAddr  string
+	NatsAddr   string
 	JWTSecret  string
 }
 
 func Load() *Config {
 	return &Config{
 		Port:      getEnvInt("PORT", 8007),
-		DBConnStr: getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5437/suqafuran_tracking?sslmode=disable"),
-		RedisAddr: getEnv("REDIS_ADDR", "localhost:6379"),
+		DBConnStr: getEnv("DATABASE_URL", "postgresql://kaalay:kaalay_dev_pass@10.90.0.10:5432/kaalay_delivery"),
+		RedisAddr: getEnv("REDIS_URL", "localhost:6379"),
+		NatsAddr:  getEnv("NATS_URL", "nats://localhost:4222"),
 		JWTSecret: getEnv("JWT_SECRET", "dev-secret-key-change-in-production"),
 	}
 }

@@ -110,7 +110,7 @@ services:
     environment:
       PORT: 8000
       DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
-      REDIS_URL: redis://10.90.0.11:6379
+      REDIS_URL: 10.90.0.11:6379
       NATS_URL: nats://10.90.0.12:4222
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
     depends_on:
@@ -140,7 +140,7 @@ services:
     environment:
       PORT: 8001
       DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
-      REDIS_URL: redis://10.90.0.11:6379
+      REDIS_URL: 10.90.0.11:6379
       NATS_URL: nats://10.90.0.12:4222
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
     depends_on:
@@ -161,7 +161,7 @@ services:
     environment:
       PORT: 8002
       DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
-      REDIS_URL: redis://10.90.0.11:6379
+      REDIS_URL: 10.90.0.11:6379
       NATS_URL: nats://10.90.0.12:4222
     depends_on:
       postgres:
@@ -181,7 +181,7 @@ services:
     environment:
       PORT: 8003
       DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
-      REDIS_URL: redis://10.90.0.11:6379
+      REDIS_URL: 10.90.0.11:6379
       NATS_URL: nats://10.90.0.12:4222
     depends_on:
       postgres:
@@ -201,7 +201,7 @@ services:
     environment:
       PORT: 8004
       DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
-      REDIS_URL: redis://10.90.0.11:6379
+      REDIS_URL: 10.90.0.11:6379
       NATS_URL: nats://10.90.0.12:4222
     depends_on:
       postgres:
@@ -223,7 +223,7 @@ services:
     environment:
       PORT: 8005
       DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
-      REDIS_URL: redis://10.90.0.11:6379
+      REDIS_URL: 10.90.0.11:6379
       NATS_URL: nats://10.90.0.12:4222
     depends_on:
       postgres:
@@ -245,7 +245,7 @@ services:
     environment:
       PORT: 8006
       DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
-      REDIS_URL: redis://10.90.0.11:6379
+      REDIS_URL: 10.90.0.11:6379
       NATS_URL: nats://10.90.0.12:4222
     depends_on:
       postgres:
@@ -264,9 +264,12 @@ services:
       - "127.0.0.1:8007:8007"
     environment:
       PORT: 8007
-      REDIS_URL: redis://10.90.0.11:6379
+      DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
+      REDIS_URL: 10.90.0.11:6379
       NATS_URL: nats://10.90.0.12:4222
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
       nats:
@@ -286,7 +289,7 @@ services:
     environment:
       PORT: 8008
       DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
-      REDIS_URL: redis://10.90.0.11:6379
+      REDIS_URL: 10.90.0.11:6379
       NATS_URL: nats://10.90.0.12:4222
     depends_on:
       postgres:
@@ -306,11 +309,14 @@ services:
     environment:
       PORT: 8009
       DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
+      REDIS_URL: 10.90.0.11:6379
       NATS_URL: nats://10.90.0.12:4222
       FCM_KEY: ${FCM_KEY:-}
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
       AFRICASTALKING_API_KEY: ${AFRICASTALKING_API_KEY:-}
     depends_on:
+      redis:
+        condition: service_healthy
       nats:
         condition: service_healthy
     networks:
@@ -328,7 +334,7 @@ services:
     environment:
       PORT: 8010
       DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
-      REDIS_URL: redis://10.90.0.11:6379
+      REDIS_URL: 10.90.0.11:6379
       NATS_URL: nats://10.90.0.12:4222
       MPESA_CONSUMER_KEY: ${MPESA_CONSUMER_KEY:-}
       MPESA_CONSUMER_SECRET: ${MPESA_CONSUMER_SECRET:-}
