@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/suqafuran/express/services/dispatch/internal/repository"
 	"github.com/suqafuran/express/services/dispatch/internal/service"
@@ -69,7 +70,7 @@ func (h *Handler) GetDispatchJobHandler(c *gin.Context) {
 }
 
 // Helper to parse UUID
-func parseUUID(id string) any {
-	// In real implementation, use uuid.Parse
-	return id
+func parseUUID(id string) uuid.UUID {
+	parsed, _ := uuid.Parse(id)
+	return parsed
 }

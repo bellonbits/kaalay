@@ -196,13 +196,6 @@ func handleTrackingWebSocket(c *gin.Context, hub *handler.WSHub, repo repository
 		return
 	}
 
-	// Create tracking subscription
-	sub := &handler.TrackingSubscription{
-		OrderID:  orderID,
-		UserID:   userID.(uuid.UUID),
-		UserType: userType,
-	}
-
 	// Handle connection (this is async)
 	hub.HandleConnection(conn, userID.(uuid.UUID), userType, orderID)
 }
@@ -224,6 +217,3 @@ func handleDriverWebSocket(c *gin.Context, hub *handler.WSHub, repo repository.T
 	// Handle connection
 	hub.HandleConnection(conn, userID.(uuid.UUID), "driver", orderID)
 }
-
-// TrackingSubscription mirrors model.TrackingSubscription
-type TrackingSubscription = handler.TrackingSubscription

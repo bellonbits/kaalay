@@ -21,9 +21,9 @@ type Config struct {
 func Load() *Config {
 	return &Config{
 		Port:              getEnvInt("PORT", 8009),
-		DBConnStr:         getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5437/suqafuran_notification?sslmode=disable"),
-		RedisAddr:         getEnv("REDIS_ADDR", "localhost:6379"),
-		NatsAddr:          getEnv("NATS_ADDR", "localhost:4222"),
+		DBConnStr:         getEnv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/kaalay_delivery"),
+		RedisAddr:         getEnv("REDIS_URL", "localhost:6379"),
+		NatsAddr:          getEnv("NATS_URL", "nats://localhost:4222"),
 		JWTSecret:         getEnv("JWT_SECRET", "dev-secret-key-change-in-production"),
 		FCMServerKey:      getEnv("FCM_SERVER_KEY", ""),
 		AFApiKey:          getEnv("AF_API_KEY", ""),
