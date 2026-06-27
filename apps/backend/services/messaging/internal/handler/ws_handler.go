@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"time"
 
@@ -237,7 +236,6 @@ func (c *WSConnection) writePump() {
 	for {
 		select {
 		case message, ok := <-c.send:
-			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if !ok {
 				c.conn.Close(websocket.StatusNormalClosure, "closing")
 				return
@@ -369,10 +367,22 @@ func (c *WSConnection) handleTyping(hub *ConversationHub, payload interface{}) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	convID, err := uuid.Parse(c.ConversationID)
+	if err != nil {
+		log.Warn().Err(err).Str("conversation_id", c.ConversationID).Msg("Invalid conversation ID format")
+		return
+	}
+
+	userID, err := uuid.Parse(c.UserID)
+	if err != nil {
+		log.Warn().Err(err).Str("user_id", c.UserID).Msg("Invalid user ID format")
+		return
+	}
+
 	if typingPayload.IsTyping {
 		indicator := &model.TypingIndicator{
-			ConversationID: c.ConversationID,
-			UserID:         c.UserID,
+			ConversationID: convID,
+			UserID:         userID,
 			TypingAt:       time.Now(),
 			ExpiresAt:      time.Now().Add(3 * time.Second),
 		}
@@ -412,10 +422,22 @@ func (c *WSConnection) handleRead(hub *ConversationHub, payload interface{}) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	msgID, err := uuid.Parse(readPayload.MessageID)
+	if err != nil {
+		log.Warn().Err(err).Str("message_id", readPayload.MessageID).Msg("Invalid message ID format")
+		return
+	}
+
+	readerID, err := uuid.Parse(c.UserID)
+	if err != nil {
+		log.Warn().Err(err).Str("user_id", c.UserID).Msg("Invalid user ID format")
+		return
+	}
+
 	// Store read receipt
 	receipt := &model.ReadReceipt{
-		MessageID: readPayload.MessageID,
-		ReaderID:  c.UserID,
+		MessageID: msgID,
+		ReaderID:  readerID,
 		ReadAt:    time.Now(),
 	}
 

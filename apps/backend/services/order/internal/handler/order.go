@@ -1,14 +1,13 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/suqafuran/express/services/order/internal/model"
-	"github.com/suqafuran/express/services/order/internal/repository"
 	"github.com/suqafuran/express/shared/pkg"
 )
 
@@ -100,7 +99,7 @@ func (h *Handler) CreateOrderHandler(c *gin.Context) {
 	order.CustomerName = req.CustomerName
 
 	if req.ScheduledAt != nil {
-		scheduledTime := unixToTime(*req.ScheduledAt)
+		scheduledTime := time.Unix(*req.ScheduledAt, 0)
 		order.ScheduledAt = &scheduledTime
 	}
 
@@ -137,9 +136,6 @@ func (h *Handler) CreateOrderHandler(c *gin.Context) {
 	deliveryFee := 80.0 // Base KES
 	distKm := haversineDistance(req.PickupLat, req.PickupLng, req.DropoffLat, req.DropoffLng)
 	deliveryFee += distKm * 30.0 // KES per km
-
-	platformFee := deliveryFee * 0.20
-	driverFee := deliveryFee * 0.80
 
 	order.TotalAmount = &totalAmount
 	order.DeliveryFee = &deliveryFee

@@ -284,13 +284,12 @@ func (h *PaymentHandler) HandleMpesaCallback(c *gin.Context) {
 		TransactionID:      stk.CheckoutRequestID,
 		CheckoutRequestID:  stk.CheckoutRequestID,
 		MerchantRequestID:  stk.MerchantRequestID,
-		ResultCode:         stk.ResultCode,
+		ResultCode:        stk.ResultCode,
 		ResultDesc:         stk.ResultDesc,
 		Amount:             amount,
 		MpesaReceiptNumber: mpesaReceipt,
 		PhoneNumber:        phone,
 		Status:             "pending",
-		RawResponse:        body.Body.StkCallback,
 		CreatedAt:          time.Now(),
 	}
 
@@ -331,8 +330,6 @@ func (h *PaymentHandler) GetDriverWallet(c *gin.Context) {
 }
 
 func (h *PaymentHandler) RequestWithdrawal(c *gin.Context) {
-	userID := c.GetString("user_id")
-
 	var req model.WithdrawalRequest
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, pkg.ErrorResponse("Invalid request"))
