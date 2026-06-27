@@ -3,7 +3,6 @@ module github.com/suqafuran/express/services/notification
 go 1.24
 
 require (
-	cloud.google.com/go/messaging v1.10.1
 	firebase.google.com/go/v4 v4.14.1
 	github.com/gin-gonic/gin v1.10.0
 	github.com/jackc/pgx/v5 v5.7.0
