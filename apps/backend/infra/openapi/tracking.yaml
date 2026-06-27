@@ -1,0 +1,170 @@
+openapi: 3.0.0
+info:
+  title: Suqafuran Express - Tracking Service API
+  version: 1.0.0
+  description: Real-time GPS tracking via WebSocket (< 100ms latency)
+
+servers:
+  - url: http://localhost:8007
+    description: Local development
+  - url: https://api.suqafuran.com
+    description: Production
+
+security:
+  - BearerAuth: []
+
+paths:
+  /v1/tracking/ws/order/{order_id}:
+    get:
+      summary: WebSocket connection for order tracking
+      tags:
+        - WebSocket
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '101':
+          description: WebSocket upgrade
+        '401':
+          description: Unauthorized
+
+  /v1/tracking/ws/driver:
+    get:
+      summary: WebSocket connection for driver location streaming
+      tags:
+        - WebSocket
+      parameters:
+        - name: order_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '101':
+          description: WebSocket upgrade
+        '401':
+          description: Unauthorized
+
+  /v1/tracking/location-history/{driver_id}:
+    get:
+      summary: Get driver location history
+      tags:
+        - Location
+      parameters:
+        - name: driver_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+      responses:
+        '200':
+          description: Location history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      locations:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Location'
+
+  /health:
+    get:
+      summary: Health check
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: Healthy
+
+  /ready:
+    get:
+      summary: Readiness probe
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: Ready
+
+components:
+  schemas:
+    Location:
+      type: object
+      properties:
+        driver_id:
+          type: string
+          format: uuid
+        lat:
+          type: number
+          format: double
+          example: -1.2834
+        lng:
+          type: number
+          format: double
+          example: 36.8172
+        heading:
+          type: integer
+          example: 45
+        accuracy:
+          type: integer
+          example: 10
+        speed:
+          type: number
+          format: double
+          example: 25.5
+        recorded_at:
+          type: string
+          format: date-time
+
+    DriverLocationMessage:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [driver_location]
+        order_id:
+          type: string
+          format: uuid
+        driver_id:
+          type: string
+          format: uuid
+        lat:
+          type: number
+        lng:
+          type: number
+        heading:
+          type: integer
+        accuracy:
+          type: integer
+        speed:
+          type: number
+        timestamp:
+          type: integer
+        eta_seconds:
+          type: integer
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -1,0 +1,200 @@
+openapi: 3.0.0
+info:
+  title: Suqafuran Express - Notification Service API
+  version: 1.0.0
+  description: Multi-channel notifications (FCM, SMS, Email) with bilingual support
+
+servers:
+  - url: http://localhost:8009
+    description: Local development
+  - url: https://api.suqafuran.com
+    description: Production
+
+security:
+  - BearerAuth: []
+
+paths:
+  /v1/notifications:
+    get:
+      summary: List user notifications
+      tags:
+        - Notifications
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      notifications:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Notification'
+
+    post:
+      summary: Send notification
+      tags:
+        - Notifications
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - recipient_id
+                - event_type
+                - title_en
+                - body_en
+              properties:
+                recipient_id:
+                  type: string
+                  format: uuid
+                event_type:
+                  type: string
+                  enum: [order.created, order.accepted, delivery.completed, payment.received]
+                title_en:
+                  type: string
+                title_so:
+                  type: string
+                body_en:
+                  type: string
+                body_so:
+                  type: string
+                template:
+                  type: string
+                order_id:
+                  type: string
+                  format: uuid
+                driver_id:
+                  type: string
+                  format: uuid
+                payment_id:
+                  type: string
+                  format: uuid
+                data:
+                  type: object
+      responses:
+        '201':
+          description: Notification created
+
+  /v1/notifications/{id}/read:
+    put:
+      summary: Mark notification as read
+      tags:
+        - Notifications
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Marked as read
+
+  /v1/notifications/preferences:
+    get:
+      summary: Get notification preferences
+      tags:
+        - Preferences
+      responses:
+        '200':
+          description: User preferences
+
+    put:
+      summary: Update notification preferences
+      tags:
+        - Preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                push_enabled:
+                  type: boolean
+                sms_enabled:
+                  type: boolean
+                email_enabled:
+                  type: boolean
+                language:
+                  type: string
+                  enum: [en, so]
+      responses:
+        '200':
+          description: Preferences updated
+
+  /health:
+    get:
+      summary: Health check
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: Healthy
+
+  /ready:
+    get:
+      summary: Readiness probe
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: Ready
+        '503':
+          description: Not ready
+
+components:
+  schemas:
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        recipient_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+        title_en:
+          type: string
+        body_en:
+          type: string
+        status:
+          type: string
+          enum: [pending, sent, failed, read]
+        data:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

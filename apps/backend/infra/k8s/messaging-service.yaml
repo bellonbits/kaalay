@@ -1,0 +1,99 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-messaging
+  namespace: suqafuran-express
+  labels:
+    app: messaging
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: messaging
+  template:
+    metadata:
+      labels:
+        app: messaging
+    spec:
+      containers:
+      - name: messaging
+        image: ghcr.io/suqafuran/express/messaging:v1.0.0
+        ports:
+        - name: http
+          containerPort: 8008
+        env:
+        - name: PORT
+          value: "8008"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: messaging-secrets
+              key: database-url
+        - name: REDIS_ADDR
+          value: redis-service:6379
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: messaging-secrets
+              key: jwt-secret
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 600m
+            memory: 512Mi
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: messaging-service
+  namespace: suqafuran-express
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8008
+    targetPort: http
+  selector:
+    app: messaging
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: messaging-hpa
+  namespace: suqafuran-express
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: svc-messaging
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70

@@ -1,0 +1,29 @@
+{
+  "name": "kaalay-monorepo",
+  "version": "1.0.0",
+  "description": "Kaalay: Unified ride-hailing + delivery platform",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "cd apps/frontend && npm run dev",
+    "build:frontend": "cd apps/frontend && npm run build",
+    "start:frontend": "cd apps/frontend && npm start",
+    "dev:backend": "docker-compose up",
+    "dev:backend:down": "docker-compose down",
+    "dev:backend:logs": "docker-compose logs -f",
+    "build:images": "docker-compose build",
+    "push:images": "bash scripts/push-images.sh",
+    "deploy:staging": "bash scripts/deploy-staging.sh",
+    "deploy:prod": "bash scripts/deploy-prod.sh",
+    "lint": "cd apps/frontend && npm run lint",
+    "test": "cd apps/frontend && npm test",
+    "setup": "npm install && cd apps/frontend && npm install"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "devDependencies": {},
+  "workspaces": [
+    "apps/frontend"
+  ]
+}

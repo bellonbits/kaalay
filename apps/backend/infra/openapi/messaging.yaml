@@ -1,0 +1,255 @@
+openapi: 3.0.0
+info:
+  title: Suqafuran Express - Messaging Service API
+  version: 1.0.0
+  description: Real-time messaging with read receipts and typing indicators
+
+servers:
+  - url: http://localhost:8008
+    description: Local development
+  - url: https://api.suqafuran.com
+    description: Production
+
+security:
+  - BearerAuth: []
+
+paths:
+  /v1/messages/conversations:
+    get:
+      summary: List user conversations
+      tags:
+        - Conversations
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of conversations
+
+    post:
+      summary: Create conversation
+      tags:
+        - Conversations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - type
+                - participant_ids
+              properties:
+                type:
+                  type: string
+                  enum: [customer_driver, customer_merchant, merchant_driver]
+                participant_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                order_id:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: Conversation created
+
+  /v1/messages/conversations/{id}/messages:
+    get:
+      summary: Get conversation messages
+      tags:
+        - Messages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Message list
+
+    post:
+      summary: Send message
+      tags:
+        - Messages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content:
+                  type: string
+                type:
+                  type: string
+                  enum: [text, image]
+                  default: text
+                image_url:
+                  type: string
+      responses:
+        '201':
+          description: Message sent
+
+  /v1/messages/messages/{id}/read:
+    post:
+      summary: Mark message as read
+      tags:
+        - Messages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Marked as read
+
+  /v1/messages/ws/{conversation_id}:
+    get:
+      summary: WebSocket connection for real-time messaging
+      tags:
+        - WebSocket
+      parameters:
+        - name: conversation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '101':
+          description: WebSocket upgrade
+
+  /health:
+    get:
+      summary: Health check
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: Healthy
+
+  /ready:
+    get:
+      summary: Readiness probe
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: Ready
+
+components:
+  schemas:
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [customer_driver, customer_merchant, merchant_driver]
+        participant_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        order_id:
+          type: string
+          format: uuid
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        conversation_id:
+          type: string
+          format: uuid
+        sender_id:
+          type: string
+          format: uuid
+        sender_name:
+          type: string
+        content:
+          type: string
+        message_type:
+          type: string
+          enum: [text, image]
+        image_url:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    TypingIndicator:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        is_typing:
+          type: boolean
+        timestamp:
+          type: integer
+
+    ReadReceipt:
+      type: object
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        reader_id:
+          type: string
+          format: uuid
+        read_at:
+          type: string
+          format: date-time
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

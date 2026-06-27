@@ -1,59 +1,48 @@
-import type { Metadata, Viewport } from 'next';
-import { Outfit } from 'next/font/google';
-import Script from 'next/script';
-import ClientShell from './ClientShell';
-import './globals.css';
-import BottomNav from '../components/BottomNav';
-import EmergencySOSButton from '../components/EmergencySOSButton';
+import type { Metadata, Viewport } from "next";
+import { Inter, Geist_Mono } from "next/font/google";
+import Script from "next/script";
+import "./globals.css";
+import AppShell from "@/components/shared/AppShell";
 
-const outfit = Outfit({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800', '900'],
-  display: 'swap',
-  variable: '--font-outfit',
+const inter = Inter({
+  variable: "--font-sans",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: 'Kaalay • Precision Location',
-  description: 'Precision local mapping and live coordination using what3words',
-  icons: {
-    icon: '/favicon.png',
-  },
+  title: "Kaalay — Find People. Find Places. Find Help.",
+  description: "Precision location, navigation, and emergency response for Africa.",
 };
 
 export const viewport: Viewport = {
-  width: 'device-width',
+  width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  viewportFit: 'cover',
-  themeColor: '#000000',
+  viewportFit: "cover",
+  themeColor: "#FFFFFF",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${outfit.variable} h-full w-full overflow-hidden`}>
-      <head />
-      <body 
-        suppressHydrationWarning 
-        className="h-full w-full overflow-hidden bg-white selection:bg-yellow-100"
-        style={{ fontFamily: 'var(--font-outfit), sans-serif', maxWidth: '100vw' }}
-      >
-        {/* Google Maps — loaded after hydration to avoid double-load warning */}
+    <html lang="en" className={`${inter.variable} ${geistMono.variable} h-full w-full overflow-hidden`}>
+      <body className="antialiased h-full w-full overflow-hidden">
         <Script
           id="google-maps"
-          src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}&libraries=places,geometry,marker&loading=async`}
+          src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ""}&libraries=places,geometry,marker&loading=async`}
           strategy="afterInteractive"
         />
-        <ClientShell>
-          <div className="flex flex-col h-full w-full overflow-hidden">
-            <main className="flex-1 relative overflow-hidden w-full">
-              {children}
-            </main>
-            <EmergencySOSButton />
-            <BottomNav />
-          </div>
-        </ClientShell>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

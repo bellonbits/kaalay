@@ -1,0 +1,178 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-gateway
+  namespace: suqafuran-express
+  labels:
+    app: gateway
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: svc-gateway
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: gateway
+          image: ghcr.io/suqafuran/express/gateway:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "8000"
+            - name: REDIS_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: suqafuran-config
+                  key: REDIS_ADDR
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: jwt_secret
+            - name: AUTH_SERVICE_URL
+              value: "http://svc-auth:8001"
+            - name: USER_SERVICE_URL
+              value: "http://svc-user:8002"
+            - name: MERCHANT_SERVICE_URL
+              value: "http://svc-merchant:8003"
+            - name: ORDER_SERVICE_URL
+              value: "http://svc-order:8004"
+            - name: DISPATCH_SERVICE_URL
+              value: "http://svc-dispatch:8005"
+            - name: DRIVER_SERVICE_URL
+              value: "http://svc-driver:8006"
+            - name: TRACKING_SERVICE_URL
+              value: "http://svc-tracking:8007"
+            - name: MESSAGING_SERVICE_URL
+              value: "http://svc-messaging:8008"
+            - name: NOTIFICATION_SERVICE_URL
+              value: "http://svc-notification:8009"
+            - name: PAYMENT_SERVICE_URL
+              value: "http://svc-payment:8010"
+            - name: LEGACY_FASTAPI_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: suqafuran-config
+                  key: LEGACY_FASTAPI_URL
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-service
+  namespace: suqafuran-express
+  labels:
+    app: gateway
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: 9090
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    app: gateway
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway-hpa
+  namespace: suqafuran-express
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: svc-gateway
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway-pdb
+  namespace: suqafuran-express
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: gateway
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: svc-gateway
+  namespace: suqafuran-express

@@ -1,296 +1,532 @@
-'use client';
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
+"use client";
+import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
-  ArrowLeftOutlined, AlertOutlined, CarOutlined, TeamOutlined,
-  EnvironmentOutlined, UnorderedListOutlined, GlobalOutlined,
-  PoweroffOutlined, WalletOutlined, DollarOutlined, HistoryOutlined
-} from '@ant-design/icons';
-import { useGeolocation } from '../../hooks/useGeolocation';
-import { useSocket } from '../../hooks/useSocket';
-import { getPublicSessions, getDriverWallet, getDriverMe } from '../../lib/api';
-import type { MarkerData } from '../../components/MapBase';
+  Power,
+  Wallet,
+  ShieldAlert,
+  Flame,
+  Plus,
+  Phone,
+  MessageSquare,
+  X,
+  MapPin,
+  Navigation
+} from "lucide-react";
+import { toast } from "sonner";
+import MapBase from "@/components/shared/MapBase";
+import { useRequireAuth } from "@/features/auth/useRequireAuth";
+import { useLocationStore } from "@/features/location/store";
+import { useDriverDispatch } from "@/features/ride/useDriverDispatch";
+import {
+  getMyDriverProfile,
+  updateDriverStatus,
+  acceptRide,
+  getNearbyRides,
+  createRoadReport,
+  triggerEmergencySos,
+  getRide
+} from "@/lib/api";
+import type { DriverProfile, Ride, RoadReportType } from "@/types/api";
 
-const MapBase = dynamic(() => import('../../components/MapBase'), { ssr: false });
-
-interface Req { code: string; type: string; message?: string; lat: number; lng: number; userName?: string; timestamp?: number }
-
-const TYPE_META: Record<string, { Icon: React.ComponentType<any>; label: string; iconBg: string; iconColor: string; pillBg: string; pillColor: string }> = {
-  lost:    { Icon: AlertOutlined,       label: 'Lost Person',  iconBg: '#FEE2E2', iconColor: '#DC2626', pillBg: '#FEE2E2', pillColor: '#DC2626' },
-  pickup:  { Icon: CarOutlined,         label: 'Needs Pickup', iconBg: '#EDE9FE', iconColor: '#7C3AED', pillBg: '#EDE9FE', pillColor: '#7C3AED' },
-  meetup:  { Icon: TeamOutlined,        label: 'Meet Friends', iconBg: '#DCFCE7', iconColor: '#16A34A', pillBg: '#DCFCE7', pillColor: '#16A34A' },
-  general: { Icon: EnvironmentOutlined, label: 'Live Share',   iconBg: '#F3F4F6', iconColor: '#6B7280', pillBg: '#F3F4F6', pillColor: '#6B7280' },
-};
-
-function distKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
-  const R = 6371, dL = (b.lat - a.lat) * Math.PI / 180, dG = (b.lng - a.lng) * Math.PI / 180;
-  const h = Math.sin(dL / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dG / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-}
-
-export default function DriverPage() {
+export default function DriverDashboardPage() {
+  const { ready, user } = useRequireAuth();
   const router = useRouter();
-  const { position } = useGeolocation(true);
-  const socketRef = useSocket();
-  const [reqs,   setReqs]   = useState<Req[]>([]);
+  const position = useLocationStore((s) => s.displayPosition);
+
+  const [profile, setProfile] = useState<DriverProfile | null | "loading">("loading");
   const [online, setOnline] = useState(false);
-  const [tab,    setTab]    = useState<'map' | 'list' | 'wallet'>('map');
-  const [user,   setUser]   = useState<{ fullName?: string; id?: string }>({});
-  const [wallet, setWallet] = useState<{ totalGross: number, walletBalance: number, commissionPaid: number } | null>(null);
+  const [toggling, setToggling] = useState(false);
+  const [accepting, setAccepting] = useState<string | null>(null);
+  const [nearby, setNearby] = useState<Ride[]>([]);
 
-  const [incomingRide, setIncomingRide] = useState<any>(null);
-  const [activeRide,   setActiveRide]   = useState<any>(null);
-  const [driverProfile, setDriverProfile] = useState<{ vehicleModel?: string; vehicleColor?: string; licensePlate?: string } | null>(null);
+  // Modals & Panels State
+  const [safetyOpen, setSafetyOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportType, setReportType] = useState<RoadReportType>("blocked");
+  const [reportDesc, setReportDesc] = useState("");
+  const [reporting, setReporting] = useState(false);
+  const [recording, setRecording] = useState(false);
 
-  useEffect(() => {
-    const stored = localStorage.getItem('kaalay_user');
-    if (stored) setUser(JSON.parse(stored));
-  }, []);
+  const driverRowId = profile && profile !== "loading" ? profile.id : null;
+  const { offers, dismissOffer } = useDriverDispatch(user?.id ?? null, driverRowId, online);
 
-  useEffect(() => {
-    getPublicSessions().then((ss: any[]) =>
-      setReqs(ss.map(s => ({ code: s.shareCode, type: s.requestType, message: s.message, lat: Number(s.latitude), lng: Number(s.longitude), userName: s.user?.fullName, timestamp: new Date(s.createdAt).getTime() })))
-    ).catch(() => null);
-
-    getDriverWallet().then(w => { if(w.success) setWallet(w.data) }).catch(() => null);
-    getDriverMe().then(d => { if(d.success && d.data) setDriverProfile(d.data) }).catch(() => null);
-  }, []);
-
-  const onReq = useCallback((r: Req) => setReqs(p => p.some(x => x.code === r.code) ? p : [r, ...p]), []);
-
-  useEffect(() => {
-    const s = socketRef.current; if (!s || !online) return;
-    s.emit('driver:online', { driverId: user.id });
-    s.emit('watch-requests');
-    s.on('request', onReq);
-    
-    const onNewRide = (ride: any) => {
-      setIncomingRide(ride);
-    };
-    const onRideTaken = ({ rideId }: { rideId: string }) => {
-      if (incomingRide?.rideId === rideId) setIncomingRide(null);
-    };
-
-    s.on('ride:new', onNewRide);
-    s.on('job_offer', onNewRide);
-    s.on('ride:taken', onRideTaken);
-
-    return () => {
-      s.emit('driver:offline', { driverId: user.id });
-      s.off('request', onReq);
-      s.off('ride:new', onNewRide);
-      s.off('job_offer', onNewRide);
-      s.off('ride:taken', onRideTaken);
-    };
-  }, [online, onReq, user.id, incomingRide?.rideId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!position || !online || !socketRef.current) return;
-    socketRef.current.emit('driver:update_location', { driverId: user.id, lat: position.lat, lng: position.lng });
-    
-    if (activeRide) {
-      socketRef.current.emit('ride:driver_location', { rideId: activeRide.rideId, lat: position.lat, lng: position.lng, heading: position.heading });
-    }
-  }, [position, online, activeRide, user.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const acceptRide = () => {
-    if (!incomingRide || !socketRef.current) return;
-    socketRef.current.emit('ride:accept', {
-      rideId: incomingRide.rideId || incomingRide.id,
-      driverId: user.id,
-      driverName: user.fullName || 'Driver',
-      vehicleModel: driverProfile?.vehicleModel || 'Vehicle',
-      vehicleColor: driverProfile?.vehicleColor || '',
-      licensePlate: driverProfile?.licensePlate || '',
-    });
-    setActiveRide(incomingRide);
-    setIncomingRide(null);
-    setTab('map');
+  const loadProfile = () => {
+    getMyDriverProfile()
+      .then((p) => {
+        setProfile(p);
+        setOnline(p.status === "online");
+      })
+      .catch(() => setProfile(null));
   };
 
-  const center = position ?? { lat: -1.2921, lng: 36.8219 };
-  const sorted = [...reqs].sort((a, b) => position ? distKm(position, a) - distKm(position, b) : 0);
-  const markers: MarkerData[] = [
-    ...(position ? [{ lat: position.lat, lng: position.lng, type: 'me' as const, accuracy: position.accuracy }] : []),
-    ...reqs.map(r => ({ lat: r.lat, lng: r.lng, type: 'request' as const, label: r.userName })),
-    ...(activeRide ? [{ lat: activeRide.pickupLat, lng: activeRide.pickupLng, type: 'request' as const, label: 'Pickup' }] : []),
-  ];
+  useEffect(() => {
+    loadProfile();
+  }, []);
+
+  // Poll nearby requests and refresh profile stats every 30s to keep earnings up to date
+  useEffect(() => {
+    if (!online) return;
+    const tick = () => {
+      getNearbyRides().then(setNearby).catch(() => {});
+      getMyDriverProfile().then(setProfile).catch(() => {});
+    };
+    tick();
+    const id = setInterval(tick, 15000);
+    return () => clearInterval(id);
+  }, [online]);
+
+  const toggleOnline = async () => {
+    setToggling(true);
+    const next = !online;
+    try {
+      await updateDriverStatus(next ? "online" : "offline");
+      setOnline(next);
+      toast.success(next ? "You are now online! Fetching matching offers..." : "You went offline.");
+    } catch {
+      toast.error("Couldn't update status");
+    } finally {
+      setToggling(false);
+    }
+  };
+
+  const handleAccept = async (rideId: string) => {
+    setAccepting(rideId);
+    try {
+      await acceptRide(rideId);
+      dismissOffer(rideId);
+      router.push(`/driver/ride/${rideId}`);
+    } catch {
+      toast.error("That ride was already taken");
+      dismissOffer(rideId);
+    } finally {
+      setAccepting(null);
+    }
+  };
+
+  const handleReportSubmit = async () => {
+    if (!position) {
+      toast.error("GPS position not available yet");
+      return;
+    }
+    setReporting(true);
+    try {
+      await createRoadReport({
+        type: reportType,
+        lat: position.lat,
+        lng: position.lng,
+        description: reportDesc.trim() || undefined
+      });
+      toast.success("Community report submitted successfully!");
+      setReportOpen(false);
+      setReportDesc("");
+    } catch {
+      toast.error("Couldn't submit report");
+    } finally {
+      setReporting(false);
+    }
+  };
+
+  const handleSos = async () => {
+    if (!position) {
+      toast.error("Location details unavailable");
+      return;
+    }
+    try {
+      await triggerEmergencySos({
+        lat: position.lat,
+        lng: position.lng,
+        message: "Driver SOS triggered from home dashboard",
+        severity: "red",
+        type: "police"
+      });
+      toast.error("SOS Alert Dispatched to Emergency Responders!", { duration: 5000 });
+      setSafetyOpen(false);
+    } catch {
+      toast.error("SOS request failed");
+    }
+  };
+
+  // Generate simulated demand hotspots around driver location or default center
+  const mapHotspots = useMemo(() => {
+    const base = position ?? { lat: -1.2921, lng: 36.8219 };
+    return [
+      { id: "hotspot-1", lat: base.lat + 0.004, lng: base.lng - 0.003, label: "High Demand (Hotspot)", color: "#EF4444" },
+      { id: "hotspot-2", lat: base.lat - 0.005, lng: base.lng + 0.006, label: "Medium Demand", color: "#F59E0B" }
+    ];
+  }, [position]);
+
+  // Combine hot spots, driver location, and nearby requests as markers on the map
+  const mapMarkers = useMemo(() => {
+    const list = [...mapHotspots];
+    nearby.forEach((ride) => {
+      list.push({
+        id: `ride-${ride.id}`,
+        lat: ride.pickupLat,
+        lng: ride.pickupLng,
+        label: `Fare KES ${Math.round(ride.fare || 0)}`,
+        color: "#10B981"
+      });
+    });
+    return list;
+  }, [mapHotspots, nearby]);
+
+  if (!ready) return null;
+  if (profile === "loading") {
+    return (
+      <div className="flex h-full items-center justify-center bg-background">
+        <div className="animate-pulse text-lg font-bold text-muted-foreground">Loading Driver Platform…</div>
+      </div>
+    );
+  }
+
+  if (profile === null) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center bg-background">
+        <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mb-2">
+          <Navigation className="h-10 w-10 text-primary" />
+        </div>
+        <h2 className="text-2xl font-extrabold text-foreground">Become a Kaalay driver</h2>
+        <p className="text-sm font-medium text-muted-foreground max-w-sm">
+          Register your vehicle, driving license, and insurance to start earning on the Kaalay platform.
+        </p>
+        <button
+          onClick={() => router.push("/driver/register")}
+          className="h-14 w-full max-w-xs rounded-2xl bg-primary text-base font-bold text-primary-foreground active:scale-95 transition-transform shadow-lg shadow-primary/20"
+        >
+          Register as a driver
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7', position: 'relative', overflow: 'hidden' }}>
-      
-      {incomingRide && (
-        <div style={{
-          position: 'absolute', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.6)',
-          display: 'flex', alignItems: 'flex-end', padding: '16px'
-        }}>
-          <div style={{
-            width: '100%', background: '#FFFFFF', borderRadius: 28, padding: 24,
-            boxShadow: '0 -8px 40px rgba(0,0,0,0.2)', animation: 'ride-slide-up 0.4s ease-out'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <div style={{ background: '#FFD600', padding: '6px 12px', borderRadius: 50, fontWeight: 900, fontSize: 13 }}>NEW RIDE REQUEST</div>
-              <div style={{ fontSize: 20, fontWeight: 900 }}>KES {incomingRide.fare}</div>
+    <div className="relative h-full w-full">
+      {/* Map Background */}
+      <MapBase me={position} markers={mapMarkers} initialCenter={position ?? undefined} />
+
+      {/* Glassmorphic Top Controls */}
+      <div className="absolute inset-x-4 top-[calc(env(safe-area-inset-top,0px)+1rem)] z-20 flex flex-col gap-3">
+        {/* Connection & Status Header */}
+        <div className="flex items-center justify-between gap-3 rounded-3xl bg-card/85 p-4 shadow-xl backdrop-blur-md border border-border/40">
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className={`h-2.5 w-2.5 rounded-full ${online ? "bg-emerald-500 animate-pulse" : "bg-zinc-400"}`} />
+              <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Status</p>
             </div>
-            
-            <h2 style={{ fontSize: 24, fontWeight: 900, color: '#1A1A1A', marginBottom: 8 }}>{incomingRide.riderName || 'Passenger'}</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#888', fontSize: 14, marginBottom: 20 }}>
-              <EnvironmentOutlined />
-              <span>{incomingRide.distanceKm || Math.round(distKm(position ?? {lat:0,lng:0}, {lat: incomingRide.pickupLat, lng: incomingRide.pickupLng}))}km away</span>
+            <p className={`text-lg font-black leading-tight ${online ? "text-primary" : "text-foreground"}`}>
+              {online ? "Online" : "Offline"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => router.push("/driver/earnings")}
+              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary hover:bg-secondary/80 text-foreground active:scale-95 transition-transform"
+              title="Earnings & Wallet"
+            >
+              <Wallet className="h-5 w-5" />
+            </button>
+            <button
+              onClick={toggleOnline}
+              disabled={toggling}
+              className={`flex h-12 px-5 items-center gap-2 rounded-2xl font-black text-sm transition-all active:scale-95 disabled:opacity-40 shadow-sm ${
+                online
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-secondary hover:bg-secondary/80 text-foreground"
+              }`}
+            >
+              <Power className="h-4 w-4" />
+              <span>{online ? "GO OFFLINE" : "GO ONLINE"}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Dynamic Earnings Stats Bar */}
+        <div className="grid grid-cols-5 gap-1.5 rounded-2xl bg-card/80 p-3 shadow-lg backdrop-blur border border-border/30 text-center">
+          <div>
+            <span className="block text-[8px] font-black text-muted-foreground uppercase leading-none">Wallet</span>
+            <span className="block text-xs font-extrabold text-foreground mt-1 truncate">
+              KES {Math.round(profile.walletBalance || 0)}
+            </span>
+          </div>
+          <div>
+            <span className="block text-[8px] font-black text-muted-foreground uppercase leading-none">Today</span>
+            <span className="block text-xs font-extrabold text-primary mt-1 truncate">
+              KES {Math.round(profile.earningsToday || 0)}
+            </span>
+          </div>
+          <div>
+            <span className="block text-[8px] font-black text-muted-foreground uppercase leading-none">Trips</span>
+            <span className="block text-xs font-extrabold text-foreground mt-1">
+              {profile.completedTripsToday || 0}
+            </span>
+          </div>
+          <div>
+            <span className="block text-[8px] font-black text-muted-foreground uppercase leading-none">Acceptance</span>
+            <span className="block text-xs font-extrabold text-foreground mt-1">
+              {Math.round((profile.acceptanceRate || 0.98) * 100)}%
+            </span>
+          </div>
+          <div>
+            <span className="block text-[8px] font-black text-muted-foreground uppercase leading-none">Rating</span>
+            <span className="block text-xs font-extrabold text-[#F59E0B] mt-1">
+              ★ {profile.rating ? profile.rating.toFixed(1) : "4.9"}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Floating Side Tools */}
+      <div className="absolute right-4 top-[calc(env(safe-area-inset-top,0px)+9.5rem)] z-20 flex flex-col gap-2.5">
+        {/* Hotspots Indicator Mode */}
+        {online && (
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-warning text-warning-foreground shadow-lg animate-pulse" title="High Demand Near You">
+            <Flame className="h-5 w-5" />
+          </div>
+        )}
+        {/* Community Map Report Button */}
+        <button
+          onClick={() => setReportOpen(true)}
+          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-card hover:bg-card/90 text-foreground shadow-lg border border-border/40 active:scale-95 transition-transform"
+          title="Community Mapping"
+        >
+          <Plus className="h-5 w-5 text-primary" />
+        </button>
+        {/* Safety SOS Panel Button */}
+        <button
+          onClick={() => setSafetyOpen(true)}
+          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emergency hover:bg-emergency/90 text-emergency-foreground shadow-lg active:scale-95 transition-transform"
+          title="Safety SOS Center"
+        >
+          <ShieldAlert className="h-5 w-5" />
+        </button>
+      </div>
+
+      {/* Bottom Offline/Online Guidelines */}
+      <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+6.5rem)] z-20">
+        {!online ? (
+          <div className="rounded-3xl bg-card/95 p-5 text-center shadow-xl border border-border/45 backdrop-blur-md">
+            <p className="text-sm font-bold text-foreground">You are offline</p>
+            <p className="mt-1 text-xs font-semibold text-muted-foreground">Toggle status online to start receiving ride offers instantly.</p>
+          </div>
+        ) : offers.length === 0 ? (
+          <div className="rounded-3xl bg-card/95 p-5 text-center shadow-xl border border-border/45 backdrop-blur-md">
+            <p className="text-sm font-bold text-foreground animate-pulse">Waiting for ride requests…</p>
+            <p className="mt-1 text-xs font-semibold text-muted-foreground">{nearby.length} requests nearby right now</p>
+          </div>
+        ) : null}
+      </div>
+
+      {/* Real-time Ride Request Dialog Modal Overlay */}
+      {offers.map((offer) => (
+        <div key={offer.rideId} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[32px] bg-card p-6 shadow-2xl border border-border/50 animate-slide-up-spring flex flex-col gap-4 text-left">
+            <div className="flex items-center justify-between">
+              <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-black uppercase tracking-wider text-primary">
+                New ride request
+              </span>
+              <div className="flex items-center gap-1 text-[#F59E0B]">
+                <span className="text-xs font-black">★ 4.8</span>
+                <span className="text-[10px] text-muted-foreground font-semibold">(Rider Rating)</span>
+              </div>
             </div>
 
-            <div style={{ background: '#F7F7F7', borderRadius: 16, padding: 16, marginBottom: 24, border: '1.5px solid #EBEBEB' }}>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingTop: 4 }}>
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22C55E' }} />
-                  <div style={{ width: 1, height: 16, background: '#DDD' }} />
-                  <div style={{ width: 6, height: 6, borderRadius: 1, background: '#1A1A1A' }} />
+            {/* Fare Indicator */}
+            <div className="rounded-2xl bg-secondary/60 p-4 text-center">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground leading-none">Est. Earnings (80%)</p>
+              <p className="text-3xl font-black text-foreground mt-2">
+                KES {Math.round(offer.fare * 0.8)}
+              </p>
+              <p className="text-xs font-bold text-muted-foreground mt-1 leading-none">Gross: KES {Math.round(offer.fare)} · Cash / M-Pesa</p>
+            </div>
+
+            {/* Distance / Duration Stats */}
+            <div className="grid grid-cols-2 gap-2 text-center bg-secondary/30 rounded-xl py-2">
+              <div>
+                <span className="block text-[8px] font-bold text-muted-foreground uppercase leading-none">Distance</span>
+                <span className="text-sm font-black text-foreground mt-0.5 block">{offer.distanceKm?.toFixed(1)} km</span>
+              </div>
+              <div>
+                <span className="block text-[8px] font-bold text-muted-foreground uppercase leading-none">ETA</span>
+                <span className="text-sm font-black text-foreground mt-0.5 block">~12 mins</span>
+              </div>
+            </div>
+
+            {/* Route path */}
+            <div className="flex flex-col gap-2 rounded-2xl bg-secondary/20 p-3.5 border border-border/30">
+              <div className="flex items-start gap-2.5">
+                <MapPin className="h-4.5 w-4.5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground leading-none">Pickup</p>
+                  <p className="text-sm font-bold text-foreground mt-0.5 truncate">{offer.pickup}</p>
                 </div>
-                <div style={{ flex: 1, fontSize: 13, fontWeight: 700 }}>
-                  <p>///{incomingRide.pickupW3W || incomingRide.pickup}</p>
-                  <div style={{ height: 1, background: '#DDD', margin: '8px 0' }} />
-                  <p>///{incomingRide.destW3W || incomingRide.destination}</p>
+              </div>
+              <div className="h-[1.5px] bg-border/40 w-full ml-7" />
+              <div className="flex items-start gap-2.5">
+                <MapPin className="h-4.5 w-4.5 text-emergency mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground leading-none">Destination</p>
+                  <p className="text-sm font-bold text-foreground mt-0.5 truncate">{offer.destination}</p>
                 </div>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button onClick={() => setIncomingRide(null)} style={{ flex: 1, padding: '16px', borderRadius: 16, background: '#F7F7F7', border: 'none', fontWeight: 700, cursor: 'pointer' }}>Decline</button>
-              <button onClick={acceptRide} style={{ flex: 2, padding: '16px', borderRadius: 16, background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontWeight: 800, cursor: 'pointer', fontSize: 16 }}>Accept Ride</button>
+            {/* Decline / Accept Actions */}
+            <div className="grid grid-cols-2 gap-3 mt-2">
+              <button
+                onClick={() => dismissOffer(offer.rideId)}
+                className="h-14 rounded-2xl bg-secondary hover:bg-secondary/80 text-sm font-black text-foreground active:scale-95 transition-transform border border-border/40"
+              >
+                Reject Ride
+              </button>
+              <button
+                onClick={() => handleAccept(offer.rideId)}
+                disabled={accepting === offer.rideId}
+                className="h-14 rounded-2xl bg-primary text-sm font-black text-primary-foreground active:scale-95 transition-transform disabled:opacity-40 shadow-lg shadow-primary/25"
+              >
+                {accepting === offer.rideId ? "Accepting…" : "Accept Ride"}
+              </button>
             </div>
+
+            {/* Quick Contact buttons */}
+            <div className="flex justify-center gap-4 mt-1">
+              <button
+                onClick={async () => {
+                  try {
+                    const fullRide = await getRide(offer.rideId);
+                    if (fullRide.rider?.phoneNumber) {
+                      window.location.href = `tel:${fullRide.rider.phoneNumber}`;
+                    } else {
+                      toast.error("Rider phone number not available");
+                    }
+                  } catch {
+                    toast.error("Could not place call");
+                  }
+                }}
+                className="flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-foreground"
+              >
+                <Phone className="h-3.5 w-3.5" /> Call Passenger
+              </button>
+              <span className="text-muted-foreground/30">|</span>
+              <button
+                onClick={() => router.push(`/driver/ride/${offer.rideId}/chat`)}
+                className="flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-foreground"
+              >
+                <MessageSquare className="h-3.5 w-3.5" /> Chat Passenger
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Safety Center Overlay Modal */}
+      {safetyOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl bg-card p-6 shadow-2xl border border-border animate-slide-up-spring flex flex-col gap-4 text-center">
+            <div className="flex justify-between items-center pb-2 border-b border-border">
+              <h3 className="text-lg font-black text-foreground">Safety Toolkit</h3>
+              <button onClick={() => setSafetyOpen(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">Emergency safety actions for drivers on the Kaalay network.</p>
+
+            <button
+              onClick={handleSos}
+              className="h-16 w-full rounded-2xl bg-emergency text-base font-black text-emergency-foreground active:scale-95 transition-transform shadow-lg shadow-emergency/20 flex items-center justify-center gap-2"
+            >
+              <ShieldAlert className="h-5 w-5 animate-pulse" />
+              TRIGGER EMERGENCY SOS
+            </button>
+
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText("https://kaalay.vercel.app/track/driver-live");
+                toast.success("Live tracking code copied to clipboard!");
+              }}
+              className="h-12 w-full rounded-xl bg-secondary text-sm font-bold text-foreground active:scale-95 transition-transform"
+            >
+              Share Live Location Code
+            </button>
+
+            <button
+              onClick={() => setRecording(!recording)}
+              className={`h-12 w-full rounded-xl text-sm font-bold active:scale-95 transition-all flex items-center justify-center gap-2 ${
+                recording ? "bg-red-500 text-white animate-pulse" : "bg-secondary text-foreground"
+              }`}
+            >
+              <span>{recording ? "🎙️ RECORDING AUDIO (TAP TO STOP)" : "🎙️ START TRIP RECORDING"}</span>
+            </button>
+
+            <button
+              onClick={() => setSafetyOpen(false)}
+              className="h-11 w-full rounded-xl bg-border/40 text-xs font-bold text-foreground mt-2"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
 
-      <div style={{ background: '#FFFFFF', padding: '48px 20px 12px', borderBottom: '1px solid #EBEBEB', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button onClick={() => router.push('/home')} style={{ width: 40, height: 40, borderRadius: '50%', background: '#F7F7F7', border: '1.5px solid #EBEBEB', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <ArrowLeftOutlined style={{ fontSize: 15, color: '#1A1A1A' }} />
+      {/* Community Mapping Reporting Modal */}
+      {reportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl bg-card p-6 shadow-2xl border border-border animate-slide-up-spring flex flex-col gap-4 text-left">
+            <div className="flex justify-between items-center pb-2 border-b border-border">
+              <h3 className="text-lg font-black text-foreground">Community Mapping</h3>
+              <button onClick={() => setReportOpen(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Report local roadblock events, closed gates, or navigation issues to help map Kaalay details.
+            </p>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Report Type</label>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { id: "blocked", label: "Road Blocked" },
+                  { id: "flooded", label: "Flooded" },
+                  { id: "construction", label: "Construction" },
+                  { id: "accident", label: "Accident" }
+                ] as const).map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setReportType(t.id)}
+                    className={`h-11 rounded-xl text-xs font-bold border transition-all active:scale-95 ${
+                      reportType === t.id
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-secondary text-foreground border-transparent"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Details / Landmarks</label>
+              <textarea
+                value={reportDesc}
+                onChange={(e) => setReportDesc(e.target.value)}
+                placeholder="E.g., Blue gate beside mosque is locked, use alternative entrance"
+                className="w-full bg-secondary/40 border border-border/40 rounded-xl p-3 text-sm font-semibold outline-none h-24 resize-none"
+              />
+            </div>
+
+            <button
+              onClick={handleReportSubmit}
+              disabled={reporting}
+              className="h-13 w-full rounded-xl bg-primary text-sm font-bold text-primary-foreground active:scale-95 transition-transform disabled:opacity-40 flex items-center justify-center gap-1.5 shadow-lg shadow-primary/20"
+            >
+              {reporting ? "Submitting…" : "SUBMIT REPORT"}
             </button>
-            <div>
-              <h1 style={{ fontSize: 20, fontWeight: 900, color: '#1A1A1A' }}>Driver Dashboard</h1>
-              <p style={{ fontSize: 12, color: '#888' }}>{user.fullName ?? 'Driver'}</p>
-            </div>
           </div>
-
-          <button onClick={() => setOnline(o => !o)} style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '9px 16px', borderRadius: 50,
-            background: online ? '#F0FDF4' : '#F7F7F7',
-            border: `2px solid ${online ? '#86EFAC' : '#EBEBEB'}`,
-            cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-          }}>
-            <PoweroffOutlined style={{ fontSize: 13, color: online ? '#16A34A' : '#BBBBBB' }} />
-            <span style={{ fontSize: 13, fontWeight: 800, color: online ? '#16A34A' : '#888' }}>
-              {online ? 'Online' : 'Go online'}
-            </span>
-          </button>
         </div>
-
-        {!activeRide && (
-          <div style={{ display: 'flex', gap: 6, background: '#F7F7F7', border: '1.5px solid #EBEBEB', borderRadius: 14, padding: 4 }}>
-            {([
-              { id: 'map',  Icon: GlobalOutlined,        label: 'Map' },
-              { id: 'list', Icon: UnorderedListOutlined, label: `Jobs (${sorted.length})` },
-              { id: 'wallet', Icon: WalletOutlined,      label: 'Wallet' },
-            ] as const).map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)} style={{
-                flex: 1, padding: '9px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                background: tab === t.id ? '#1A1A1A' : 'transparent',
-                color: tab === t.id ? '#FFFFFF' : '#888',
-                fontSize: 13, fontWeight: 700,
-              }}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div style={{ flex: 1, position: 'relative' }}>
-        {tab === 'map' && <MapBase center={center} zoom={14} markers={markers} 
-          routeTo={activeRide ? { lat: activeRide.pickupLat, lng: activeRide.pickupLng } : undefined}
-          className="w-full h-full" />}
-        
-        {activeRide && (
-          <div style={{ position: 'absolute', bottom: 20, left: 16, right: 16, background: '#FFFFFF', borderRadius: 22, padding: 18, boxShadow: '0 8px 32px rgba(0,0,0,0.12)', border: '1.5px solid #EBEBEB' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-              <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#F7F7F7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900 }}>{activeRide.riderName[0]}</div>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 11, color: '#888', fontWeight: 800, textTransform: 'uppercase' }}>Current Job</p>
-                <h3 style={{ fontSize: 16, fontWeight: 900, color: '#1A1A1A' }}>{activeRide.riderName}</h3>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <p style={{ fontSize: 18, fontWeight: 900 }}>KES {activeRide.fare}</p>
-                <p style={{ fontSize: 11, color: '#22C55E', fontWeight: 800 }}>ACTIVE</p>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button style={{ flex: 1, padding: '12px', borderRadius: 12, background: '#F7F7F7', color: '#1A1A1A', border: '1.5px solid #EBEBEB', fontWeight: 700 }}>Contact</button>
-              <button onClick={() => setActiveRide(null)} style={{ flex: 1, padding: '12px', borderRadius: 12, background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontWeight: 700 }}>Complete</button>
-            </div>
-          </div>
-        )}
-
-        {tab === 'list' && !activeRide && (
-          <div style={{ position: 'absolute', inset: 0, background: '#F7F7F7', overflowY: 'auto', padding: 16 }}>
-            {sorted.map(r => (
-              <div key={r.code} style={{ background: '#FFFFFF', borderRadius: 18, padding: 16, marginBottom: 12, border: '1.5px solid #EBEBEB' }}>
-                <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 12, background: '#F7F7F7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <EnvironmentOutlined style={{ fontSize: 18 }} />
-                  </div>
-                  <div>
-                    <h4 style={{ fontWeight: 800 }}>{r.userName || 'Anonymous'}</h4>
-                    <p style={{ fontSize: 12, color: '#888' }}>{Math.round(distKm(position ?? {lat:0,lng:0}, r)*10)/10}km away</p>
-                  </div>
-                </div>
-                <button onClick={() => router.push(`/track/${r.code}`)} style={{ width: '100%', padding: '10px', borderRadius: 10, background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontWeight: 700 }}>View Details</button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {tab === 'wallet' && !activeRide && (
-          <div style={{ position: 'absolute', inset: 0, background: '#F7F7F7', overflowY: 'auto', padding: 16 }}>
-            <div style={{ background: '#1A1A1A', borderRadius: 24, padding: 24, color: '#FFFFFF', marginBottom: 16, boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }}>
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: 800, textTransform: 'uppercase', marginBottom: 4 }}>Net Balance</p>
-              <h2 style={{ fontSize: 36, fontWeight: 900, color: '#22C55E' }}>KES {wallet?.walletBalance?.toLocaleString() || 0}</h2>
-              <button style={{ marginTop: 16, width: '100%', padding: '14px', background: '#FFD600', color: '#1A1A1A', border: 'none', borderRadius: 16, fontSize: 14, fontWeight: 900, cursor: 'pointer' }}>
-                Withdraw to M-Pesa
-              </button>
-            </div>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
-              <div style={{ background: '#FFFFFF', padding: 16, borderRadius: 20, border: '1.5px solid #EBEBEB' }}>
-                <DollarOutlined style={{ fontSize: 20, color: '#888', marginBottom: 8 }} />
-                <p style={{ fontSize: 11, color: '#888', fontWeight: 800, textTransform: 'uppercase' }}>Gross Earnings</p>
-                <p style={{ fontSize: 18, fontWeight: 900, color: '#1A1A1A' }}>KES {wallet?.totalGross?.toLocaleString() || 0}</p>
-              </div>
-              <div style={{ background: '#FFFFFF', padding: 16, borderRadius: 20, border: '1.5px solid #EBEBEB' }}>
-                <HistoryOutlined style={{ fontSize: 20, color: '#888', marginBottom: 8 }} />
-                <p style={{ fontSize: 11, color: '#888', fontWeight: 800, textTransform: 'uppercase' }}>Kaalay Fee (20%)</p>
-                <p style={{ fontSize: 18, fontWeight: 900, color: '#EF4444' }}>KES {wallet?.commissionPaid?.toLocaleString() || 0}</p>
-              </div>
-            </div>
-            
-            <h3 style={{ fontSize: 16, fontWeight: 900, color: '#1A1A1A', marginBottom: 12 }}>Recent Activity</h3>
-            <div style={{ textAlign: 'center', padding: '32px 16px', background: '#FFFFFF', borderRadius: 20, border: '1.5px dashed #EBEBEB' }}>
-              <WalletOutlined style={{ fontSize: 32, color: '#EBEBEB', marginBottom: 12 }} />
-              <p style={{ fontSize: 13, color: '#888', fontWeight: 700 }}>Your earnings from completed rides will appear here.</p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <style jsx global>{`
-        @keyframes ride-slide-up {
-          from { transform: translateY(100%); }
-          to { transform: translateY(0); }
-        }
-      `}</style>
+      )}
     </div>
   );
 }

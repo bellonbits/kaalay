@@ -1,0 +1,120 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-notification
+  namespace: suqafuran-express
+  labels:
+    app: notification
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: notification
+  template:
+    metadata:
+      labels:
+        app: notification
+    spec:
+      containers:
+      - name: notification
+        image: ghcr.io/suqafuran/express/notification:v1.0.0
+        ports:
+        - name: http
+          containerPort: 8009
+        env:
+        - name: PORT
+          value: "8009"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: notification-secrets
+              key: database-url
+        - name: REDIS_ADDR
+          value: redis-service:6379
+        - name: NATS_ADDR
+          value: nats-service:4222
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: notification-secrets
+              key: jwt-secret
+        - name: FCM_SERVER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: notification-secrets
+              key: fcm-server-key
+        - name: AF_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: notification-secrets
+              key: af-api-key
+        - name: SENDGRID_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: notification-secrets
+              key: sendgrid-api-key
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 400m
+            memory: 384Mi
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: suqafuran-express
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8009
+    targetPort: http
+  selector:
+    app: notification
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: notification-hpa
+  namespace: suqafuran-express
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: svc-notification
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70

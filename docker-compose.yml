@@ -1,31 +1,33 @@
-# Kaalay production stack.
+# Kaalay + Suqafuran Express Unified Stack
 #
-# Secrets come from a `.env` file next to this compose file (gitignored).
-# Copy `.env.example` to `.env` on the server and set real values.
+# Consolidated microservices architecture:
+# - Frontend: Next.js 15 (Vercel)
+# - Backend: 11 Go microservices (local or production)
+# - Database: PostgreSQL + Redis + NATS
 #
-# All inter-service addresses are STATIC IPs on a dedicated subnet so the
-# stack keeps working even if podman's container DNS (aardvark-dns) breaks.
-# Only the backend (3000) is published publicly; everything else is
-# localhost-only or unpublished.
+# Secrets come from `.env` file (gitignored).
+# Copy `.env.example` to `.env` and set real values.
 
 services:
+  # ===== INFRASTRUCTURE =====
   postgres:
-    image: docker.io/library/postgres:15-alpine
+    image: docker.io/library/postgres:16-alpine
     container_name: kaalay-postgres
     restart: always
     environment:
-      POSTGRES_DB: kaalay
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: kaalay_delivery
+      POSTGRES_USER: kaalay
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kaalay_dev_pass}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./apps/backend/infra/migrations:/docker-entrypoint-initdb.d:ro
     networks:
       kaalay_net:
         ipv4_address: 10.90.0.10
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d kaalay"]
+      test: ["CMD-SHELL", "pg_isready -U kaalay -d kaalay_delivery"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -47,6 +49,45 @@ services:
       timeout: 5s
       retries: 5
 
+  nats:
+    image: nats:latest
+    container_name: kaalay-nats
+    restart: always
+    ports:
+      - "127.0.0.1:4222:4222"
+      - "127.0.0.1:8222:8222"
+    command: "-js -m 8222"
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.12
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8222/varz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: kaalay-minio
+    restart: always
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minioadmin}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.13
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   adminer:
     image: docker.io/library/adminer
     container_name: kaalay-adminer
@@ -57,45 +98,246 @@ services:
       kaalay_net:
         ipv4_address: 10.90.0.14
 
-  backend:
+  # ===== GO MICROSERVICES =====
+  gateway:
     build:
       context: ./apps/backend
-      dockerfile: Dockerfile
-    container_name: kaalay-backend
+      dockerfile: services/gateway/Dockerfile
+    container_name: kaalay-gateway
     restart: always
     ports:
-      - "80:3000"
+      - "80:8000"
     environment:
-      DATABASE_HOST: 10.90.0.10
-      DATABASE_PORT: 5432
-      DATABASE_USER: admin
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-password}
-      DATABASE_NAME: kaalay
-      DATABASE_URL: postgresql://admin:${POSTGRES_PASSWORD:-password}@10.90.0.10:5432/kaalay
-      REDIS_HOST: 10.90.0.11
-      REDIS_PORT: 6379
-      JWT_SECRET: ${JWT_SECRET:-super-secret-key}
-      W3W_API_KEY: ${W3W_API_KEY:-}
-      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
-      GOOGLE_MAPS_SERVER_KEY: ${GOOGLE_MAPS_SERVER_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
-    volumes:
-      - uploads_data:/app/uploads
+      PORT: 8000
+      DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
+      REDIS_URL: redis://10.90.0.11:6379
+      NATS_URL: nats://10.90.0.12:4222
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      nats:
+        condition: service_healthy
     networks:
       kaalay_net:
         ipv4_address: 10.90.0.20
     healthcheck:
-      test: python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/', timeout=5)"
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
       retries: 3
-      start_period: 30s
+
+  auth:
+    build:
+      context: ./apps/backend
+      dockerfile: services/auth/Dockerfile
+    container_name: kaalay-auth
+    restart: always
+    ports:
+      - "127.0.0.1:8001:8001"
+    environment:
+      PORT: 8001
+      DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
+      REDIS_URL: redis://10.90.0.11:6379
+      NATS_URL: nats://10.90.0.12:4222
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.21
+
+  user:
+    build:
+      context: ./apps/backend
+      dockerfile: services/user/Dockerfile
+    container_name: kaalay-user
+    restart: always
+    ports:
+      - "127.0.0.1:8002:8002"
+    environment:
+      PORT: 8002
+      DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
+      REDIS_URL: redis://10.90.0.11:6379
+      NATS_URL: nats://10.90.0.12:4222
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.22
+
+  merchant:
+    build:
+      context: ./apps/backend
+      dockerfile: services/merchant/Dockerfile
+    container_name: kaalay-merchant
+    restart: always
+    ports:
+      - "127.0.0.1:8003:8003"
+    environment:
+      PORT: 8003
+      DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
+      REDIS_URL: redis://10.90.0.11:6379
+      NATS_URL: nats://10.90.0.12:4222
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.23
+
+  order:
+    build:
+      context: ./apps/backend
+      dockerfile: services/order/Dockerfile
+    container_name: kaalay-order
+    restart: always
+    ports:
+      - "127.0.0.1:8004:8004"
+    environment:
+      PORT: 8004
+      DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
+      REDIS_URL: redis://10.90.0.11:6379
+      NATS_URL: nats://10.90.0.12:4222
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.24
+
+  dispatch:
+    build:
+      context: ./apps/backend
+      dockerfile: services/dispatch/Dockerfile
+    container_name: kaalay-dispatch
+    restart: always
+    ports:
+      - "127.0.0.1:8005:8005"
+    environment:
+      PORT: 8005
+      DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
+      REDIS_URL: redis://10.90.0.11:6379
+      NATS_URL: nats://10.90.0.12:4222
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.25
+
+  driver:
+    build:
+      context: ./apps/backend
+      dockerfile: services/driver/Dockerfile
+    container_name: kaalay-driver
+    restart: always
+    ports:
+      - "127.0.0.1:8006:8006"
+    environment:
+      PORT: 8006
+      DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
+      REDIS_URL: redis://10.90.0.11:6379
+      NATS_URL: nats://10.90.0.12:4222
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.26
+
+  tracking:
+    build:
+      context: ./apps/backend
+      dockerfile: services/tracking/Dockerfile
+    container_name: kaalay-tracking
+    restart: always
+    ports:
+      - "127.0.0.1:8007:8007"
+    environment:
+      PORT: 8007
+      REDIS_URL: redis://10.90.0.11:6379
+      NATS_URL: nats://10.90.0.12:4222
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.27
+
+  messaging:
+    build:
+      context: ./apps/backend
+      dockerfile: services/messaging/Dockerfile
+    container_name: kaalay-messaging
+    restart: always
+    ports:
+      - "127.0.0.1:8008:8008"
+    environment:
+      PORT: 8008
+      DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
+      REDIS_URL: redis://10.90.0.11:6379
+      NATS_URL: nats://10.90.0.12:4222
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.28
+
+  notification:
+    build:
+      context: ./apps/backend
+      dockerfile: services/notification/Dockerfile
+    container_name: kaalay-notification
+    restart: always
+    ports:
+      - "127.0.0.1:8009:8009"
+    environment:
+      PORT: 8009
+      DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
+      NATS_URL: nats://10.90.0.12:4222
+      FCM_KEY: ${FCM_KEY:-}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      AFRICASTALKING_API_KEY: ${AFRICASTALKING_API_KEY:-}
+    depends_on:
+      nats:
+        condition: service_healthy
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.29
+
+  payment:
+    build:
+      context: ./apps/backend
+      dockerfile: services/payment/Dockerfile
+    container_name: kaalay-payment
+    restart: always
+    ports:
+      - "127.0.0.1:8010:8010"
+    environment:
+      PORT: 8010
+      DATABASE_URL: postgresql://kaalay:${POSTGRES_PASSWORD:-kaalay_dev_pass}@10.90.0.10:5432/kaalay_delivery
+      REDIS_URL: redis://10.90.0.11:6379
+      NATS_URL: nats://10.90.0.12:4222
+      MPESA_CONSUMER_KEY: ${MPESA_CONSUMER_KEY:-}
+      MPESA_CONSUMER_SECRET: ${MPESA_CONSUMER_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      kaalay_net:
+        ipv4_address: 10.90.0.30
 
 networks:
   kaalay_net:
@@ -108,4 +350,4 @@ networks:
 volumes:
   postgres_data:
   redis_data:
-  uploads_data:
+  minio_data:

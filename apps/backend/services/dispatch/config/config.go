@@ -1,0 +1,40 @@
+package config
+
+import (
+	"os"
+	"strconv"
+)
+
+type Config struct {
+	Port       int
+	DBConnStr  string
+	RedisAddr  string
+	NatsURL    string
+	JWTSecret  string
+}
+
+func Load() *Config {
+	return &Config{
+		Port:      getEnvInt("PORT", 8005),
+		DBConnStr: getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5437/suqafuran_dispatch?sslmode=disable"),
+		RedisAddr: getEnv("REDIS_ADDR", "localhost:6379"),
+		NatsURL:   getEnv("NATS_URL", "nats://localhost:4222"),
+		JWTSecret: getEnv("JWT_SECRET", "dev-secret-key-change-in-production"),
+	}
+}
+
+func getEnv(key, defaultVal string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultVal
+}
+
+func getEnvInt(key string, defaultVal int) int {
+	if value := os.Getenv(key); value != "" {
+		if intVal, err := strconv.Atoi(value); err == nil {
+			return intVal
+		}
+	}
+	return defaultVal
+}

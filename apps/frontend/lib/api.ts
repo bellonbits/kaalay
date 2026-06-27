@@ -1,204 +1,180 @@
-import axios from 'axios';
+import axios, { type AxiosError } from "axios";
+import type {
+  AdminDashboardStats,
+  AdminDriver,
+  AdminIncidentStats,
+  AdminTrip,
+  AdminUser,
+  AiChatMessage,
+  AiChatResponse,
+  AiNavigateChatResponse,
+  AuthResponse,
+  AutosuggestSuggestion,
+  DistanceResponse,
+  DriverProfile,
+  DriverWallet,
+  EmergencyContact,
+  EmergencyFacility,
+  EmergencySeverity,
+  EmergencyType,
+  FareEstimate,
+  Incident,
+  IncidentStatus,
+  LocalGuide,
+  NoteKind,
+  Place,
+  PlaceNote,
+  PlaceReview,
+  Ride,
+  RideCategory,
+  RideChatMessage,
+  RideStatus,
+  RoadReport,
+  RoadReportType,
+  SafetySummary,
+  ShareSession,
+  SosResponse,
+  User,
+  W3WConvertToCoordsResponse,
+  W3WConvertToWordsResponse,
+  Waypoint,
+  WeatherInfo,
+  DriverTransaction,
+} from "@/types/api";
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://app.suqafuran.com/api/v1';
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://app.suqafuran.com/api/v1";
+// Uploaded photos come back as paths relative to the backend's root
+// ("/uploads/x.png"), not under /api/v1 — resolve against the API origin so
+// <img> tags don't accidentally point at the Next.js app's own origin.
+const API_ORIGIN = BASE.replace(/\/api\/v1\/?$/, "");
+export const resolveUploadUrl = (url: string) => (url.startsWith("http") ? url : `${API_ORIGIN}${url}`);
 
 export const api = axios.create({ baseURL: BASE });
 
-api.interceptors.request.use(cfg => {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('kaalay_token');
+api.interceptors.request.use((cfg) => {
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("kaalay_token");
     if (token) cfg.headers.Authorization = `Bearer ${token}`;
   }
   return cfg;
 });
 
-// Response interceptor to handle the v1 standard response format and token rotation
+// Unwraps the backend's {success, data, message} envelope and handles
+// token refresh on 401 — ported from the working axios setup in the
+// previous Kaalay frontend.
 api.interceptors.response.use(
-  response => {
-    // If the response follows our v1 format { success: true, data: ... }
+  (response) => {
     if (response.data && response.data.success === true) {
       return { ...response, data: response.data.data };
     }
     return response;
   },
-  async error => {
-    const originalRequest = error.config;
-    
-    // Auto-Refresh Token Logic
-    if (error.response?.status === 401 && !originalRequest._retry) {
+  async (error: AxiosError<{ detail?: { error?: { code: string; message: string } }; error?: { code: string; message: string } }>) => {
+    const originalRequest = error.config as (typeof error.config & { _retry?: boolean }) | undefined;
+
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
-        const refreshToken = localStorage.getItem('kaalay_refresh_token');
+        const refreshToken = localStorage.getItem("kaalay_refresh_token");
         if (refreshToken) {
           const res = await axios.post(`${BASE}/auth/refresh-token?refreshToken=${refreshToken}`);
-          if (res.data && res.data.success) {
+          if (res.data?.success) {
             const newAccessToken = res.data.data.accessToken;
-            localStorage.setItem('kaalay_token', newAccessToken);
+            localStorage.setItem("kaalay_token", newAccessToken);
             originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
             return api(originalRequest);
           }
         }
-      } catch (refreshError) {
-        // If refresh fails, purge session and force re-authentication
-        localStorage.removeItem('kaalay_token');
-        localStorage.removeItem('kaalay_refresh_token');
-        localStorage.removeItem('kaalay_user');
-        if (typeof window !== 'undefined') window.location.href = '/auth';
+      } catch {
+        localStorage.removeItem("kaalay_token");
+        localStorage.removeItem("kaalay_refresh_token");
+        localStorage.removeItem("kaalay_user");
+        if (typeof window !== "undefined") window.location.href = "/welcome";
       }
     }
-    
-    // Handle standardized error format from FastAPI detail
-    const detail = error.response?.data?.detail;
-    if (detail && detail.error) {
-      return Promise.reject(detail.error);
-    }
-    // Fallback for non-detailed errors
-    if (error.response?.data?.error) {
-      return Promise.reject(error.response.data.error);
-    }
+
+    const data = error.response?.data;
+    if (data?.detail?.error) return Promise.reject(data.detail.error);
+    if (data?.error) return Promise.reject(data.error);
     return Promise.reject(error);
   }
 );
 
-// ── Auth & Users ──────────────────────────────────────────────────────────
+// ── Auth (passwordless, phone-based — see plan's documented deviation) ────
 export const loginUser = (phoneNumber: string) =>
-  api.post('/auth/login', { phoneNumber }).then(r => r.data);
+  api.post<AuthResponse>("/auth/login", { phoneNumber }).then((r) => r.data);
 
-export const registerUser = (data: { phoneNumber: string; fullName: string; role: string; email?: string; vehicleCategory?: string; licensePlate?: string }) =>
-  api.post('/auth/register', data).then(r => r.data);
+export const registerUser = (data: {
+  phoneNumber: string;
+  fullName: string;
+  email?: string;
+  role?: string;
+  vehicleModel?: string;
+  vehicleColor?: string;
+  vehicleCategory?: RideCategory;
+  licensePlate?: string;
+}) => api.post<AuthResponse>("/auth/register", data).then((r) => r.data);
 
-export const getMe = () =>
-  api.get('/auth/me').then(r => r.data);
+export const getMe = () => api.get<User>("/auth/me").then((r) => r.data);
 
-export const updateProfile = (data: { fullName?: string; vehicleCategory?: string; licensePlate?: string }) =>
-  api.patch('/auth/me', data).then(r => r.data);
+export const updateProfile = (data: { fullName?: string }) =>
+  api.patch<User>("/auth/me", data).then((r) => r.data);
 
-// ── Location (what3words) ─────────────────────────────────────────────────
-export const convertToWords = async (lat: number, lng: number): Promise<{ words: string }> => {
-  try {
-    const res = await api.get(`/location/convert-to-words?lat=${lat}&lng=${lng}`);
-    return res.data;
-  } catch (err) {
-    console.warn('[w3w] API failed, falling back to Google Maps Geocoder:', err);
-    try {
-      if (typeof window !== 'undefined' && window.google?.maps?.Geocoder) {
-        const address = await new Promise<string>((resolve, reject) => {
-          const geocoder = new google.maps.Geocoder();
-          geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-            if (status === 'OK' && results && results[0]) {
-              resolve(results[0].formatted_address);
-            } else {
-              reject(new Error(`Google Geocoding status: ${status}`));
-            }
-          });
-        });
-        return { words: address };
-      }
-    } catch (gErr) {
-      console.error('[Google Geocoder] fallback failed:', gErr);
-    }
-    return { words: `${lat.toFixed(5)}, ${lng.toFixed(5)}` };
-  }
-};
+// ── Location / what3words ──────────────────────────────────────────────
+export const convertToWords = (lat: number, lng: number) =>
+  api.get<W3WConvertToWordsResponse>(`/location/convert-to-words`, { params: { lat, lng } }).then((r) => r.data);
 
-export interface ConvertToCoordinatesResponse {
-  latitude: number;
-  longitude: number;
-  what3words: string;
-  coordinates: {
-    lat: number;
-    lng: number;
-  };
-}
+export const convertToCoordinates = (words: string) =>
+  api.get<W3WConvertToCoordsResponse>(`/location/convert-to-coordinates`, { params: { words } }).then((r) => r.data);
 
-export const convertToCoordinates = async (words: string): Promise<ConvertToCoordinatesResponse> => {
-  const isW3W = words.startsWith('///') || words.split('.').length === 3;
-  let lat = 0;
-  let lng = 0;
-  let w3w = words;
+export const getDistance = (fromLat: number, fromLng: number, toLat: number, toLng: number) =>
+  api.get<DistanceResponse>(`/location/distance`, { params: { fromLat, fromLng, toLat, toLng } }).then((r) => r.data);
 
-  if (isW3W) {
-    try {
-      const res = await api.get(`/location/convert-to-coordinates?words=${encodeURIComponent(words)}`);
-      const data = res.data;
-      if (data && typeof data.latitude === 'number') {
-        lat = data.latitude;
-        lng = data.longitude;
-        w3w = data.what3words || words;
-        return {
-          latitude: lat,
-          longitude: lng,
-          what3words: w3w,
-          coordinates: { lat, lng }
-        };
-      }
-    } catch (err) {
-      console.warn('[w3w] convertToCoordinates failed, falling back to Google Maps Geocoder:', err);
-    }
-  }
+export const getSafetySummary = (lat: number, lng: number) =>
+  api.get<SafetySummary>(`/location/safety-summary`, { params: { lat, lng } }).then((r) => r.data);
 
-  try {
-    if (typeof window !== 'undefined' && window.google?.maps?.Geocoder) {
-      const cleanWords = words.startsWith('///') ? words.replace('///', '') : words;
-      const geoResult = await new Promise<{ lat: number, lng: number }>((resolve, reject) => {
-        const geocoder = new google.maps.Geocoder();
-        geocoder.geocode({ address: cleanWords }, (results, status) => {
-          if (status === 'OK' && results && results[0]?.geometry?.location) {
-            const loc = results[0].geometry.location;
-            resolve({ lat: loc.lat(), lng: loc.lng() });
-          } else {
-            reject(new Error(`Google Geocoding status: ${status}`));
-          }
-        });
-      });
-      lat = geoResult.lat;
-      lng = geoResult.lng;
-      return {
-        latitude: lat,
-        longitude: lng,
-        what3words: w3w,
-        coordinates: { lat, lng }
-      };
-    }
-  } catch (gErr) {
-    console.error('[Google Geocoder] coordinates fallback failed:', gErr);
-  }
-  throw new Error(`Failed to convert "${words}" to coordinates`);
-};
-
-export const getDistance = (fromWords: string, toWords: string) =>
-  api.get(`/location/distance?fromWords=${encodeURIComponent(fromWords)}&toWords=${toWords}`).then(r => r.data);
+export const autosuggest = (input: string, lat?: number, lng?: number) =>
+  api
+    .get<{ suggestions: AutosuggestSuggestion[] }>(`/location/autosuggest`, { params: { input, lat, lng } })
+    .then((r) => r.data);
 
 export const getGridSection = (swLat: number, swLng: number, neLat: number, neLng: number) =>
-  api.get(`/location/grid?sw_lat=${swLat}&sw_lng=${swLng}&ne_lat=${neLat}&ne_lng=${neLng}`).then(r => r.data);
+  api
+    .get<{ type: "FeatureCollection"; features: unknown[] }>(`/location/grid`, {
+      params: { sw_lat: swLat, sw_lng: swLng, ne_lat: neLat, ne_lng: neLng },
+    })
+    .then((r) => r.data);
 
-// ── Live Location Sharing ────────────────────────────────────────────────
+export interface SnappedPoint {
+  lat: number;
+  lng: number;
+  placeId?: string;
+  originalIndex?: number;
+}
+
+export const snapToRoad = (points: { lat: number; lng: number }[]) =>
+  api
+    .post<{ snappedPoints: SnappedPoint[] }>(`/location/snap-to-road`, { points })
+    .then((r) => r.data);
+
+// ── Live location sharing ──────────────────────────────────────────────
 export const createShareSession = (data: {
-  lat?: number;
-  lng?: number;
-  latitude?: number;
-  longitude?: number;
-  expiresIn?: number;
+  lat: number;
+  lng: number;
   accuracy?: number;
   requestType?: string;
   visibility?: string;
-  userId?: string;
   message?: string;
-}) => api.post('/location/share', data).then(r => r.data);
+  expiresIn?: number;
+}) => api.post<ShareSession>("/location/share", data).then((r) => r.data);
 
 export const getSharedLocation = (token: string) =>
-  api.get(`/location/share/${token}`).then(r => r.data);
+  api.get(`/location/share/${token}`).then((r) => r.data);
 
-export const triggerSos = (data: { lat: number; lng: number; w3w: string; accuracy?: number; message?: string }) =>
-  api.post('/location/sos', data).then(r => r.data);
+export const updateShareSession = (token: string, data: { lat?: number; lng?: number; status?: string }) =>
+  api.patch(`/location/share/${token}`, data).then((r) => r.data);
 
-export const cancelSos = (token: string) =>
-  api.patch(`/location/share/${token}`, { status: 'ended' }).then(r => r.data);
-
-// ── Emergency (Kaaley Heedhe) ────────────────────────────────────────────
-export type EmergencyType = 'medical' | 'police' | 'violence' | 'kidnapping' | 'fire' | 'disaster' | 'lost_person';
-export type EmergencySeverity = 'green' | 'yellow' | 'orange' | 'red' | 'black';
-
+// ── Emergency (Kaaley Heedhe) ───────────────────────────────────────────
 export const triggerEmergencySos = (data: {
   lat: number;
   lng: number;
@@ -209,131 +185,212 @@ export const triggerEmergencySos = (data: {
   type?: EmergencyType;
   severity?: EmergencySeverity;
   silent?: boolean;
-}) => api.post('/emergency/sos', data).then(r => r.data);
+}) => api.post<SosResponse>("/emergency/sos", data).then((r) => r.data);
 
-export const getIncident = (id: string) =>
-  api.get(`/emergency/incidents/${id}`).then(r => r.data);
+export const getIncident = (id: string) => api.get<Incident>(`/emergency/incidents/${id}`).then((r) => r.data);
 
-export const updateIncidentStatus = (id: string, status: 'open' | 'dispatched' | 'resolved' | 'cancelled') =>
-  api.patch(`/emergency/incidents/${id}`, { status }).then(r => r.data);
+export const updateIncidentStatus = (id: string, status: IncidentStatus) =>
+  api.patch<Incident>(`/emergency/incidents/${id}`, { status }).then((r) => r.data);
 
 export const listTrustedContacts = () =>
-  api.get('/emergency/contacts').then(r => r.data);
+  api.get<EmergencyContact[]>("/emergency/contacts").then((r) => r.data);
 
 export const addTrustedContact = (data: { name: string; phoneNumber: string; relationship?: string }) =>
-  api.post('/emergency/contacts', data).then(r => r.data);
+  api.post<EmergencyContact>("/emergency/contacts", data).then((r) => r.data);
 
 export const deleteTrustedContact = (id: string) =>
-  api.delete(`/emergency/contacts/${id}`).then(r => r.data);
+  api.delete<{ id: string; deleted: true }>(`/emergency/contacts/${id}`).then((r) => r.data);
 
-export const getNearestFacilities = (lat: number, lng: number, type?: string, limit = 5) =>
-  api.get('/emergency/nearest', { params: { lat, lng, type, limit } }).then(r => r.data);
+export const getNearestFacilities = (lat: number, lng: number, type?: FacilityTypeParam, limit = 5) =>
+  api.get<EmergencyFacility[]>("/emergency/nearest", { params: { lat, lng, type, limit } }).then((r) => r.data);
 
-// ── Rides ─────────────────────────────────────────────────────────────────
-export const requestRide = (data: {
+type FacilityTypeParam = "hospital" | "clinic" | "police" | "fire" | "ambulance" | undefined;
+
+// ── Weather ──────────────────────────────────────────────────────────────
+export const getWeather = (lat: number, lng: number) =>
+  api.get<WeatherInfo>("/weather/current", { params: { lat, lng } }).then((r) => r.data);
+
+// ── Places (search destination by name, saved locations) ──────────────
+export const getNearbyPlaces = (lat: number, lng: number, radius = 0.1) =>
+  api.get<Place[]>("/places/nearby", { params: { lat, lng, radius } }).then((r) => r.data);
+
+export const searchPlaces = (q: string) => api.get<Place[]>("/places/search", { params: { q } }).then((r) => r.data);
+
+export const createPlace = (data: {
+  name: string;
+  description?: string;
+  lat: number;
+  lng: number;
+  words: string;
+  tags?: string[];
+  photos?: string[];
+  alwaysOpen?: boolean;
+  openTime?: string;
+  closeTime?: string;
+}) => api.post<Place>("/places", data).then((r) => r.data);
+
+export const getPlaces = () => api.get<Place[]>("/places").then((r) => r.data);
+
+export const getPlace = (id: string) => api.get<Place>(`/places/${id}`).then((r) => r.data);
+
+export const recordPlaceVisit = (id: string) =>
+  api.post<{ visitCount: number }>(`/places/${id}/visit`).then((r) => r.data);
+
+export const getPlaceReviews = (id: string) => api.get<PlaceReview[]>(`/places/${id}/reviews`).then((r) => r.data);
+
+export const createPlaceReview = (id: string, rating: number, comment?: string) =>
+  api.post<PlaceReview>(`/places/${id}/reviews`, { rating, comment }).then((r) => r.data);
+
+export const getPlaceNotes = (id: string) => api.get<PlaceNote[]>(`/places/${id}/notes`).then((r) => r.data);
+
+export const createPlaceNote = (id: string, text: string, kind: NoteKind = "general") =>
+  api.post<PlaceNote>(`/places/${id}/notes`, { text, kind }).then((r) => r.data);
+
+// ── Local Guides (community-shared routes) ─────────────────────────────
+export const getNearbyGuides = (lat: number, lng: number, radius = 5) =>
+  api.get<LocalGuide[]>("/guides/nearby", { params: { lat, lng, radius } }).then((r) => r.data);
+
+export const getGuide = (id: string) => api.get<LocalGuide>(`/guides/${id}`).then((r) => r.data);
+
+export const createGuide = (data: {
+  name: string;
+  description?: string;
+  category?: string;
+  waypoints: Waypoint[];
+  distanceKm?: number;
+}) => api.post<LocalGuide>("/guides", data).then((r) => r.data);
+
+export const useGuide = (id: string) => api.post<{ timesUsed: number }>(`/guides/${id}/use`).then((r) => r.data);
+
+// ── Road reports ────────────────────────────────────────────────────────
+export const getNearbyRoadReports = (lat: number, lng: number, radius = 5) =>
+  api.get<RoadReport[]>("/road-reports/nearby", { params: { lat, lng, radius } }).then((r) => r.data);
+
+export const createRoadReport = (data: { type: RoadReportType; lat: number; lng: number; description?: string }) =>
+  api.post<RoadReport>("/road-reports", data).then((r) => r.data);
+
+export const resolveRoadReport = (id: string) => api.patch<RoadReport>(`/road-reports/${id}/resolve`).then((r) => r.data);
+
+// ── Uploads ──────────────────────────────────────────────────────────────
+export const uploadImage = (file: File) => {
+  const form = new FormData();
+  form.append("file", file);
+  return api.post<{ url: string }>("/uploads/image", form, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data);
+};
+
+// ── Rides (ride-hailing) ────────────────────────────────────────────────
+export const getFareEstimates = (distance: number, category?: RideCategory) =>
+  api.post<FareEstimate[]>("/rides/estimate", { distance, category }).then((r) => r.data);
+
+export const createRide = (data: {
   pickup: { lat: number; lng: number; words: string };
   destination: { lat: number; lng: number; words: string };
-  category?: string;
+  category?: RideCategory;
   distance?: number;
   duration?: number;
-}) => api.post('/rides', data).then(r => r.data);
+}) => api.post<Ride>("/rides", data).then((r) => r.data);
 
-export const getRide = (id: string) =>
-  api.get(`/rides/${id}`).then(r => r.data);
+export const sendAiChatMessage = (data: { message: string; history: AiChatMessage[]; lat: number; lng: number }) =>
+  api.post<AiChatResponse>("/ai/chat", data).then((r) => r.data);
 
-export const getRideHistory = () =>
-  api.get('/rides/history').then(r => r.data);
+export const sendNavigateChatMessage = (data: { message: string; history: AiChatMessage[]; lat: number; lng: number }) =>
+  api.post<AiNavigateChatResponse>("/ai/navigate-chat", data).then((r) => r.data);
 
-export const cancelRide = (id: string) =>
-  api.patch(`/rides/${id}/cancel`).then(r => r.data);
+export const getRide = (id: string) => api.get<Ride>(`/rides/${id}`).then((r) => r.data);
 
-export const updateRideStatus = (id: string, status: string) =>
-  api.patch(`/rides/${id}/status`, { status }).then(r => r.data);
+export const getRideHistory = () => api.get<Ride[]>("/rides/history").then((r) => r.data);
 
-// ── Driver Ride Actions ──────────────────────────────────────────────────
-export const acceptRide = (id: string) =>
-  api.post(`/rides/${id}/accept`).then(r => r.data);
+export const getNearbyRides = () => api.get<Ride[]>("/rides/nearby").then((r) => r.data);
 
-export const startRide = (id: string) =>
-  api.patch(`/rides/${id}/start`).then(r => r.data);
+export const acceptRide = (id: string) => api.post<Ride>(`/rides/${id}/accept`).then((r) => r.data);
 
-export const completeRide = (id: string) =>
-  api.patch(`/rides/${id}/complete`).then(r => r.data);
+export const signalRideArriving = (id: string) => api.patch<Ride>(`/rides/${id}/arriving`).then((r) => r.data);
 
-// ── Drivers ───────────────────────────────────────────────────────────────
-export const registerDriver = (data: { vehicleModel: string; vehicleColor: string; licensePlate: string }) =>
-  api.post('/drivers/register', data).then(r => r.data);
+export const signalRideArrived = (id: string) => api.patch<Ride>(`/rides/${id}/arrived`).then((r) => r.data);
 
-export const getDriverMe = () =>
-  api.get('/drivers/me').then(r => r.data);
+export const startRide = (id: string) => api.patch<Ride>(`/rides/${id}/start`).then((r) => r.data);
 
-export const updateDriverStatus = (status: 'online' | 'offline' | 'busy') =>
-  api.patch('/drivers/status', { status }).then(r => r.data);
+export const completeRide = (id: string) => api.patch<Ride>(`/rides/${id}/complete`).then((r) => r.data);
 
-// ── Notifications ──────────────────────────────────────────────────────────
-export const getNotifications = () =>
-  api.get('/notifications').then(r => r.data);
+export const cancelRide = (id: string) => api.patch<Ride>(`/rides/${id}/cancel`).then((r) => r.data);
 
-export const markNotificationRead = (id: string) =>
-  api.patch(`/notifications/${id}/read`).then(r => r.data);
+export const rateRide = (id: string, rating: number, comment?: string) =>
+  api.post(`/rides/${id}/rating`, { rating, comment }).then((r) => r.data);
 
-// ── Places (Discovery) ───────────────────────────────────────────────────
-export const createPlace = (data: {
-  name: string; description?: string;
-  lat: number; lng: number; words: string;
-  tags?: string[];
-}) => api.post('/places', data).then(r => r.data);
+export const getRideMessages = (id: string) => api.get<RideChatMessage[]>(`/rides/${id}/messages`).then((r) => r.data);
 
-export const getPlace = (id: string) =>
-  api.get(`/places/${id}`).then(r => r.data);
+export const sendRideMessage = (id: string, text: string) =>
+  api.post<RideChatMessage>(`/rides/${id}/messages`, { text }).then((r) => r.data);
 
-export const getPlaces = () =>
-  api.get('/places').then(r => r.data);
+export const updateDriverRideLocation = (
+  id: string,
+  data: { lat: number; lng: number; heading?: number; speed?: number }
+) => api.patch<{ distanceMeters: number }>(`/rides/${id}/location`, data).then((r) => r.data);
 
-export const getNearbyPlaces = (lat: number, lng: number, radius?: number) =>
-  api.get(`/places/nearby?lat=${lat}&lng=${lng}${radius ? `&radius=${radius}` : ''}`).then(r => r.data);
+// ── Drivers ──────────────────────────────────────────────────────────────
+export const registerDriver = (data: {
+  vehicleModel: string;
+  vehicleColor: string;
+  licensePlate: string;
+  vehicleCategory?: RideCategory;
+  nationalIdUrl?: string;
+  drivingLicenseUrl?: string;
+}) => api.post<DriverProfile>("/drivers/register", data).then((r) => r.data);
 
-export const searchPlaces = (query: string) =>
-  api.get(`/places/search?q=${encodeURIComponent(query)}`).then(r => r.data);
+export const getMyDriverProfile = () => api.get<DriverProfile>("/drivers/me").then((r) => r.data);
 
-// ── Compatibility Aliases (Legacy names) ───────────────────────────
-export const convertTo3wa = (lat: number, lng: number) => 
-  convertToWords(lat, lng).then(data => ({ what3words: data.words }));
+export const updateDriverStatus = (status: "online" | "offline" | "busy") =>
+  api.patch<{ status: string }>("/drivers/status", null, { params: { status } }).then((r) => r.data);
 
-export const createSession = createShareSession;
-export const getSessionByCode = getSharedLocation;
-export const getNearbyRides = () =>
-  api.get('/rides/nearby').then(r => r.data);
+export const getDriverWallet = () => api.get<DriverWallet>("/drivers/wallet").then((r) => r.data);
 
-export const getFareEstimates = (data: any) =>
-  api.post('/rides/estimate', data).then(r => r.data);
+export const withdrawEarnings = (method: string, amount: number, recipient: string) =>
+  api.post<{ message: string; newBalance: number; transaction: DriverTransaction }>("/drivers/withdraw", { method, amount, recipient }).then((r) => r.data);
 
-export const signalArriving = (id: string) =>
-  api.patch(`/rides/${id}/arriving`).then(r => r.data);
+export const getWithdrawalTransactions = () =>
+  api.get<DriverTransaction[]>("/drivers/transactions").then((r) => r.data);
 
-export const signalArrived = (id: string) =>
-  api.patch(`/rides/${id}/arrived`).then(r => r.data);
+// ── Admin ────────────────────────────────────────────────────────────────
+export const getAdminDashboardStats = () => api.get<AdminDashboardStats>("/admin/dashboard-stats").then((r) => r.data);
 
-export const getAdminStats = () =>
-  api.get('/admin/dashboard-stats').then(r => r.data);
+export const getAdminActiveTrips = () => api.get<AdminTrip[]>("/admin/active-trips").then((r) => r.data);
 
-export const getActiveTrips = () =>
-  api.get('/admin/active-trips').then(r => r.data);
+export const getAdminUsers = (q?: string) => api.get<AdminUser[]>("/admin/users", { params: { q } }).then((r) => r.data);
 
-export const getDriverWallet = () =>
-  api.get('/drivers/wallet').then(r => r.data);
+export const updateAdminUser = (id: string, data: { isActive?: boolean; role?: string }) =>
+  api.patch<AdminUser>(`/admin/users/${id}`, data).then((r) => r.data);
 
-export const submitRating = (id: string, data: { rating: number, comment?: string }) =>
-  api.post(`/rides/${id}/rating`, data).then(r => r.data);
+export const getAdminDrivers = (verified?: boolean) =>
+  api.get<AdminDriver[]>("/admin/drivers", { params: { verified } }).then((r) => r.data);
 
-export const getPublicSessions = getNearbyRides;
-export const getDistanceAndDuration = getDistance;
+export const verifyAdminDriver = (id: string, isVerified: boolean) =>
+  api.patch<AdminDriver>(`/admin/drivers/${id}/verify`, { isVerified }).then((r) => r.data);
 
-export const updateSessionStatus = (token: string, data: any) =>
-  api.patch(`/location/share/${token}`, data).then(r => r.data);
+export const forceAdminDriverStatus = (id: string, status: "online" | "offline" | "busy") =>
+  api.patch<AdminDriver>(`/admin/drivers/${id}/status`, { status }).then((r) => r.data);
 
-export const autosuggest = (input: string, focus?: { lat: number; lng: number }) => {
-  let url = `/location/autosuggest?input=${encodeURIComponent(input)}`;
-  if (focus) url += `&lat=${focus.lat}&lng=${focus.lng}`;
-  return api.get(url).then(r => r.data);
-};
+export const getAdminRides = (status?: RideStatus) =>
+  api.get<Ride[]>("/admin/rides", { params: { status } }).then((r) => r.data);
+
+export const forceCancelAdminRide = (id: string) => api.patch<Ride>(`/admin/rides/${id}/cancel`).then((r) => r.data);
+
+export const getAdminIncidents = (status?: IncidentStatus) =>
+  api.get<Incident[]>("/admin/incidents", { params: { status } }).then((r) => r.data);
+
+export const getAdminIncidentStats = () =>
+  api.get<AdminIncidentStats>("/admin/incidents/stats").then((r) => r.data);
+
+export const updateAdminIncident = (id: string, status: IncidentStatus) =>
+  api.patch<{ id: string; status: IncidentStatus; resolvedAt: string | null }>(`/admin/incidents/${id}`, { status }).then((r) => r.data);
+
+export const updateAdminPlace = (id: string, data: Partial<{
+  name: string;
+  description: string;
+  tags: string[];
+  photos: string[];
+  alwaysOpen: boolean;
+  openTime: string;
+  closeTime: string;
+}>) => api.patch<Place>(`/places/${id}`, data).then((r) => r.data);
+
+export const deleteAdminPlace = (id: string) => api.delete<{ id: string; deleted: true }>(`/places/${id}`).then((r) => r.data);

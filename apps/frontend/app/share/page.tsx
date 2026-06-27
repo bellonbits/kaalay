@@ -1,729 +1,190 @@
-'use client';
-import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
-import QRCode from 'qrcode';
-import {
-  ArrowLeftOutlined, EnvironmentOutlined, TeamOutlined, CarOutlined,
-  AlertOutlined, LockOutlined, GlobalOutlined, CopyOutlined, CheckOutlined,
-  StopOutlined, ClockCircleOutlined, ShareAltOutlined, CheckCircleFilled,
-} from '@ant-design/icons';
-import { useGeolocation } from '../../hooks/useGeolocation';
-import { useSocket } from '../../hooks/useSocket';
-import { createSession, updateSessionStatus, convertTo3wa, autosuggest, convertToCoordinates } from '../../lib/api';
-import { shareInvite, copyText } from '../../lib/share';
-import type { MarkerData } from '../../components/MapBase';
+"use client";
+import { useEffect, useState } from "react";
+import QRCode from "qrcode";
+import { Copy, Check, Share2, Square, Clock, Users } from "lucide-react";
+import { useRequireAuth } from "@/features/auth/useRequireAuth";
+import { useLocationStore } from "@/features/location/store";
+import { useShareStore } from "@/features/share/store";
+import { useSessionSocket } from "@/features/location/useSessionSocket";
+import { createShareSession, updateShareSession } from "@/lib/api";
+import { getSocket } from "@/lib/socket";
 
-import MapBase from '../../components/MapBase';
-
-const TYPES = [
-  { id: 'general', label: 'Share Location', sub: 'Let others see where you are',  Icon: EnvironmentOutlined, iconBg: '#F3F4F6', iconColor: '#6B7280', activeBg: '#1A1A1A', activeText: '#FFFFFF' },
-  { id: 'meetup',  label: 'Meet Friends',   sub: 'Invite friends to find you',    Icon: TeamOutlined,        iconBg: '#DCFCE7', iconColor: '#16A34A', activeBg: '#1A1A1A', activeText: '#FFFFFF' },
-  { id: 'pickup',  label: 'I Need a Pickup', sub: 'Ask a driver to come to you',   Icon: CarOutlined,         iconBg: '#EDE9FE', iconColor: '#7C3AED', activeBg: '#1A1A1A', activeText: '#FFFFFF' },
-  { id: 'lost',    label: "I'm Lost",       sub: 'Alert the community to help',   Icon: AlertOutlined,       iconBg: '#FEE2E2', iconColor: '#DC2626', activeBg: '#1A1A1A', activeText: '#FFFFFF' },
+const DURATIONS: { label: string; seconds: number | null }[] = [
+  { label: "15 min", seconds: 15 * 60 },
+  { label: "1 hour", seconds: 60 * 60 },
+  { label: "8 hours", seconds: 8 * 60 * 60 },
+  { label: "Until stopped", seconds: null },
 ];
-
-const DURATIONS = [
-  { label: '15 min', ms: 15 * 60 * 1000 },
-  { label: '1 hr',   ms: 60 * 60 * 1000 },
-  { label: '4 hrs',  ms: 4 * 60 * 60 * 1000 },
-  { label: '∞',      ms: 0 },
-];
-
-import { useShare } from '../../context/ShareContext';
-
-function dist(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
-  const R = 6371;
-  const dL = (b.lat - a.lat) * Math.PI / 180;
-  const dG = (b.lng - a.lng) * Math.PI / 180;
-  const h = Math.sin(dL / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dG / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-}
 
 export default function SharePage() {
-  const router        = useRouter();
-  const { position }  = useGeolocation(true);
-  const { startSharing, stopSharing, activeSession: globalSession, manualPosition, setManualPosition } = useShare();
-  const socketRef     = useSocket();
+  const { ready } = useRequireAuth();
+  const position = useLocationStore((s) => s.position);
+  const { activeToken, setActiveToken } = useShareStore();
 
-  const [step,    setStep]    = useState<'setup' | 'live'>('setup');
-  const [type,    setType]    = useState('general');
-  const [dur,     setDur]     = useState(0);
-  const [msg,     setMsg]     = useState('');
-  const [session, setSession] = useState<{ shareCode: string } | null>(null);
-  const [qr,      setQr]      = useState('');
-  const [copied,  setCopied]  = useState(false);
-  const [vis,     setVis]     = useState<'link' | 'public'>('link');
-  const [w3w,     setW3w]     = useState<string | null>(null);
-  const [msgCopied, setMsgCopied] = useState(false);
-  const [urlCopied, setUrlCopied] = useState(false);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [addressText, setAddressText] = useState('');
+  const [duration, setDuration] = useState(DURATIONS[1]);
+  const [starting, setStarting] = useState(false);
+  const [shareUrl, setShareUrl] = useState("");
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [copied, setCopied] = useState(false);
 
-  const [viewerCount, setViewerCount] = useState(0);
-  const [viewers,     setViewers]     = useState<Record<string, { viewerId: string; lat: number; lng: number; name: string; timestamp: number; category?: string }>>({});
-  const [arrivals,    setArrivals]    = useState<{ name: string; timestamp: number }[]>([]);
-
-  // Sync with global session if it exists on mount
-  useEffect(() => {
-    if (globalSession) {
-      setSession(globalSession);
-      setStep('live');
-    }
-  }, [globalSession]);
+  const { viewerCount } = useSessionSocket(activeToken);
 
   useEffect(() => {
-    if (!session) return;
-    const url = `${window.location.origin}/track/${session.shareCode}`;
-    QRCode.toDataURL(url, { width: 180, margin: 1 }).then(setQr).catch(() => null);
-  }, [session]);
+    if (!activeToken) return;
+    const url = `${window.location.origin}/track/${activeToken}`;
+    setShareUrl(url);
+    QRCode.toDataURL(url, { margin: 1, width: 240 }).then(setQrDataUrl);
+  }, [activeToken]);
 
-  // Fetch what3words address for current position when live
+  // Periodically stream host's position to socket room
   useEffect(() => {
-    if (step !== 'live' || !position) return;
-    convertTo3wa(position.lat, position.lng).then(d => setW3w(d.what3words)).catch(() => null);
-  }, [step, position?.lat, position?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!activeToken || !position) return;
+    const socket = getSocket();
 
-  useEffect(() => {
-    if (step !== 'live' || !session || !position) return;
-    const s = socketRef.current;
-    if (!s) return;
-    
-    const onViewerCount = (d: { count: number }) => setViewerCount(d.count);
-    const onViewerLoc   = (d: { viewerId: string; lat: number; lng: number; name: string; timestamp: number; category?: string }) => {
-      setViewers(prev => ({ ...prev, [d.viewerId]: d }));
-    };
-    const onArrived     = (d: { name: string; timestamp: number }) => {
-      setArrivals(prev => [d, ...prev].slice(0, 5));
-    };
+    // Join room so we can broadcast
+    socket.emit("join", activeToken);
 
-    s.on('viewer-count',    onViewerCount);
-    s.on('viewer-location', onViewerLoc);
-    s.on('member-arrived',  onArrived);
+    const interval = setInterval(() => {
+      socket.emit("push-location", {
+        code: activeToken,
+        lat: position.lat,
+        lng: position.lng,
+        accuracy: position.accuracy,
+        heading: position.heading,
+        timestamp: Date.now(),
+      });
+    }, 2000);
 
     return () => {
-      s.off('viewer-count',    onViewerCount);
-      s.off('viewer-location', onViewerLoc);
-      s.off('member-arrived',  onArrived);
+      clearInterval(interval);
     };
-  }, [step, session, position]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeToken, position]);
 
-  const start = async () => {
-    const p = manualPosition || position;
-    if (!p) return;
-    const user = JSON.parse(localStorage.getItem('kaalay_user') ?? '{}');
-    const params = {
-      lat: p.lat, lng: p.lng, accuracy: manualPosition ? 0 : position?.accuracy,
-      requestType: type, visibility: vis,
-      message: msg || undefined,
-      expiresAt: dur > 0 ? new Date(Date.now() + dur).toISOString() : undefined,
-    };
-    
-    await startSharing(params);
-    setStep('live');
-  };
-
-  const stop = async () => {
-    await stopSharing();
-    router.push('/home');
-  };
-
-  const minimize = () => {
-    router.push('/home');
-  };
-
-  const copy = async () => {
-    if (await copyText(session!.shareCode)) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  const handleStart = async () => {
+    if (!position || starting) return;
+    setStarting(true);
+    try {
+      // "Until stopped" still needs a server-side TTL — a generous one,
+      // since the explicit Stop button is what actually ends it in practice.
+      const expiresIn = duration.seconds ?? 7 * 24 * 60 * 60;
+      const res = await createShareSession({
+        lat: position.lat,
+        lng: position.lng,
+        accuracy: position.accuracy,
+        requestType: "sharing",
+        visibility: "public",
+        expiresIn,
+      });
+      setActiveToken(res.shareCode);
+    } finally {
+      setStarting(false);
     }
   };
 
-  const shareUrl   = () => `${window.location.origin}/track/${session!.shareCode}`;
-  const shareText  = () => {
-    const w = w3w ? `///${w3w}` : session!.shareCode;
-    return `Find me at ${w}\n\nTrack my live location:\n${shareUrl()}\n\nSent via Kaalay Heelay`;
+  const handleStop = async () => {
+    if (!activeToken) return;
+    await updateShareSession(activeToken, { status: "ended" }).catch(() => {});
+    setActiveToken(null);
+    setShareUrl("");
+    setQrDataUrl("");
   };
 
-  // Native OS share sheet (WhatsApp, SMS, AirDrop…) with clipboard fallback.
-  const shareNative = async () => {
-    const w = w3w ? `///${w3w}` : session!.shareCode;
-    const outcome = await shareInvite({
-      title: 'My live location · Kaalay',
-      text: `Find me at ${w}. Track my live location:`,
-      url: shareUrl(),
-    });
-    if (outcome === 'copied') {
-      setUrlCopied(true);
-      setTimeout(() => setUrlCopied(false), 2000);
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(shareUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleShare = async () => {
+    const text = `I'm sharing my live location on Kaalay: ${shareUrl}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ text });
+      } catch {
+        // user cancelled
+      }
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
     }
   };
 
-  const shareWhatsApp = () => window.open(`https://wa.me/?text=${encodeURIComponent(shareText())}`, '_blank');
-  const shareSMS      = () => window.open(`sms:?body=${encodeURIComponent(shareText())}`, '_blank');
-  const copyMessage   = async () => {
-    if (await copyText(shareText())) {
-      setMsgCopied(true);
-      setTimeout(() => setMsgCopied(false), 2000);
-    }
-  };
+  if (!ready) return null;
 
-  const copyUrl = async () => {
-    if (await copyText(shareUrl())) {
-      setUrlCopied(true);
-      setTimeout(() => setUrlCopied(false), 2000);
-    }
-  };
+  if (activeToken) {
+    return (
+      <div className="flex h-full w-full flex-col items-center bg-background px-6 pt-[calc(env(safe-area-inset-top,0px)+2.5rem)] pb-[calc(env(safe-area-inset-bottom,0px)+6rem)]">
+        <span className="flex items-center gap-2 rounded-full bg-success/15 px-4 py-1.5 text-xs font-extrabold uppercase tracking-wide text-success">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-success" /> Broadcasting live
+        </span>
 
-  const markers: MarkerData[] = [
-    ...(manualPosition 
-      ? [
-          { lat: manualPosition.lat, lng: manualPosition.lng, type: 'request' as const, label: 'Broadcasting Point' },
-          ...(position ? [{ lat: position.lat, lng: position.lng, type: 'me' as const, accuracy: position.accuracy, category: 'walking' }] : [])
-        ]
-      : (position ? [{ lat: position.lat, lng: position.lng, type: 'me' as const, accuracy: position.accuracy, category: 'walking' }] : [])
-    ),
-    ...Object.values(viewers).map(v => ({ lat: v.lat, lng: v.lng, type: 'tracked' as const, label: v.name, category: v.category })),
-  ];
-
-  const selT = TYPES.find(t => t.id === type)!;
-
-
-  /* ── LIVE VIEW ── */
-  if (step === 'live' && session) return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
-      <div style={{ position: 'relative', flex: 1 }}>
-        <MapBase 
-          center={manualPosition || position || { lat: -1.29, lng: 36.82 }} 
-          zoom={16} 
-          markers={markers} 
-          onClick={(lat, lng) => setManualPosition({ lat, lng })}
-          className="w-full h-full" 
-        />
-
-        {/* Minimize button */}
-        <button onClick={minimize} style={{
-          position: 'absolute', top: 48, left: 16, zIndex: 20,
-          width: 44, height: 44, borderRadius: 14, background: '#FFFFFF',
-          border: '1.5px solid #EBEBEB', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
-        }}>
-          <ArrowLeftOutlined style={{ fontSize: 16, color: '#1A1A1A' }} />
-        </button>
-
-        {/* Viewer count pill */}
-        <div style={{ position: 'absolute', top: 48, right: 16, zIndex: 20 }}>
-          <div style={{
-            background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(8px)',
-            borderRadius: 50, padding: '8px 16px', border: '1.5px solid #EBEBEB',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.10)', display: 'flex', alignItems: 'center', gap: 8,
-          }}>
-            <TeamOutlined style={{ fontSize: 14, color: viewerCount > 0 ? '#16A34A' : '#888' }} />
-            <span style={{ fontSize: 12, fontWeight: 800, color: '#1A1A1A' }}>
-              {viewerCount} {viewerCount === 1 ? 'viewer' : 'viewers'}
-            </span>
-          </div>
-        </div>
-
-        {/* Arrival notifications */}
-        <div style={{ position: 'absolute', top: 100, left: 16, right: 16, zIndex: 20, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {arrivals.map((a, i) => (
-            <div key={`${a.name}-${a.timestamp}`} style={{
-              background: '#F0FDF4', borderRadius: 16, padding: '10px 16px',
-              border: '1.5px solid #86EFAC', boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-              display: 'flex', alignItems: 'center', gap: 10,
-              animation: 'slide-in-right 0.4s cubic-bezier(.34,1.56,.64,1) both',
-              opacity: Math.max(0, 1 - (Date.now() - a.timestamp) / 10000), // Fade out after 10s
-            }}>
-              <CheckCircleFilled style={{ fontSize: 18, color: '#16A34A' }} />
-              <p style={{ fontSize: 13, fontWeight: 700, color: '#15803D' }}>{a.name} has arrived!</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Yellow banner */}
-        <div style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0,
-          background: '#FFD600', padding: '12px 20px',
-          display: 'flex', alignItems: 'center', gap: 10,
-        }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <selT.Icon style={{ fontSize: 18, color: '#1A1A1A' }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <p style={{ fontSize: 10, fontWeight: 800, color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>{selT.label}</p>
-            <p style={{ fontSize: 13, fontWeight: 700, color: '#1A1A1A' }}>Broadcasting your live location</p>
-          </div>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#1A1A1A', animation: 'pulse-dot 1.6s ease-in-out infinite' }} />
-        </div>
-      </div>
-
-      {/* Code card */}
-      <div style={{ background: '#FFFFFF', padding: '20px 20px calc(100px + var(--safe-bottom))', boxShadow: '0 -4px 32px rgba(0,0,0,0.10)' }}>
-        {/* Route row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#F7F7F7', borderRadius: 16, padding: '14px 16px', border: '1.5px solid #EBEBEB', marginBottom: 16 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E' }} />
-            <div style={{ width: 1, height: 20, background: '#EBEBEB' }} />
-            <div style={{ width: 8, height: 8, borderRadius: 2, background: '#1A1A1A' }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <p style={{ fontSize: 12, color: '#888' }}>From</p>
-            <p style={{ fontSize: 14, fontWeight: 700, color: '#1A1A1A' }}>My location</p>
-            <div style={{ height: 1, background: '#EBEBEB', margin: '6px 0' }} />
-            <p style={{ fontSize: 12, color: '#888' }}>Sharing as</p>
-            <p style={{ fontSize: 14, fontWeight: 700, color: '#1A1A1A' }}>{selT.label}</p>
-          </div>
-        </div>
-
-        {/* Code + QR */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
-          <div style={{ flex: 1 }}>
-            <p style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Share code</p>
-            <p style={{ fontSize: 28, fontWeight: 900, letterSpacing: '4px', color: '#1A1A1A' }}>{session.shareCode}</p>
-            <button onClick={copy} style={{
-              marginTop: 8, display: 'flex', alignItems: 'center', gap: 6,
-              fontSize: 12, fontWeight: 700, color: copied ? '#16A34A' : '#888',
-              background: copied ? '#F0FDF4' : '#F7F7F7',
-              border: `1.5px solid ${copied ? '#86EFAC' : '#EBEBEB'}`,
-              borderRadius: 10, padding: '6px 12px', cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif',
-            }}>
-              {copied ? <CheckOutlined style={{ fontSize: 12 }} /> : <CopyOutlined style={{ fontSize: 12 }} />}
-              {copied ? 'Copied!' : 'Copy code'}
-            </button>
-          </div>
-          {qr && (
-            <div style={{ width: 80, height: 80, borderRadius: 16, overflow: 'hidden', border: '2px solid #EBEBEB', flexShrink: 0 }}>
-              <img src={qr} alt="QR" style={{ width: '100%', height: '100%' }} />
-            </div>
-          )}
-        </div>
-
-        {/* what3words address */}
-        {w3w && (
-          <div style={{ background: '#1A1A1A', borderRadius: 16, padding: '14px 16px', marginBottom: 12 }}>
-            <p style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.45)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 6 }}>
-              Your exact location
-            </p>
-            <p style={{ fontSize: 20, fontWeight: 900, color: '#FFD600', letterSpacing: '1px', marginBottom: 2 }}>
-              ///{w3w}
-            </p>
-            <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>powered by what3words</p>
-          </div>
+        {qrDataUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={qrDataUrl} alt="QR code to track this share" className="mt-6 h-48 w-48 rounded-2xl border-4 border-card shadow-lg" />
         )}
 
-        {/* Public Share Link Card */}
-        <div style={{
-          background: '#F9FAFB',
-          border: '1.5px dashed #E5E7EB',
-          borderRadius: 16,
-          padding: '14px 16px',
-          marginBottom: 12,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          transition: 'all 0.2s ease-in-out',
-        }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ 
-              fontSize: 10, 
-              fontWeight: 800, 
-              color: '#9CA3AF', 
-              letterSpacing: '1.5px', 
-              textTransform: 'uppercase', 
-              marginBottom: 4,
-              fontFamily: 'Inter, sans-serif'
-            }}>
-              Public Tracker URL
-            </p>
-            <p style={{ 
-              fontSize: 12, 
-              fontWeight: 700, 
-              color: '#374151', 
-              whiteSpace: 'nowrap', 
-              overflow: 'hidden', 
-              textOverflow: 'ellipsis', 
-              margin: 0,
-              fontFamily: 'Inter, sans-serif'
-            }}>
-              {shareUrl()}
-            </p>
-          </div>
-          <button onClick={copyUrl} style={{
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            gap: 6,
-            fontSize: 11, 
-            fontWeight: 800, 
-            color: urlCopied ? '#16A34A' : '#1A1A1A',
-            background: urlCopied ? '#F0FDF4' : '#FFFFFF',
-            border: `1.5px solid ${urlCopied ? '#86EFAC' : '#EBEBEB'}`,
-            borderRadius: 10, 
-            padding: '8px 12px', 
-            cursor: 'pointer',
-            fontFamily: 'Inter, sans-serif',
-            boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
-            flexShrink: 0,
-            transition: 'all 0.15s ease-in-out',
-          }}>
-            {urlCopied ? <CheckOutlined style={{ fontSize: 11 }} /> : <CopyOutlined style={{ fontSize: 11 }} />}
-            {urlCopied ? 'Copied!' : 'Copy URL'}
+        <p className="mt-6 font-mono text-2xl font-extrabold tracking-widest text-foreground">{activeToken}</p>
+
+        <div className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">
+          <Users className="h-4 w-4" /> {viewerCount} watching
+        </div>
+
+        <div className="mt-8 flex w-full max-w-xs gap-3">
+          <button
+            onClick={handleCopy}
+            className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl bg-secondary text-sm font-bold text-foreground active:scale-95 transition-transform"
+          >
+            {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />} {copied ? "Copied" : "Copy link"}
+          </button>
+          <button
+            onClick={handleShare}
+            className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-bold text-primary-foreground active:scale-95 transition-transform"
+          >
+            <Share2 className="h-4 w-4" /> Share
           </button>
         </div>
 
-        {/* Primary native share — opens the OS share sheet */}
-        <button onClick={shareNative} style={{
-          width: '100%', padding: '14px', background: '#000080', color: '#FFFFFF',
-          border: 'none', borderRadius: 14, fontSize: 14, fontWeight: 800,
-          cursor: 'pointer', fontFamily: 'Inter, sans-serif', marginBottom: 10,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-        }}>
-          <ShareAltOutlined style={{ fontSize: 15 }} /> Share live location
+        <button
+          onClick={handleStop}
+          className="mt-4 flex h-14 w-full max-w-xs items-center justify-center gap-2 rounded-2xl border-2 border-danger text-sm font-bold text-danger active:scale-95 transition-transform"
+        >
+          <Square className="h-4 w-4" /> Stop sharing
         </button>
-
-        {/* Share buttons */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
-          <button onClick={shareWhatsApp} style={{
-            padding: '12px 6px', background: '#25D366', color: '#FFFFFF',
-            border: 'none', borderRadius: 14, fontSize: 12, fontWeight: 800,
-            cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-          }}>
-            WhatsApp
-          </button>
-          <button onClick={shareSMS} style={{
-            padding: '12px 6px', background: '#007AFF', color: '#FFFFFF',
-            border: 'none', borderRadius: 14, fontSize: 12, fontWeight: 800,
-            cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-          }}>
-            SMS
-          </button>
-          <button onClick={copyMessage} style={{
-            padding: '12px 6px',
-            background: msgCopied ? '#F0FDF4' : '#F7F7F7',
-            color: msgCopied ? '#16A34A' : '#1A1A1A',
-            border: `1.5px solid ${msgCopied ? '#86EFAC' : '#EBEBEB'}`,
-            borderRadius: 14, fontSize: 12, fontWeight: 800,
-            cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-          }}>
-            {msgCopied ? 'Copied!' : 'Copy msg'}
-          </button>
-        </div>
-
-        <button onClick={stop} style={{
-          width: '100%', padding: '14px', background: '#FFF5F5', color: '#DC2626',
-          border: '1.5px solid #FCA5A5', borderRadius: 16, fontSize: 14, fontWeight: 700,
-          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          fontFamily: 'Inter, sans-serif',
-        }}>
-          <StopOutlined style={{ fontSize: 14 }} />
-          Stop sharing
-        </button>
-
-        {/* Viewer Details Dashboard */}
-        {Object.values(viewers).length > 0 && (
-          <div style={{ marginTop: 24 }}>
-            <p style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 12 }}>Tracking you now</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {Object.values(viewers).map((v, i) => {
-                const p = manualPosition || position;
-                const d = p ? dist(v, p) : null;
-                const eta = d ? Math.round((d / 30) * 60) : null; // Assume 30km/h city speed
-                const isFresh = Date.now() - v.timestamp < 10000;
-
-                return (
-                  <div key={v.viewerId} style={{
-                    background: '#F7F7F7', borderRadius: 18, padding: '12px 16px',
-                    border: '1.5px solid #EBEBEB', display: 'flex', alignItems: 'center', gap: 12
-                  }}>
-                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#1A1A1A', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                      <TeamOutlined style={{ fontSize: 18, color: '#FFFFFF' }} />
-                      {isFresh && (
-                        <div style={{ position: 'absolute', bottom: 0, right: 0, width: 10, height: 10, borderRadius: '50%', background: '#22C55E', border: '2px solid #F7F7F7' }} />
-                      )}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <p style={{ fontSize: 14, fontWeight: 800, color: '#1A1A1A' }}>{v.name}</p>
-                      <p style={{ fontSize: 11, color: '#888' }}>
-                        {isFresh ? 'Moving' : 'Last seen ' + new Date(v.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <p style={{ fontSize: 16, fontWeight: 900, color: '#1A1A1A' }}>{eta ?? '--'} min</p>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: '#888' }}>
-                        {d ? (d < 1 ? `${Math.round(d * 1000)}m` : `${d.toFixed(1)}km`) : '--'}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </div>
-    </div>
-  );
+    );
+  }
 
-  /* ── SETUP VIEW ── */
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
-      {/* Map preview */}
-      <div style={{ position: 'relative', height: 200, flexShrink: 0 }}>
-        <MapBase 
-          center={manualPosition || position || { lat: -1.29, lng: 36.82 }} 
-          zoom={16} 
-          markers={markers} 
-          onClick={async (lat, lng) => {
-            setManualPosition({ lat, lng });
-            try {
-              const res = await convertTo3wa(lat, lng);
-              if (res && res.what3words) {
-                setAddressText(`///${res.what3words}`);
-              }
-            } catch (e) {}
-          }}
-          className="w-full h-full" 
-        />
+    <div className="flex h-full w-full flex-col bg-background px-6 pt-[calc(env(safe-area-inset-top,0px)+2.5rem)] pb-[calc(env(safe-area-inset-bottom,0px)+6rem)]">
+      <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Share location</h1>
+      <p className="mt-2 text-base font-medium text-muted-foreground">
+        Anyone with the link sees your live position until you stop.
+      </p>
 
-        {/* Floating map hint */}
-        <div style={{
-          position: 'absolute',
-          top: 48,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'rgba(26,26,26,0.85)',
-          backdropFilter: 'blur(8px)',
-          borderRadius: 20,
-          padding: '6px 14px',
-          border: '1px solid rgba(255,255,255,0.15)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-          pointerEvents: 'none',
-          zIndex: 20,
-        }}>
-          <span style={{ fontSize: 11, fontWeight: 800, color: manualPosition ? '#FFD600' : '#FFFFFF', letterSpacing: '0.5px', textTransform: 'uppercase', fontFamily: 'Inter, sans-serif' }}>
-            {manualPosition ? '📍 Custom location set' : '🎯 Tap map to pick custom point'}
-          </span>
-        </div>
-
-        {/* Back button */}
-        <button onClick={() => router.back()} style={{
-          position: 'absolute', top: 48, left: 16,
-          width: 40, height: 40, borderRadius: '50%',
-          background: '#FFFFFF', border: 'none', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.12)',
-        }}>
-          <ArrowLeftOutlined style={{ fontSize: 15, color: '#1A1A1A' }} />
-        </button>
-
-        {/* Yellow banner */}
-        <div style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0,
-          background: '#FFD600', padding: '10px 16px',
-          display: 'flex', alignItems: 'center', gap: 10,
-        }}>
-          <selT.Icon style={{ fontSize: 16, color: '#1A1A1A' }} />
-          <p style={{ fontSize: 13, fontWeight: 700, color: '#1A1A1A', flex: 1 }}>{selT.label}</p>
-          {position && (
-            <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(0,0,0,0.5)' }}>
-              ±{Math.round(position.accuracy ?? 0)}m
-            </p>
-          )}
-        </div>
+      <p className="mt-8 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+        <Clock className="h-4 w-4" /> Duration
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        {DURATIONS.map((d) => (
+          <button
+            key={d.label}
+            onClick={() => setDuration(d)}
+            className={`h-16 rounded-2xl text-sm font-bold transition-colors ${
+              duration.label === d.label ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
+            }`}
+          >
+            {d.label}
+          </button>
+        ))}
       </div>
 
-      {/* Setup form */}
-      <div style={{ flex: 1, background: '#FFFFFF', borderRadius: '28px 28px 0 0', overflowY: 'auto', padding: '24px 20px calc(100px + var(--safe-bottom))', marginTop: -1, boxShadow: '0 -4px 32px rgba(0,0,0,0.08)' }}>
-
-        {/* Type selector */}
-        <p style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 12 }}>Session type</p>
-        <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4, marginBottom: 20 }}>
-          {TYPES.map(t => {
-            const active = type === t.id;
-            return (
-              <button key={t.id} onClick={() => setType(t.id)} style={{
-                flexShrink: 0, width: 128, padding: '16px 14px',
-                borderRadius: 20, border: `2px solid ${active ? '#1A1A1A' : '#EBEBEB'}`,
-                background: active ? '#1A1A1A' : '#F7F7F7',
-                cursor: 'pointer', textAlign: 'left',
-                transition: 'all 0.15s',
-              }}>
-                <div style={{
-                  width: 36, height: 36, borderRadius: 10,
-                  background: active ? 'rgba(255,255,255,0.10)' : t.iconBg,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  marginBottom: 10,
-                }}>
-                  <t.Icon style={{ fontSize: 16, color: active ? '#FFFFFF' : t.iconColor }} />
-                </div>
-                <p style={{ fontSize: 12, fontWeight: 800, color: active ? '#FFFFFF' : '#1A1A1A', marginBottom: 3, lineHeight: 1.3 }}>{t.label}</p>
-                <p style={{ fontSize: 10, color: active ? 'rgba(255,255,255,0.55)' : '#999', lineHeight: 1.4 }}>{t.sub}</p>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Preferred Location Search */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <p style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', margin: 0 }}>Current Location</p>
-          {manualPosition && (
-            <button 
-              onClick={() => {
-                setManualPosition(null);
-                setAddressText('');
-              }}
-              style={{ background: 'none', border: 'none', color: '#4285F4', fontSize: 11, fontWeight: 800, cursor: 'pointer', padding: 0 }}
-            >
-              Reset to GPS
-            </button>
-          )}
-        </div>
-        <div style={{ position: 'relative', marginBottom: 20, zIndex: 100 }}>
-          <input
-            style={{
-              width: '100%', background: '#F7F7F7', border: '1.5px solid #EBEBEB',
-              borderRadius: 16, padding: '14px 16px 14px 44px', fontSize: 14, color: '#1A1A1A',
-              outline: 'none', fontFamily: 'Inter, sans-serif'
-            }}
-            placeholder="Type address or ///words..."
-            value={addressText}
-            onChange={async (e) => {
-              const val = e.target.value;
-              setAddressText(val);
-              if (val.length > 2) {
-                setIsSearching(true);
-                const res = await autosuggest(val, position ?? undefined);
-                setSuggestions(res.suggestions || []);
-                setIsSearching(false);
-              } else {
-                setSuggestions([]);
-              }
-            }}
-          />
-          <EnvironmentOutlined style={{ position: 'absolute', left: 16, top: '18px', color: '#888', fontSize: 16 }} />
-          
-          {/* Suggestions Dropdown */}
-          {suggestions.length > 0 && (
-            <div style={{
-              position: 'absolute', top: '100%', left: 0, right: 0,
-              background: '#FFFFFF', borderRadius: 16, marginTop: 8,
-              border: '1.5px solid #EBEBEB', boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-              maxHeight: 240, overflowY: 'auto', zIndex: 101,
-            }}>
-              {suggestions.map((s, i) => (
-                <div 
-                  key={i} 
-                  onClick={async () => {
-                    const coords = await convertToCoordinates(s.words);
-                    if (coords) {
-                      setManualPosition({ lat: coords.coordinates.lat, lng: coords.coordinates.lng });
-                      setAddressText(`///${s.words}`);
-                      setSuggestions([]);
-                    }
-                  }}
-                  style={{
-                    padding: '12px 16px', borderBottom: i < suggestions.length - 1 ? '1px solid #F0F0F0' : 'none',
-                    cursor: 'pointer', transition: 'background 0.2s'
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = '#F7F7F7')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                >
-                  <p style={{ fontSize: 14, fontWeight: 800, color: '#FFD600', letterSpacing: '0.5px' }}>///{s.words}</p>
-                  <p style={{ fontSize: 11, color: '#888' }}>{s.nearestPlace}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Route row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#F7F7F7', borderRadius: 16, padding: '14px 16px', border: '1.5px solid #EBEBEB', marginBottom: 16 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E' }} />
-            <div style={{ width: 1, height: 16, background: '#EBEBEB' }} />
-            <div style={{ width: 8, height: 8, borderRadius: 2, background: '#1A1A1A' }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>My location</p>
-            <div style={{ height: 1, background: '#EBEBEB', margin: '6px 0' }} />
-            <p style={{ fontSize: 13, fontWeight: 600, color: '#888' }}>{selT.label} session</p>
-          </div>
-        </div>
-
-        {/* Message */}
-        <textarea
-          style={{
-            width: '100%', background: '#F7F7F7', border: '1.5px solid #EBEBEB',
-            borderRadius: 14, padding: '14px 16px', fontSize: 14, color: '#1A1A1A',
-            resize: 'none', outline: 'none', fontFamily: 'Inter, sans-serif',
-            marginBottom: 16, lineHeight: 1.5,
-          }}
-          rows={2}
-          placeholder="Add a note (optional) — e.g. 'I'm at the blue gate'"
-          value={msg}
-          onChange={e => setMsg(e.target.value)}
-        />
-
-        {/* Duration */}
-        <p style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 8 }}>Duration</p>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-          {DURATIONS.map(d => (
-            <button key={d.ms} onClick={() => setDur(d.ms)} style={{
-              flex: 1, padding: '10px 4px',
-              borderRadius: 12, fontSize: 12, fontWeight: 700,
-              border: `1.5px solid ${dur === d.ms ? '#1A1A1A' : '#EBEBEB'}`,
-              background: dur === d.ms ? '#1A1A1A' : '#F7F7F7',
-              color: dur === d.ms ? '#FFFFFF' : '#888',
-              cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-            }}>
-              {d.ms > 0 && <ClockCircleOutlined style={{ fontSize: 11 }} />}
-              {d.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Visibility */}
-        <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-          {([
-            { id: 'link' as const,   Icon: LockOutlined,   label: 'Private link' },
-            { id: 'public' as const, Icon: GlobalOutlined,  label: 'Public' },
-          ]).map(v => (
-            <button key={v.id} onClick={() => setVis(v.id)} style={{
-              flex: 1, padding: '12px 8px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              borderRadius: 14, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif',
-              border: `1.5px solid ${vis === v.id ? '#1A1A1A' : '#EBEBEB'}`,
-              background: vis === v.id ? '#1A1A1A' : '#F7F7F7',
-              color: vis === v.id ? '#FFFFFF' : '#888',
-            }}>
-              <v.Icon style={{ fontSize: 14 }} />
-              {v.label}
-            </button>
-          ))}
-        </div>
-
-        <button onClick={start} disabled={!position} style={{
-          width: '100%', padding: '16px',
-          background: !position ? '#EBEBEB' : '#1A1A1A',
-          color: !position ? '#BBBBBB' : '#FFFFFF',
-          border: 'none', borderRadius: 16, fontSize: 15, fontWeight: 800,
-          cursor: !position ? 'not-allowed' : 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          fontFamily: 'Inter, sans-serif',
-        }}>
-          <ShareAltOutlined style={{ fontSize: 15 }} />
-          {position ? 'Share Now' : 'Getting location…'}
-        </button>
-      </div>
+      <button
+        onClick={handleStart}
+        disabled={!position || starting}
+        className="mt-auto flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-lg font-extrabold text-primary-foreground active:scale-95 transition-transform disabled:opacity-50"
+      >
+        {starting ? "Starting…" : "Share Now"}
+      </button>
+      {!position && <p className="mt-3 text-center text-xs font-semibold text-warning">Waiting for GPS signal…</p>}
     </div>
   );
 }

@@ -1,0 +1,191 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-payment
+  namespace: suqafuran-express
+  labels:
+    app: payment
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: payment
+  template:
+    metadata:
+      labels:
+        app: payment
+        version: v1
+    spec:
+      serviceAccountName: payment-service
+      containers:
+      - name: payment
+        image: ghcr.io/suqafuran/express/payment:v1.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8010
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8010"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-secrets
+              key: database-url
+        - name: REDIS_ADDR
+          value: redis-service:6379
+        - name: NATS_ADDR
+          value: nats-service:4222
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: payment-secrets
+              key: jwt-secret
+        - name: MPESA_CONSUMER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: payment-secrets
+              key: mpesa-consumer-key
+        - name: MPESA_CONSUMER_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: payment-secrets
+              key: mpesa-consumer-secret
+        - name: MPESA_BIZ_SHORT_CODE
+          valueFrom:
+            secretKeyRef:
+              name: payment-secrets
+              key: mpesa-short-code
+        - name: MPESA_BIZ_PASSKEY
+          valueFrom:
+            secretKeyRef:
+              name: payment-secrets
+              key: mpesa-passkey
+        - name: MPESA_CALLBACK_URL
+          value: https://api.suqafuran.com/v1/payments/mpesa/callback
+        - name: PLATFORM_FEE_PERCENT
+          value: "0.20"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - payment
+              topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 30
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  namespace: suqafuran-express
+  labels:
+    app: payment
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8010
+    targetPort: http
+    protocol: TCP
+  selector:
+    app: payment
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: payment-hpa
+  namespace: suqafuran-express
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: svc-payment
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 15
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+      - type: Pods
+        value: 2
+        periodSeconds: 15
+      selectPolicy: Max
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: payment-service
+  namespace: suqafuran-express

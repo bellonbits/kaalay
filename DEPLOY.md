@@ -23,9 +23,18 @@ git push origin main
 4. Add these variables:
 
 ```
-NEXT_PUBLIC_DELIVERY_API = https://api.suqafuran.com:8006
-NEXT_PUBLIC_DELIVERY_WS = wss://api.suqafuran.com:8007
+# Kaalay backend (FastAPI - rides + marketplace)
+NEXT_PUBLIC_API_URL = https://app.suqafuran.com/api/v1
+
+# Suqafuran Express backend (deliveries, payments, tracking)
+NEXT_PUBLIC_DELIVERY_API = https://app.suqafuran.com
+NEXT_PUBLIC_DELIVERY_WS = wss://app.suqafuran.com
 ```
+
+✅ **Production URLs (BOTH use same backend):**
+- **Kaalay API:** `https://app.suqafuran.com/api/v1` (rides, marketplace, users)
+- **Suqafuran Express API:** `https://app.suqafuran.com` (deliveries, job offers, tracking, payments)
+- **API Docs:** https://app.suqafuran.com/docs
 
 **Save → Deployments → Redeploy latest**
 

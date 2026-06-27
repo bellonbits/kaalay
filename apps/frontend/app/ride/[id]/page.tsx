@@ -1,282 +1,247 @@
-'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
-import {
-  ArrowLeftOutlined, CarOutlined, CheckCircleFilled,
-  EnvironmentOutlined, LoadingOutlined,
-} from '@ant-design/icons';
-import { useGeolocation } from '../../../hooks/useGeolocation';
-import { useSocket } from '../../../hooks/useSocket';
-import { getRide, updateRideStatus } from '../../../lib/api';
-import { getSocket } from '../../../lib/socket';
-import type { MarkerData } from '../../../components/MapBase';
+"use client";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { X, Phone, MessageCircle, Star, Check } from "lucide-react";
+import { toast } from "sonner";
+import MapBase from "@/components/shared/MapBase";
+import { useRequireAuth } from "@/features/auth/useRequireAuth";
+import { useLocationStore } from "@/features/location/store";
+import { useRideSocket } from "@/features/ride/useRideSocket";
+import { computeRoute, type RouteResult } from "@/features/navigation/routeService";
+import { formatDistance, formatDuration } from "@/features/location/geo";
+import { getRide, cancelRide, rateRide } from "@/lib/api";
+import type { Ride, RideStatus } from "@/types/api";
 
-const MapBase = dynamic(() => import('../../../components/MapBase'), { ssr: false });
+const GOOGLE_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
-type RideStatus = 'requested' | 'driver_assigned' | 'driver_arriving' | 'in_progress' | 'completed' | 'cancelled';
-
-interface RideData {
-  id: string;
-  status: RideStatus;
-  pickupWhat3words: string;
-  pickupLat: number; pickupLng: number;
-  destinationWhat3words: string;
-  destinationLat: number; destinationLng: number;
-  fare: number;
-  driver?: { id: string; vehicleModel: string; vehicleColor: string; licensePlate: string; user?: { fullName: string } };
-}
-
-interface DriverInfo {
-  driverName: string;
-  vehicleModel: string;
-  vehicleColor: string;
-  licensePlate: string;
-}
-
-const STATUS_LABEL: Record<RideStatus, string> = {
-  requested:       'Waiting for a driver…',
-  driver_assigned: 'Driver is on the way',
-  driver_arriving: 'Driver is arriving!',
-  in_progress:     'Ride in progress',
-  completed:       'Ride complete',
-  cancelled:       'Ride cancelled',
+const STATUS_COPY: Record<RideStatus, string> = {
+  requested: "Looking for a nearby driver…",
+  accepted: "Your driver is on the way",
+  arriving: "Your driver is almost at your pickup",
+  arrived: "Your driver has arrived",
+  started: "On your way",
+  completed: "Trip complete",
+  cancelled: "Ride cancelled",
 };
 
-const STATUS_COLOR: Record<RideStatus, string> = {
-  requested:       '#888',
-  driver_assigned: '#7C3AED',
-  driver_arriving: '#FFD600',
-  in_progress:     '#22C55E',
-  completed:       '#1A1A1A',
-  cancelled:       '#DC2626',
-};
+const CANCELLABLE: RideStatus[] = ["requested", "accepted", "arriving"];
 
 export default function RideTrackingPage() {
-  const params    = useParams();
-  const rideId    = params?.id as string;
-  const router    = useRouter();
-  const { position: me } = useGeolocation(true);
-  const socketRef = useSocket();
+  const { ready } = useRequireAuth();
+  const router = useRouter();
+  const params = useParams<{ id: string }>();
+  const rideId = params.id;
 
-  const [ride,       setRide]       = useState<RideData | null>(null);
-  const [status,     setStatus]     = useState<RideStatus>('requested');
-  const [driverInfo, setDriverInfo] = useState<DriverInfo | null>(null);
-  const [driverPos,  setDriverPos]  = useState<{ lat: number; lng: number } | null>(null);
-  const [loading,    setLoading]    = useState(true);
+  const position = useLocationStore((s) => s.displayPosition);
+  const { statusUpdate, driverLocation, notification } = useRideSocket(rideId);
 
-  // Load ride data
+  const [ride, setRide] = useState<Ride | null>(null);
+  const [route, setRoute] = useState<RouteResult | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [submittingRating, setSubmittingRating] = useState(false);
+  const [rated, setRated] = useState(false);
+
+  const routeLegRef = useRef<"pickup" | "destination" | null>(null);
+
   useEffect(() => {
     if (!rideId) return;
     getRide(rideId)
-      .then((r: RideData) => { setRide(r); setStatus(r.status); setLoading(false); })
-      .catch(() => setLoading(false));
+      .then(setRide)
+      .catch(() => toast.error("Couldn't load this ride"));
   }, [rideId]);
 
-  // Join ride room + listen for socket events
+  // Merge live status updates from the socket onto the fetched ride.
   useEffect(() => {
+    if (!statusUpdate) return;
+    setRide((prev) =>
+      prev
+        ? {
+            ...prev,
+            status: statusUpdate.status,
+            driver: prev.driver
+              ? { ...prev.driver, fullName: statusUpdate.driverName, vehicleModel: statusUpdate.vehicleModel, licensePlate: statusUpdate.licensePlate }
+              : {
+                  id: statusUpdate.helperId ?? "",
+                  fullName: statusUpdate.driverName,
+                  phoneNumber: null,
+                  vehicleModel: statusUpdate.vehicleModel,
+                  vehicleColor: null,
+                  licensePlate: statusUpdate.licensePlate,
+                  rating: 0,
+                  currentLat: null,
+                  currentLng: null,
+                },
+          }
+        : prev
+    );
+  }, [statusUpdate]);
+
+  useEffect(() => {
+    if (notification) toast.message(notification.title, { description: notification.message });
+  }, [notification]);
+
+  // Recompute the route polyline only when the target leg changes (pickup
+  // vs destination) or the driver's location is first known — not on every
+  // 3-5s driver-location tick, which would hammer the Directions API.
+  useEffect(() => {
+    if (!ride || !driverLocation) return;
+    const preArrival = ride.status === "accepted" || ride.status === "arriving";
+    const leg = preArrival ? "pickup" : "destination";
+    if (routeLegRef.current === leg && route) return;
+    routeLegRef.current = leg;
+    const target = preArrival ? { lat: ride.pickupLat, lng: ride.pickupLng } : { lat: ride.destinationLat, lng: ride.destinationLng };
+    computeRoute({ lat: driverLocation.lat, lng: driverLocation.lng }, target, "DRIVING", GOOGLE_KEY).then(setRoute);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ride?.status, driverLocation?.lat, driverLocation?.lng]);
+
+  const handleCancel = async () => {
     if (!rideId) return;
-    const s = socketRef.current;
-    if (!s) return;
-
-    s.emit('ride:join', { rideId });
-
-    const onAccepted = (info: DriverInfo) => {
-      setDriverInfo(info);
-      setStatus('driver_assigned');
-    };
-    const onStatus = ({ status: st }: { status: RideStatus }) => setStatus(st);
-    const onDriverLocation = ({ lat, lng }: { lat: number; lng: number }) => setDriverPos({ lat, lng });
-
-    s.on('ride:accepted', onAccepted);
-    s.on('ride:status', onStatus);
-    s.on('ride:driver_location', onDriverLocation);
-
-    return () => {
-      s.off('ride:accepted', onAccepted);
-      s.off('ride:status', onStatus);
-      s.off('ride:driver_location', onDriverLocation);
-    };
-  }, [rideId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const cancelRide = async () => {
-    if (!rideId) return;
-    await updateRideStatus(rideId, 'cancelled').catch(() => null);
-    router.push('/home');
+    setCancelling(true);
+    try {
+      await cancelRide(rideId);
+      router.replace("/navigate");
+    } catch {
+      toast.error("Couldn't cancel — try again");
+    } finally {
+      setCancelling(false);
+    }
   };
 
-  const markers: MarkerData[] = [
-    ...(me ? [{ lat: me.lat, lng: me.lng, type: 'me' as const, accuracy: me.accuracy }] : []),
-    ...(driverPos ? [{ lat: driverPos.lat, lng: driverPos.lng, type: 'car' as const, label: driverInfo?.driverName }] : []),
-    ...(ride ? [{ lat: Number(ride.destinationLat), lng: Number(ride.destinationLng), type: 'request' as const, label: `///${ride.destinationWhat3words}` }] : []),
-  ];
+  const handleRate = async () => {
+    if (!rideId || rating === 0) return;
+    setSubmittingRating(true);
+    try {
+      await rateRide(rideId, rating, comment.trim() || undefined);
+      setRated(true);
+    } catch {
+      toast.error("Couldn't submit your rating");
+    } finally {
+      setSubmittingRating(false);
+    }
+  };
 
-  const center = driverPos ?? me ?? (ride ? { lat: Number(ride.pickupLat), lng: Number(ride.pickupLng) } : { lat: -1.29, lng: 36.82 });
-  const effectiveDriver = driverInfo ?? (ride?.driver ? {
-    driverName: ride.driver.user?.fullName ?? 'Driver',
-    vehicleModel: ride.driver.vehicleModel,
-    vehicleColor: ride.driver.vehicleColor,
-    licensePlate: ride.driver.licensePlate,
-  } : null);
+  const markers = useMemo(() => {
+    if (!ride) return [];
+    const m = [
+      { id: "pickup", lat: ride.pickupLat, lng: ride.pickupLng, label: "Pickup", color: "#16A34A" },
+      { id: "dest", lat: ride.destinationLat, lng: ride.destinationLng, label: "Destination", color: "#DC2626" },
+    ];
+    if (driverLocation) m.push({ id: "driver", lat: driverLocation.lat, lng: driverLocation.lng, label: "Driver", color: "#0F172A" });
+    return m;
+  }, [ride, driverLocation]);
 
-  if (loading) return (
-    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F7F7F7' }}>
-      <LoadingOutlined style={{ fontSize: 32, color: '#1A1A1A' }} />
-    </div>
-  );
+  if (!ready || !ride) return null;
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F7' }}>
-      {/* Map */}
-      <div style={{ position: 'relative', flex: 1 }}>
-        <MapBase 
-          center={center} 
-          zoom={14} 
-          markers={markers}
-          routeFrom={
-            status === 'in_progress'
-              ? (driverPos ? { lat: driverPos.lat, lng: driverPos.lng } : (me ? { lat: me.lat, lng: me.lng } : undefined))
-              : (driverPos ? { lat: driverPos.lat, lng: driverPos.lng } : undefined)
-          }
-          routeTo={
-            status === 'in_progress'
-              ? (ride ? { lat: Number(ride.destinationLat), lng: Number(ride.destinationLng) } : undefined)
-              : (status === 'driver_assigned' || status === 'driver_arriving')
-                ? (ride ? { lat: Number(ride.pickupLat), lng: Number(ride.pickupLng) } : undefined)
-                : undefined
-          }
-          className="w-full h-full" 
-        />
+    <div className="relative h-full w-full">
+      <MapBase
+        me={position}
+        markers={markers}
+        routePoints={route?.polylinePoints ?? []}
+        initialCenter={driverLocation ?? position ?? { lat: ride.pickupLat, lng: ride.pickupLng }}
+      />
 
-        <button onClick={() => router.push('/home')} style={{
-          position: 'absolute', top: 48, left: 16, zIndex: 10,
-          width: 40, height: 40, borderRadius: '50%', background: '#FFFFFF',
-          border: 'none', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 2px 16px rgba(0,0,0,0.10)',
-        }}>
-          <ArrowLeftOutlined style={{ fontSize: 15, color: '#1A1A1A' }} />
+      {CANCELLABLE.includes(ride.status) && (
+        <button
+          onClick={handleCancel}
+          disabled={cancelling}
+          className="absolute left-4 top-[calc(env(safe-area-inset-top,0px)+1rem)] z-20 flex h-12 w-12 items-center justify-center rounded-2xl bg-card shadow-lg active:scale-95 transition-transform disabled:opacity-40"
+          aria-label="Cancel ride"
+        >
+          <X className="h-5 w-5 text-foreground" />
         </button>
+      )}
 
-        {/* Status pill */}
-        <div style={{
-          position: 'absolute', top: 48, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none',
-        }}>
-          <div style={{
-            background: status === 'driver_arriving' ? '#FFD600' : 'rgba(255,255,255,0.92)',
-            backdropFilter: 'blur(8px)', borderRadius: 50,
-            padding: '8px 18px', border: '1px solid #EBEBEB',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.10)',
-            display: 'flex', alignItems: 'center', gap: 8,
-          }}>
-            {status === 'requested' && <LoadingOutlined style={{ fontSize: 12, color: '#888' }} />}
-            {(status === 'driver_assigned' || status === 'driver_arriving') && (
-              <div style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_COLOR[status], animation: 'pulse-dot 1.6s ease-in-out infinite' }} />
-            )}
-            {status === 'in_progress' && <CarOutlined style={{ fontSize: 12, color: '#22C55E' }} />}
-            {status === 'completed' && <CheckCircleFilled style={{ fontSize: 12, color: '#1A1A1A' }} />}
-            <span style={{ fontSize: 12, fontWeight: 800, color: status === 'driver_arriving' ? '#1A1A1A' : STATUS_COLOR[status] }}>
-              {STATUS_LABEL[status]}
-            </span>
-          </div>
-        </div>
-      </div>
+      <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] z-20 rounded-3xl bg-card p-5 shadow-2xl">
+        <p className="text-lg font-extrabold text-foreground">{STATUS_COPY[ride.status]}</p>
 
-      {/* Bottom card */}
-      <div style={{ background: '#FFFFFF', padding: '20px 20px 40px', boxShadow: '0 -4px 32px rgba(0,0,0,0.10)' }}>
-
-        {/* Driver card — shown once assigned */}
-        {effectiveDriver && status !== 'requested' && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            background: '#F7F7F7', border: '1.5px solid #EBEBEB',
-            borderRadius: 18, padding: '14px 16px', marginBottom: 14,
-          }}>
-            <div style={{
-              width: 48, height: 48, borderRadius: 14, background: '#1A1A1A',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              <CarOutlined style={{ fontSize: 22, color: '#FFD600' }} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: 14, fontWeight: 800, color: '#1A1A1A' }}>{effectiveDriver.driverName}</p>
-              <p style={{ fontSize: 12, color: '#888' }}>
-                {effectiveDriver.vehicleColor} {effectiveDriver.vehicleModel}
-              </p>
-            </div>
-            <div style={{
-              padding: '6px 12px', background: '#1A1A1A', borderRadius: 10,
-              fontSize: 13, fontWeight: 900, color: '#FFD600', letterSpacing: '1px',
-            }}>
-              {effectiveDriver.licensePlate}
-            </div>
-          </div>
+        {driverLocation && (ride.status === "accepted" || ride.status === "arriving" || ride.status === "started") && (
+          <p className="mt-1 text-sm font-semibold text-muted-foreground">
+            {formatDistance(driverLocation.distanceMeters)} away · {formatDuration(driverLocation.etaSeconds)}
+          </p>
         )}
 
-        {/* Route row */}
-        {ride && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#F7F7F7', borderRadius: 16, padding: '14px 16px', border: '1.5px solid #EBEBEB', marginBottom: 14 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E' }} />
-              <div style={{ width: 1, height: 20, background: '#EBEBEB' }} />
-              <div style={{ width: 8, height: 8, borderRadius: 2, background: '#FFD600' }} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: 11, color: '#888' }}>Pickup</p>
-              <p style={{ fontSize: 12, fontWeight: 700, color: '#1A1A1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                ///{ride.pickupWhat3words}
-              </p>
-              <div style={{ height: 1, background: '#EBEBEB', margin: '6px 0' }} />
-              <p style={{ fontSize: 11, color: '#888' }}>Drop-off</p>
-              <p style={{ fontSize: 12, fontWeight: 700, color: '#1A1A1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                ///{ride.destinationWhat3words}
+        {ride.driver && (ride.status === "accepted" || ride.status === "arriving" || ride.status === "arrived" || ride.status === "started") && (
+          <div className="mt-4 flex items-center gap-3 rounded-2xl bg-secondary p-3">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold text-foreground">{ride.driver.fullName ?? "Your driver"}</p>
+              <p className="truncate text-xs font-semibold text-muted-foreground">
+                {[ride.driver.vehicleModel, ride.driver.licensePlate].filter(Boolean).join(" · ") || "On the way"}
               </p>
             </div>
-            <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <p style={{ fontSize: 16, fontWeight: 900, color: '#1A1A1A' }}>KES {ride.fare}</p>
-              <p style={{ fontSize: 10, color: '#888' }}>est. fare</p>
-            </div>
-          </div>
-        )}
-
-        {/* Actions */}
-        {status === 'completed' ? (
-          <button onClick={() => router.push('/home')} style={{
-            width: '100%', padding: '16px', background: '#1A1A1A', color: '#FFFFFF',
-            border: 'none', borderRadius: 16, fontSize: 15, fontWeight: 800,
-            cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-          }}>
-            Done
-          </button>
-        ) : status === 'cancelled' ? (
-          <button onClick={() => router.push('/ride')} style={{
-            width: '100%', padding: '16px', background: '#FFD600', color: '#1A1A1A',
-            border: 'none', borderRadius: 16, fontSize: 15, fontWeight: 800,
-            cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-          }}>
-            Book another ride
-          </button>
-        ) : (
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${ride?.destinationLat},${ride?.destinationLng}`, '_blank')} style={{
-              flex: 1, padding: '14px', background: '#F7F7F7', color: '#1A1A1A',
-              border: '1.5px solid #EBEBEB', borderRadius: 16, fontSize: 13, fontWeight: 700,
-              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              fontFamily: 'Inter, sans-serif',
-            }}>
-              <EnvironmentOutlined style={{ fontSize: 14 }} />
-              Open Maps
+            <button
+              onClick={() => router.push(`/ride/${ride.id}/chat`)}
+              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-secondary text-foreground active:scale-95 transition-transform"
+              aria-label="Message driver"
+            >
+              <MessageCircle className="h-4 w-4" />
             </button>
-            {(status === 'requested' || status === 'driver_assigned') && (
-              <button onClick={cancelRide} style={{
-                flex: 1, padding: '14px', background: '#FFF5F5', color: '#DC2626',
-                border: '1.5px solid #FCA5A5', borderRadius: 16, fontSize: 13, fontWeight: 700,
-                cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-              }}>
-                Cancel ride
-              </button>
+            {ride.driver.phoneNumber && (
+              <a
+                href={`tel:${ride.driver.phoneNumber}`}
+                className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground active:scale-95 transition-transform"
+                aria-label="Call driver"
+              >
+                <Phone className="h-4 w-4" />
+              </a>
             )}
           </div>
+        )}
+
+        {CANCELLABLE.includes(ride.status) && (
+          <button
+            onClick={handleCancel}
+            disabled={cancelling}
+            className="mt-4 h-12 w-full rounded-2xl bg-secondary text-sm font-bold text-foreground active:scale-95 transition-transform disabled:opacity-40"
+          >
+            {cancelling ? "Cancelling…" : "Cancel ride"}
+          </button>
+        )}
+
+        {ride.status === "completed" && !rated && (
+          <div className="mt-4">
+            <p className="text-sm font-bold text-foreground">Rate your trip</p>
+            <div className="mt-2 flex gap-2">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} onClick={() => setRating(n)} aria-label={`${n} stars`}>
+                  <Star className={`h-8 w-8 ${n <= rating ? "fill-primary text-primary" : "text-muted-foreground"}`} />
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Anything you'd like to add? (optional)"
+              className="mt-3 h-20 w-full resize-none rounded-2xl bg-secondary p-3 text-sm font-medium text-foreground placeholder:text-muted-foreground"
+            />
+            <button
+              onClick={handleRate}
+              disabled={rating === 0 || submittingRating}
+              className="mt-3 h-12 w-full rounded-2xl bg-primary text-sm font-bold text-primary-foreground active:scale-95 transition-transform disabled:opacity-40"
+            >
+              {submittingRating ? "Submitting…" : "Submit rating"}
+            </button>
+          </div>
+        )}
+
+        {ride.status === "completed" && rated && (
+          <button
+            onClick={() => router.replace("/navigate")}
+            className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-bold text-primary-foreground active:scale-95 transition-transform"
+          >
+            <Check className="h-4 w-4" /> Done
+          </button>
+        )}
+
+        {ride.status === "cancelled" && (
+          <button
+            onClick={() => router.replace("/navigate")}
+            className="mt-4 h-12 w-full rounded-2xl bg-secondary text-sm font-bold text-foreground active:scale-95 transition-transform"
+          >
+            Back
+          </button>
         )}
       </div>
     </div>

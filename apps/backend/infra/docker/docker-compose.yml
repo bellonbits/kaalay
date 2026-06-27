@@ -1,0 +1,212 @@
+version: '3.9'
+
+services:
+  # Databases
+  postgres_auth:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: suqafuran_auth
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+      - ../migrations/auth:/docker-entrypoint-initdb.d
+    networks:
+      - suqafuran
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres_user:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: suqafuran_user
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_user_data:/var/lib/postgresql/data
+      - ../migrations/user:/docker-entrypoint-initdb.d
+    networks:
+      - suqafuran
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres_merchant:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: suqafuran_merchant
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_merchant_data:/var/lib/postgresql/data
+      - ../migrations/merchant:/docker-entrypoint-initdb.d
+    networks:
+      - suqafuran
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres_order:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: suqafuran_order
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5436:5432"
+    volumes:
+      - postgres_order_data:/var/lib/postgresql/data
+      - ../migrations/order:/docker-entrypoint-initdb.d
+    networks:
+      - suqafuran
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres_driver:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: suqafuran_driver
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5437:5432"
+    volumes:
+      - postgres_driver_data:/var/lib/postgresql/data
+      - ../migrations/driver:/docker-entrypoint-initdb.d
+    networks:
+      - suqafuran
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - suqafuran
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # NATS JetStream
+  nats:
+    image: nats:latest
+    command: -js -m 8222
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+    networks:
+      - suqafuran
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # MinIO (S3-compatible storage)
+  minio:
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - suqafuran
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # API Gateway
+  gateway:
+    build:
+      context: ../..
+      dockerfile: services/gateway/Dockerfile
+    environment:
+      PORT: 8000
+      JWT_SECRET: dev-secret-key-change-in-production
+      REDIS_ADDR: redis:6379
+      LEGACY_FASTAPI_URL: http://localhost:3000
+      AUTH_SERVICE_URL: http://auth:8001
+      USER_SERVICE_URL: http://user:8002
+      MERCHANT_SERVICE_URL: http://merchant:8003
+      ORDER_SERVICE_URL: http://order:8004
+      DISPATCH_SERVICE_URL: http://dispatch:8005
+      DRIVER_SERVICE_URL: http://driver:8006
+      TRACKING_SERVICE_URL: http://tracking:8007
+      MESSAGING_SERVICE_URL: http://messaging:8008
+      NOTIFICATION_SERVICE_URL: http://notification:8009
+      PAYMENT_SERVICE_URL: http://payment:8010
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - suqafuran
+
+  # Auth Service
+  auth:
+    build:
+      context: ../..
+      dockerfile: services/auth/Dockerfile
+    environment:
+      PORT: 8001
+      DATABASE_URL: "postgres://postgres:postgres@postgres_auth:5432/suqafuran_auth?sslmode=disable"
+      REDIS_ADDR: redis:6379
+      JWT_SECRET: dev-secret-key-change-in-production
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres_auth:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - suqafuran
+
+networks:
+  suqafuran:
+    driver: bridge
+
+volumes:
+  postgres_auth_data:
+  postgres_user_data:
+  postgres_merchant_data:
+  postgres_order_data:
+  postgres_driver_data:
+  redis_data:
+  nats_data:
+  minio_data:

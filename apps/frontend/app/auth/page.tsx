@@ -1,342 +1,308 @@
-'use client';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import {
-  PhoneOutlined,
-  LoadingOutlined,
-  ArrowRightOutlined,
-  CheckCircleOutlined,
-  UserOutlined,
-  SafetyCertificateOutlined,
-  MailOutlined,
-  InfoCircleOutlined
-} from '@ant-design/icons';
-import { loginUser, registerUser } from '../../lib/api';
-import { useAuth } from '../../context/AuthContext';
+"use client";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowLeft, Loader2, Phone, User as UserIcon, Mail, Car, ShieldAlert, Motorbike, Package, Compass, Bike } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { homeRouteForRole, useAuthStore } from "@/features/auth/store";
+import type { RideCategory } from "@/types/api";
 
-const VEHICLE_CATEGORIES = [
-  { id: 'economy', label: 'Economy Taxi', icon: '🚗' },
-  { id: 'pro', label: 'Pro Bike', icon: '🏍️' },
-  { id: 'help', label: 'Helper Vehicle', icon: '🏥' }
+type AccountType = "rider" | "driver" | "emergency_operator";
+
+const ACCOUNT_TYPES: { id: AccountType; label: string; icon: typeof UserIcon }[] = [
+  { id: "rider", label: "Rider", icon: UserIcon },
+  { id: "driver", label: "Driver", icon: Car },
+  { id: "emergency_operator", label: "Emergency Operator", icon: ShieldAlert },
 ];
 
-export default function AuthPage() {
+const VEHICLE_CATEGORIES: { id: RideCategory; label: string; icon: typeof Car }[] = [
+  { id: "economy", label: "Economy", icon: Car },
+  { id: "motorcycle", label: "Motorcycle", icon: Motorbike },
+  { id: "xl", label: "XL", icon: Car },
+  { id: "delivery", label: "Delivery", icon: Package },
+  { id: "bike", label: "Bike", icon: Bike },
+];
+
+function AuthFlow() {
   const router = useRouter();
-  const { login: authLogin, user: existingUser } = useAuth();
-  
-  // Navigation flow steps: 'phone' | 'register'
-  const [step, setStep] = useState<'phone' | 'register'>('phone');
-  
-  // Fields state
-  const [phone, setPhone] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'rider' | 'driver'>('rider');
-  const [vehicleCategory, setVehicleCategory] = useState('economy');
-  const [licensePlate, setLicensePlate] = useState('');
+  const searchParams = useSearchParams();
+  const intent = searchParams.get("intent") === "login" ? "login" : "signup";
+  const { requestLogin, register, loading } = useAuthStore();
 
-  // UI state
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [step, setStep] = useState<"phone" | "register">("phone");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [accountType, setAccountType] = useState<AccountType>("rider");
+  const [vehicleModel, setVehicleModel] = useState("");
+  const [vehicleColor, setVehicleColor] = useState("");
+  const [vehicleCategory, setVehicleCategory] = useState<RideCategory>("economy");
+  const [licensePlate, setLicensePlate] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (existingUser) router.replace('/home');
-  }, [existingUser, router]);
+  const phoneValid = phoneNumber.replace(/\D/g, "").length >= 9;
 
-  // Phone auto-formatting e.g. +254 712 345678
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value;
-    
-    // Auto-prepend +254 country code if they start typing numbers
-    if (value && !value.startsWith('+')) {
-      if (value.startsWith('0')) value = value.substring(1);
-      value = '+254' + value;
-    }
-    
-    // Only allow plus, numbers, and spaces
-    value = value.replace(/[^0-9+ ]/g, '');
-    setPhone(value);
-    setError('');
-  };
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanPhone = phone.replace(/\s+/g, '');
-    if (cleanPhone.length < 12) {
-      setError('Please enter a valid phone number (e.g. +254 712 345 678)');
+  const handlePhoneSubmit = async () => {
+    if (!phoneValid) {
+      setError("Enter a valid phone number");
       return;
     }
-
-    setLoading(true);
-    setError('');
-    
+    setError(null);
     try {
-      const res = await loginUser(cleanPhone);
-      if (res.isNewUser) {
-        setStep('register');
+      const { isNewUser } = await requestLogin(phoneNumber.trim());
+      if (isNewUser) {
+        setStep("register");
       } else {
-        // Authenticate existing user
-        authLogin(res.user, res.accessToken, res.refreshToken);
+        router.replace(homeRouteForRole(useAuthStore.getState().user?.role));
       }
-    } catch (err: any) {
-      setError(err?.message || 'Failed to sign in. Please try again.');
-    } finally {
-      setLoading(false);
+    } catch {
+      setError("Couldn't reach Kaalay. Check your connection and try again.");
     }
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleRegisterSubmit = async () => {
     if (!fullName.trim()) {
-      setError('Please enter your full name');
+      setError("Tell us your name");
       return;
     }
-    if (role === 'driver' && !licensePlate.trim()) {
-      setError('Please enter your vehicle license plate number');
+    if (accountType === "driver" && (!vehicleModel.trim() || !vehicleColor.trim() || !licensePlate.trim())) {
+      setError("Fill in your vehicle details to register as a driver");
       return;
     }
-
-    setLoading(true);
-    setError('');
-
+    setError(null);
     try {
-      const cleanPhone = phone.replace(/\s+/g, '');
-      const payload = {
-        phoneNumber: cleanPhone,
+      await register({
+        phoneNumber: phoneNumber.trim(),
         fullName: fullName.trim(),
-        role,
-        email: email.trim() ? email.trim() : undefined,
-        vehicleCategory: role === 'driver' ? vehicleCategory : undefined,
-        licensePlate: role === 'driver' ? licensePlate.toUpperCase().trim() : undefined
-      };
-      
-      const res = await registerUser(payload);
-      authLogin(res.user, res.accessToken, res.refreshToken);
-    } catch (err: any) {
-      setError(err?.message || 'Registration failed. Please try again.');
-    } finally {
-      setLoading(false);
+        email: email.trim() || undefined,
+        role: accountType,
+        ...(accountType === "driver"
+          ? {
+              vehicleModel: vehicleModel.trim(),
+              vehicleColor: vehicleColor.trim(),
+              vehicleCategory,
+              licensePlate: licensePlate.trim().toUpperCase(),
+            }
+          : {}),
+      });
+      router.replace(homeRouteForRole(accountType));
+    } catch {
+      setError("Couldn't create your account. Try again.");
     }
   };
 
   return (
-    <div className="h-full flex flex-col bg-white overflow-y-auto no-scroll relative justify-between pb-10">
-      {/* Premium Cinematic Background Elements */}
-      <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-yellow-400/5 rounded-full blur-[100px] pointer-events-none" />
-      <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-[#000080]/5 rounded-full blur-[80px] pointer-events-none" />
+    <div className="flex h-full w-full flex-col overflow-y-auto bg-background px-6 pb-10 pt-14">
+      <button
+        onClick={() => (step === "register" ? setStep("phone") : router.push("/welcome"))}
+        className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-secondary active:scale-95 transition-transform"
+        aria-label="Back"
+      >
+        <ArrowLeft className="h-5 w-5 text-foreground" />
+      </button>
 
-      {/* STEP 1: PHONE VIEW */}
-      {step === 'phone' && (
-        <div className="flex-1 flex flex-col px-6 pt-24 justify-between z-10">
-          
-          {/* Cinematic Branding (Centered in top third) */}
-          <div className="flex flex-col items-center justify-center pt-8 text-center animate-fade-in">
-            <h1 className="text-[68px] font-black tracking-[-5px] text-black leading-none mb-4 select-none">
-              kaalay
-            </h1>
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-yellow-400 rounded-lg shadow-sm">
-              <span className="text-[9px] font-black uppercase tracking-[2px] text-black">
-                Precision Location Booking
-              </span>
-            </div>
-          </div>
-
-          {/* Bottom Inputs and Actions Container */}
-          <div className="w-full mt-16 max-w-md mx-auto space-y-8 animate-slide-up-spring">
-            <form onSubmit={handleLogin} className="space-y-6">
-              <div>
-                <h2 className="text-3xl font-black text-black tracking-tight mb-2">Get Started</h2>
-                <p className="text-gray-400 text-sm font-semibold">Enter your phone number to proceed.</p>
+      <div className="mt-8 flex-1">
+        <AnimatePresence mode="wait">
+          {step === "phone" ? (
+            <motion.div
+              key="phone"
+              initial={{ opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -16 }}
+              transition={{ duration: 0.25 }}
+            >
+              <div className="flex h-16 w-16 items-center justify-center rounded-[1.5rem] bg-primary/10">
+                <Compass className="h-8 w-8 text-primary" strokeWidth={1.75} />
               </div>
+              <h1 className="mt-6 text-3xl font-extrabold tracking-tight text-foreground">
+                {intent === "login" ? "Welcome back" : "Let's get started"}
+              </h1>
+              <p className="mt-2 text-base font-medium text-muted-foreground">
+                Enter your phone number — no password needed.
+              </p>
 
-              <div className={`input-container h-14 ${error ? 'border-red-500' : 'focus-within:border-black'}`}>
-                <PhoneOutlined className="text-xl text-gray-400" />
-                <input
-                  type="tel"
-                  placeholder="+254 712 345678"
-                  value={phone}
-                  onChange={handlePhoneChange}
-                  className="flex-1 bg-transparent border-none outline-none text-base font-black text-black placeholder:text-gray-300 tracking-wide"
-                  disabled={loading}
-                />
-              </div>
-
-              {error && (
-                <p className="text-red-500 text-xs font-bold flex items-center gap-1.5 px-1">
-                  <InfoCircleOutlined />
-                  {error}
-                </p>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading || phone.length < 12}
-                className="btn btn-black w-full h-14 shadow-premium select-none active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition-all flex items-center justify-center gap-2"
-              >
-                {loading ? <LoadingOutlined className="text-lg" /> : (
-                  <>
-                    <span className="text-sm font-black uppercase tracking-wider">Proceed to Entrance</span>
-                    <ArrowRightOutlined className="text-xs" />
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* STEP 2: REGISTER / PROFILE SETUP VIEW */}
-      {step === 'register' && (
-        <div className="w-full max-w-md mx-auto px-6 pt-16 z-10 animate-fade-in">
-          <div className="mb-8">
-            <h2 className="text-3xl font-black text-black tracking-tight mb-2">Create Account</h2>
-            <p className="text-gray-400 text-sm font-semibold">Your phone number is verified. Complete your profile.</p>
-          </div>
-
-          <form onSubmit={handleRegister} className="space-y-6">
-            
-            {/* Display verified phone number */}
-            <div className="flex items-center gap-2 px-4 py-3 bg-green-500/10 border border-green-500/20 rounded-2xl">
-              <CheckCircleOutlined className="text-green-500 text-base shrink-0" />
-              <span className="text-xs font-black text-green-700">{phone} is Verified</span>
-            </div>
-
-            {/* Name Input */}
-            <div className="space-y-2">
-              <label className="text-[11px] font-bold text-[#888] tracking-widest uppercase">Full Name</label>
-              <div className={`input-container h-13 ${error && !fullName.trim() ? 'border-red-500' : ''}`}>
-                <UserOutlined className="text-lg text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Enter your full name"
-                  value={fullName}
-                  onChange={e => { setFullName(e.target.value); setError(''); }}
-                  className="flex-1 bg-transparent border-none outline-none text-sm font-black text-black placeholder:text-gray-300"
-                  disabled={loading}
-                />
-              </div>
-            </div>
-
-            {/* Email Input (Optional) */}
-            <div className="space-y-2">
-              <label className="text-[11px] font-bold text-[#888] tracking-widest uppercase">Email (Optional)</label>
-              <div className="input-container h-13">
-                <MailOutlined className="text-lg text-gray-400" />
-                <input
-                  type="email"
-                  placeholder="name@example.com"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  className="flex-1 bg-transparent border-none outline-none text-sm font-black text-black placeholder:text-gray-300"
-                  disabled={loading}
-                />
-              </div>
-            </div>
-
-            {/* Role Selector Pills */}
-            <div className="space-y-2">
-              <label className="text-[11px] font-bold text-[#888] tracking-widest uppercase">Select App Role</label>
-              <div className="flex bg-gray-50 border border-gray-100 rounded-full p-1 h-14">
-                <button
-                  type="button"
-                  onClick={() => { setRole('rider'); setError(''); }}
-                  className={`flex-1 rounded-full text-xs font-black uppercase tracking-wider transition-all ${
-                    role === 'rider' ? 'bg-[#000080] text-white shadow-sm' : 'text-gray-400 bg-transparent'
-                  }`}
-                  disabled={loading}
-                >
-                  🚴 Rider Mode
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setRole('driver'); setError(''); }}
-                  className={`flex-1 rounded-full text-xs font-black uppercase tracking-wider transition-all ${
-                    role === 'driver' ? 'bg-[#000080] text-white shadow-sm' : 'text-gray-400 bg-transparent'
-                  }`}
-                  disabled={loading}
-                >
-                  🚗 Driver / Helper
-                </button>
-              </div>
-            </div>
-
-            {/* Driver Extras */}
-            {role === 'driver' && (
-              <div className="space-y-4 pt-2 border-t border-gray-50 animate-slide-down">
-                
-                {/* Vehicle Category Selector Cards */}
-                <div className="space-y-2">
-                  <label className="text-[11px] font-bold text-[#888] tracking-widest uppercase">Vehicle Category</label>
-                  <div className="flex gap-2">
-                    {VEHICLE_CATEGORIES.map(category => (
-                      <button
-                        key={category.id}
-                        type="button"
-                        onClick={() => setVehicleCategory(category.id)}
-                        className={`flex-1 p-3.5 rounded-2xl text-center border-2 transition-all flex flex-col items-center justify-center gap-1.5 ${
-                          vehicleCategory === category.id
-                            ? 'bg-black border-black text-white shadow-md'
-                            : 'bg-gray-50 border-transparent text-gray-500'
-                        }`}
-                      >
-                        <span className="text-xl">{category.icon}</span>
-                        <span className="text-[10px] font-black uppercase tracking-wider whitespace-nowrap">{category.label.split(' ')[0]}</span>
-                      </button>
-                    ))}
-                  </div>
+              <div className="mt-8 space-y-2">
+                <Label htmlFor="phone" className="text-sm font-bold text-foreground">
+                  Phone number
+                </Label>
+                <div className="flex items-center gap-3 rounded-2xl border-2 border-input bg-background px-4 h-14">
+                  <Phone className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+                  <Input
+                    id="phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoFocus
+                    placeholder="+254 7XX XXX XXX"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handlePhoneSubmit()}
+                    className="h-full border-0 p-0 text-base font-semibold shadow-none focus-visible:ring-0"
+                  />
                 </div>
+              </div>
 
-                {/* License Plate Input */}
+              {error && <p className="mt-3 text-sm font-semibold text-danger">{error}</p>}
+
+              <Button
+                size="lg"
+                className="mt-8 h-14 w-full rounded-2xl text-base font-bold"
+                onClick={handlePhoneSubmit}
+                disabled={loading || !phoneValid}
+              >
+                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Continue"}
+              </Button>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="register"
+              initial={{ opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -16 }}
+              transition={{ duration: 0.25 }}
+            >
+              <div className="flex h-16 w-16 items-center justify-center rounded-[1.5rem] bg-primary/10">
+                <UserIcon className="h-8 w-8 text-primary" strokeWidth={1.75} />
+              </div>
+              <h1 className="mt-6 text-3xl font-extrabold tracking-tight text-foreground">Create your account</h1>
+              <p className="mt-2 text-base font-medium text-muted-foreground">Just a couple details and you&apos;re in.</p>
+
+              <div className="mt-6 space-y-2">
+                <Label className="text-sm font-bold text-foreground">I want to sign up as a</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {ACCOUNT_TYPES.map(({ id, label, icon: Icon }) => (
+                    <button
+                      key={id}
+                      onClick={() => setAccountType(id)}
+                      className={`flex h-20 flex-col items-center justify-center gap-1 rounded-3xl px-1 text-center text-[11px] font-bold leading-tight transition-all ${
+                        accountType === id ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
+                      }`}
+                    >
+                      <Icon className="h-5 w-5" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-6 space-y-5">
                 <div className="space-y-2">
-                  <label className="text-[11px] font-bold text-[#888] tracking-widest uppercase">License Plate Number</label>
-                  <div className={`input-container h-13 ${error && !licensePlate.trim() ? 'border-red-500' : ''}`}>
-                    <SafetyCertificateOutlined className="text-lg text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="e.g. KDG 123A"
-                      value={licensePlate}
-                      onChange={e => { setLicensePlate(e.target.value.toUpperCase()); setError(''); }}
-                      className="flex-1 bg-transparent border-none outline-none text-sm font-black text-black placeholder:text-gray-300 uppercase tracking-widest"
-                      maxLength={10}
-                      disabled={loading}
+                  <Label htmlFor="fullName" className="text-sm font-bold text-foreground">
+                    Full name
+                  </Label>
+                  <div className="flex items-center gap-3 rounded-2xl border-2 border-input bg-background px-4 h-14">
+                    <UserIcon className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+                    <Input
+                      id="fullName"
+                      placeholder="Your full name"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      className="h-full border-0 p-0 text-base font-semibold shadow-none focus-visible:ring-0"
                     />
                   </div>
                 </div>
 
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-sm font-bold text-foreground">
+                    Email <span className="font-medium text-muted-foreground">(optional)</span>
+                  </Label>
+                  <div className="flex items-center gap-3 rounded-2xl border-2 border-input bg-background px-4 h-14">
+                    <Mail className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && accountType !== "driver" && handleRegisterSubmit()}
+                      className="h-full border-0 p-0 text-base font-semibold shadow-none focus-visible:ring-0"
+                    />
+                  </div>
+                </div>
+
+                {accountType === "driver" && (
+                  <>
+                    <div className="grid grid-cols-3 gap-2">
+                      {VEHICLE_CATEGORIES.map(({ id, label, icon: Icon }) => (
+                        <button
+                          key={id}
+                          onClick={() => setVehicleCategory(id)}
+                          className={`flex h-16 flex-col items-center justify-center gap-1 rounded-3xl text-[10px] font-bold transition-all ${
+                            vehicleCategory === id ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
+                          }`}
+                        >
+                          <Icon className="h-4 w-4" />
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="vehicleModel" className="text-sm font-bold text-foreground">
+                        Vehicle model
+                      </Label>
+                      <Input
+                        id="vehicleModel"
+                        placeholder="e.g. Toyota Probox"
+                        value={vehicleModel}
+                        onChange={(e) => setVehicleModel(e.target.value)}
+                        className="h-14 rounded-2xl border-2 border-input px-4 text-base font-semibold"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="vehicleColor" className="text-sm font-bold text-foreground">
+                        Vehicle color
+                      </Label>
+                      <Input
+                        id="vehicleColor"
+                        placeholder="e.g. White"
+                        value={vehicleColor}
+                        onChange={(e) => setVehicleColor(e.target.value)}
+                        className="h-14 rounded-2xl border-2 border-input px-4 text-base font-semibold"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="licensePlate" className="text-sm font-bold text-foreground">
+                        License plate
+                      </Label>
+                      <Input
+                        id="licensePlate"
+                        placeholder="e.g. KDA 123A"
+                        value={licensePlate}
+                        onChange={(e) => setLicensePlate(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleRegisterSubmit()}
+                        className="h-14 rounded-2xl border-2 border-input px-4 text-base font-semibold"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
-            )}
 
-            {error && (
-              <p className="text-red-500 text-xs font-bold flex items-center gap-1.5 px-1 justify-center">
-                <InfoCircleOutlined />
-                {error}
-              </p>
-            )}
+              {error && <p className="mt-3 text-sm font-semibold text-danger">{error}</p>}
 
-            {/* Complete Register Button */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn btn-black w-full h-14 shadow-premium mt-6 active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition-all flex items-center justify-center gap-2"
-            >
-              {loading ? <LoadingOutlined className="text-lg" /> : (
-                <>
-                  <span className="text-sm font-black uppercase tracking-wider">Complete Registration</span>
-                  <ArrowRightOutlined className="text-xs" />
-                </>
-              )}
-            </button>
-          </form>
-        </div>
-      )}
-
-      {/* Brand Footer Info */}
-      <div className="px-6 text-center shrink-0 w-full max-w-md mx-auto mt-8">
-        <p className="text-[9px] text-gray-300 font-bold uppercase tracking-[1.5px] leading-relaxed select-none">
-          By signing in, you agree to Kaalay's <br />
-          <span className="text-gray-400">Terms of Service</span> & <span className="text-gray-400">Privacy Policy</span>
-        </p>
+              <Button
+                size="lg"
+                className="mt-8 h-14 w-full rounded-2xl text-base font-bold"
+                onClick={handleRegisterSubmit}
+                disabled={loading}
+              >
+                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Create Account"}
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+export default function AuthPage() {
+  return (
+    <Suspense fallback={null}>
+      <AuthFlow />
+    </Suspense>
   );
 }

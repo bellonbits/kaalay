@@ -1,0 +1,223 @@
+openapi: 3.0.0
+info:
+  title: Suqafuran Express - Payment Service API
+  version: 1.0.0
+  description: M-Pesa STK push, escrow, and driver wallet management
+  contact:
+    email: api@suqafuran.com
+
+servers:
+  - url: http://localhost:8010
+    description: Local development
+  - url: https://api.suqafuran.com
+    description: Production
+
+security:
+  - BearerAuth: []
+
+paths:
+  /v1/payments/initiate:
+    post:
+      summary: Initiate payment with M-Pesa STK push
+      tags:
+        - Payments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - order_id
+                - customer_id
+                - amount
+                - payment_method
+              properties:
+                order_id:
+                  type: string
+                  format: uuid
+                customer_id:
+                  type: string
+                  format: uuid
+                amount:
+                  type: number
+                  minimum: 1
+                payment_method:
+                  type: string
+                  enum: [mpesa, evc, zaad, sahal]
+                mpesa_phone:
+                  type: string
+                  pattern: "^(0|254)[0-9]{9}$"
+      responses:
+        '201':
+          description: Payment initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                      mpesa_checkout_request_id:
+                        type: string
+                      mpesa_merchant_request_id:
+                        type: string
+
+  /v1/payments/{id}:
+    get:
+      summary: Get payment details
+      tags:
+        - Payments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payment found
+
+  /v1/payments/{id}/status:
+    get:
+      summary: Get payment status
+      tags:
+        - Payments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Status returned
+
+  /v1/payments/{id}/refund:
+    post:
+      summary: Refund payment
+      tags:
+        - Payments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Refund processed
+
+  /v1/payments/mpesa/callback:
+    post:
+      summary: M-Pesa callback webhook
+      tags:
+        - Webhooks
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Callback received
+
+  /v1/wallets/{driver_id}:
+    get:
+      summary: Get driver wallet
+      tags:
+        - Wallets
+      parameters:
+        - name: driver_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Wallet details
+
+  /v1/wallets/withdraw:
+    post:
+      summary: Request withdrawal
+      tags:
+        - Wallets
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - driver_id
+                - amount
+                - method
+                - phone
+              properties:
+                driver_id:
+                  type: string
+                  format: uuid
+                amount:
+                  type: number
+                  minimum: 100
+                  maximum: 50000
+                method:
+                  type: string
+                  enum: [mpesa, evc, zaad, sahal]
+                phone:
+                  type: string
+      responses:
+        '201':
+          description: Withdrawal created
+
+  /health:
+    get:
+      summary: Health check
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: Healthy
+
+  /ready:
+    get:
+      summary: Readiness probe
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: Ready
+        '503':
+          description: Not ready
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
