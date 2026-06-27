@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
@@ -159,10 +160,24 @@ func main() {
 			ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 			defer cancel()
 
+			participantUUIDs := make([]uuid.UUID, len(req.ParticipantIDs))
+			for i, id := range req.ParticipantIDs {
+				if uid, err := uuid.Parse(id); err == nil {
+					participantUUIDs[i] = uid
+				}
+			}
+
+			var orderID *uuid.UUID
+			if req.OrderID != nil {
+				if uid, err := uuid.Parse(*req.OrderID); err == nil {
+					orderID = &uid
+				}
+			}
+
 			conv := &model.Conversation{
 				Type:           req.Type,
-				ParticipantIDs: req.ParticipantIDs,
-				OrderID:        req.OrderID,
+				ParticipantIDs: participantUUIDs,
+				OrderID:        orderID,
 				IsActive:       true,
 				CreatedAt:      time.Now(),
 				UpdatedAt:      time.Now(),
@@ -174,15 +189,11 @@ func main() {
 				return
 			}
 
-			// Add participants
-			userID := c.GetString("user_id")
-			userName := c.GetString("user_name")
-
-			for _, participantID := range req.ParticipantIDs {
+			for _, participantID := range participantUUIDs {
 				participant := &model.ConversationParticipant{
 					ConversationID: conv.ID,
 					UserID:         participantID,
-					UserName:       participantID, // Will be updated by participants themselves
+					UserName:       participantID.String(),
 					JoinedAt:       time.Now(),
 				}
 				_ = repo.CreateParticipant(ctx, participant)
@@ -196,7 +207,6 @@ func main() {
 		// Messages
 		messages.GET("/conversations/:id/messages", func(c *gin.Context) {
 			conversationID := c.Param("id")
-			userID := c.GetString("user_id")
 
 			limitStr := c.DefaultQuery("limit", "50")
 			offsetStr := c.DefaultQuery("offset", "0")
@@ -251,13 +261,21 @@ func main() {
 				msgType = "text"
 			}
 
+			imageURL := (*string)(nil)
+			if req.ImageURL != "" {
+				imageURL = &req.ImageURL
+			}
+
+			convID, _ := uuid.Parse(conversationID)
+			userIDUUID, _ := uuid.Parse(userID)
+
 			msg := &model.Message{
-				ConversationID: conversationID,
-				SenderID:       userID,
+				ConversationID: convID,
+				SenderID:       userIDUUID,
 				SenderName:     userName,
 				Content:        req.Content,
 				MessageType:    msgType,
-				ImageURL:       req.ImageURL,
+				ImageURL:       imageURL,
 				CreatedAt:      time.Now(),
 			}
 
@@ -286,9 +304,12 @@ func main() {
 				return
 			}
 
+			msgIDUUID, _ := uuid.Parse(messageID)
+			userIDUUID, _ := uuid.Parse(userID)
+
 			receipt := &model.ReadReceipt{
-				MessageID: messageID,
-				ReaderID:  userID,
+				MessageID: msgIDUUID,
+				ReaderID:  userIDUUID,
 				ReadAt:    time.Now(),
 			}
 
@@ -298,8 +319,7 @@ func main() {
 				return
 			}
 
-			// Update participant's last read message
-			_ = repo.UpdateLastReadMessage(ctx, msg.ConversationID, userID, messageID)
+			_ = repo.UpdateLastReadMessage(ctx, msg.ConversationID, userIDUUID, msgIDUUID)
 
 			c.JSON(http.StatusOK, pkg.SuccessResponse(map[string]interface{}{
 				"read_at": receipt.ReadAt.Unix(),
@@ -312,7 +332,6 @@ func main() {
 			userName := c.GetString("user_name")
 			conversationID := c.Param("conversation_id")
 
-			// Inject user info for WebSocket handler
 			c.Set("user_id", userID)
 			c.Set("user_name", userName)
 
