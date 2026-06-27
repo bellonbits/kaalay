@@ -29,6 +29,9 @@ func main() {
 	log.Info().
 		Int("port", cfg.Port).
 		Str("legacy_fastapi", cfg.LegacyFastAPIURL).
+		Str("auth_service", cfg.AuthServiceURL).
+		Str("order_service", cfg.OrderServiceURL).
+		Str("payment_service", cfg.PaymentServiceURL).
 		Msg("Starting Suqafuran Express Gateway")
 
 	r := gin.Default()
