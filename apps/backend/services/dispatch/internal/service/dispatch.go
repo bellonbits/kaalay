@@ -21,7 +21,7 @@ type DispatchService struct {
 	repo             repository.DispatchRepository
 	redis            *redis.Client
 	nats             *nats.Conn
-	circuitBreaker   gobreaker.CircuitBreaker
+	circuitBreaker   *gobreaker.CircuitBreaker
 	scoringWeights   model.ScoringWeights
 	maxDistanceKm    float64
 	jobTimeoutSecs   int

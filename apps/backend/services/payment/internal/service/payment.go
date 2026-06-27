@@ -172,9 +172,9 @@ func (ps *PaymentService) ProcessPaymentCallback(ctx context.Context, callback *
 			Amount:        *callback.Amount,
 			Fee:           0, // Full amount charged to customer
 			NetAmount:     *callback.Amount,
-			MpesaReference: &callback.MpesaReceiptNumber,
+			MpesaReference: callback.MpesaReceiptNumber,
 			Status:        "completed",
-			Description:   fmt.Sprintf("M-Pesa payment received: %s", callback.MpesaReceiptNumber),
+			Description:   fmt.Sprintf("M-Pesa payment received: %s", *callback.MpesaReceiptNumber),
 			CreatedAt:     time.Now(),
 			UpdatedAt:     time.Now(),
 		}

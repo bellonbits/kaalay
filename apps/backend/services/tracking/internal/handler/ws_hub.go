@@ -231,19 +231,20 @@ func (conn *WSConnection) readPump(hub *WSHub) {
 		conn.conn.Close(websocket.StatusGoingAway, "")
 	}()
 
-	conn.conn.SetReadLimit(32768) // 32KB max message size
-	conn.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	conn.conn.SetPongHandler(func(string) error {
-		conn.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
-	})
-
 	for {
-		var msg map[string]interface{}
-		err := wsjson.Read(context.Background(), conn.conn, &msg)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		_, data, err := conn.conn.Read(ctx)
+		cancel()
+
 		if err != nil {
 			log.Error().Err(err).Str("connection_id", conn.ID).Msg("WebSocket read error")
 			return
+		}
+
+		var msg map[string]interface{}
+		if err := json.Unmarshal(data, &msg); err != nil {
+			log.Error().Err(err).Str("connection_id", conn.ID).Msg("Failed to unmarshal WebSocket message")
+			continue
 		}
 
 		msgType, ok := msg["type"].(string)
@@ -305,42 +306,31 @@ func (conn *WSConnection) writePump() {
 	for {
 		select {
 		case msg, ok := <-conn.send:
-			conn.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if !ok {
-				conn.conn.Write(context.Background(), websocket.StatusNormalClosure, []byte{})
+				conn.conn.Close(websocket.StatusNormalClosure, "")
 				return
 			}
 
-			if err := wsjson.Write(context.Background(), conn.conn, msg); err != nil {
+			data, err := json.Marshal(msg)
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to marshal message")
 				return
 			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			if err := conn.conn.Write(ctx, websocket.MessageText, data); err != nil {
+				cancel()
+				return
+			}
+			cancel()
 
 		case <-ticker.C:
-			conn.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := conn.conn.Ping(context.Background()); err != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			if err := conn.conn.Ping(ctx); err != nil {
+				cancel()
 				return
 			}
+			cancel()
 		}
 	}
-}
-
-// Import wsjson (nhooyr/websocket helper)
-var wsjson = struct {
-	Read  func(ctx context.Context, c *websocket.Conn, v interface{}) error
-	Write func(ctx context.Context, c *websocket.Conn, v interface{}) error
-}{
-	Read: func(ctx context.Context, c *websocket.Conn, v interface{}) error {
-		_, data, err := c.Read(ctx)
-		if err != nil {
-			return err
-		}
-		return json.Unmarshal(data, v)
-	},
-	Write: func(ctx context.Context, c *websocket.Conn, v interface{}) error {
-		data, err := json.Marshal(v)
-		if err != nil {
-			return err
-		}
-		return c.Write(ctx, websocket.MessageText, data)
-	},
 }

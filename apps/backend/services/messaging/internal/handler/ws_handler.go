@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"github.com/suqafuran/express/services/messaging/internal/model"
 	"github.com/suqafuran/express/services/messaging/internal/repository"
@@ -195,13 +196,6 @@ func (c *WSConnection) readPump(hub *ConversationHub) {
 		c.conn.Close(websocket.StatusNormalClosure, "closing")
 	}()
 
-	c.conn.SetReadLimit(64000) // 64KB max message
-	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
-	})
-
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		_, data, err := c.conn.Read(ctx)
@@ -261,7 +255,6 @@ func (c *WSConnection) writePump() {
 			}
 
 		case <-ticker.C:
-			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := c.conn.Write(context.Background(), websocket.MessageText, []byte(`{"type":"ping"}`)); err != nil {
 				log.Error().Err(err).Str("user_id", c.UserID).Msg("Ping failed")
 				return
@@ -298,14 +291,33 @@ func (c *WSConnection) handleMessage(hub *ConversationHub, payload interface{}) 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	// Convert string IDs to UUIDs
+	convID, err := uuid.Parse(c.ConversationID)
+	if err != nil {
+		log.Warn().Err(err).Str("conversation_id", c.ConversationID).Msg("Invalid conversation ID format")
+		return
+	}
+
+	userID, err := uuid.Parse(c.UserID)
+	if err != nil {
+		log.Warn().Err(err).Str("user_id", c.UserID).Msg("Invalid user ID format")
+		return
+	}
+
+	var imgURL *string
+	if msgPayload.ImageURL != "" {
+		imgURL = &msgPayload.ImageURL
+	}
+
 	// Store message in database
 	msg := &model.Message{
-		ConversationID: c.ConversationID,
-		SenderID:       c.UserID,
+		ID:             uuid.New(),
+		ConversationID: convID,
+		SenderID:       userID,
 		SenderName:     c.UserName,
 		Content:        msgPayload.Content,
 		MessageType:    msgType,
-		ImageURL:       msgPayload.ImageURL,
+		ImageURL:       imgURL,
 		CreatedAt:      time.Now(),
 	}
 
