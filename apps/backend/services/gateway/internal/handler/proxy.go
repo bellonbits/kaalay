@@ -35,16 +35,16 @@ func NewGatewayRouter(cfg *config.Config) *GatewayRouter {
 
 	// Route table — flip goLive=true as each Go service goes live
 	g.routes = []RouteRule{
-		{Prefix: "/api/v1/auth", ServiceURL: cfg.AuthServiceURL, Proxy: newProxy(cfg.AuthServiceURL), GoLive: false},
+		{Prefix: "/api/v1/auth", ServiceURL: cfg.AuthServiceURL, Proxy: newProxy(cfg.AuthServiceURL), GoLive: true},
 		{Prefix: "/api/v1/users", ServiceURL: cfg.UserServiceURL, Proxy: newProxy(cfg.UserServiceURL), GoLive: false},
 		{Prefix: "/api/v1/merchants", ServiceURL: cfg.MerchantServiceURL, Proxy: newProxy(cfg.MerchantServiceURL), GoLive: false},
-		{Prefix: "/api/v1/orders", ServiceURL: cfg.OrderServiceURL, Proxy: newProxy(cfg.OrderServiceURL), GoLive: false},
+		{Prefix: "/api/v1/orders", ServiceURL: cfg.OrderServiceURL, Proxy: newProxy(cfg.OrderServiceURL), GoLive: true},
 		{Prefix: "/api/v1/dispatch", ServiceURL: cfg.DispatchServiceURL, Proxy: newProxy(cfg.DispatchServiceURL), GoLive: false},
 		{Prefix: "/api/v1/drivers", ServiceURL: cfg.DriverServiceURL, Proxy: newProxy(cfg.DriverServiceURL), GoLive: false},
 		{Prefix: "/api/v1/tracking", ServiceURL: cfg.TrackingServiceURL, Proxy: newProxy(cfg.TrackingServiceURL), GoLive: false},
 		{Prefix: "/api/v1/messages", ServiceURL: cfg.MessagingServiceURL, Proxy: newProxy(cfg.MessagingServiceURL), GoLive: false},
 		{Prefix: "/api/v1/notifications", ServiceURL: cfg.NotificationServiceURL, Proxy: newProxy(cfg.NotificationServiceURL), GoLive: false},
-		{Prefix: "/api/v1/payments", ServiceURL: cfg.PaymentServiceURL, Proxy: newProxy(cfg.PaymentServiceURL), GoLive: false},
+		{Prefix: "/api/v1/payments", ServiceURL: cfg.PaymentServiceURL, Proxy: newProxy(cfg.PaymentServiceURL), GoLive: true},
 		// Legacy routes: places, emergency, admin, etc. stay on FastAPI until Phase 5
 		{Prefix: "/api/v1/places", ServiceURL: cfg.LegacyFastAPIURL, Proxy: g.legacyProxy, GoLive: false},
 		{Prefix: "/api/v1/emergency", ServiceURL: cfg.LegacyFastAPIURL, Proxy: g.legacyProxy, GoLive: false},
