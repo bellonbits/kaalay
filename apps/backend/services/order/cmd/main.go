@@ -114,7 +114,7 @@ func main() {
 	})
 
 	// Swagger UI
-	r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// Order routes
 	orders := r.Group("/v1/orders")

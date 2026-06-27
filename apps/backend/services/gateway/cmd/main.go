@@ -41,7 +41,7 @@ func main() {
 	r.GET("/ready", gw.ReadyHandler)
 
 	// Swagger UI
-	r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// All API routes through strangler fig proxy
 	r.Any("/api/*path", gw.ProxyHandler)

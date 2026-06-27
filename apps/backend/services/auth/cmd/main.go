@@ -80,7 +80,7 @@ func main() {
 	r.GET("/ready", authHandler.ReadyHandler)
 
 	// Swagger UI
-	r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// Auth routes
 	auth := r.Group("/v1/auth")
