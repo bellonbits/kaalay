@@ -1,12 +1,25 @@
 FROM golang:1.24-alpine AS builder
 WORKDIR /build
-COPY go.work go.work
+
+# Copy all modules first
+COPY go.work .
 COPY shared ./shared
 COPY services/auth ./services/auth
-RUN cd services/auth && go build -o auth cmd/main.go
+COPY services/user ./services/user
+COPY services/merchant ./services/merchant
+COPY services/order ./services/order
+COPY services/dispatch ./services/dispatch
+COPY services/driver ./services/driver
+COPY services/tracking ./services/tracking
+COPY services/messaging ./services/messaging
+COPY services/notification ./services/notification
+COPY services/payment ./services/payment
+
+# Build the service
+RUN cd services/auth && go build -o auth ./cmd/main.go
 
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates curl
 WORKDIR /app
 COPY --from=builder /build/services/auth/auth .
 EXPOSE 8001

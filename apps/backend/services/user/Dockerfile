@@ -15,11 +15,11 @@ COPY services/notification ./services/notification
 COPY services/payment ./services/payment
 COPY services/gateway ./services/gateway
 
-RUN cd services/driver && go build -o driver ./cmd/main.go
+RUN cd services/user && go build -o user ./cmd/main.go
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates curl
 WORKDIR /app
-COPY --from=builder /build/services/driver/driver .
-EXPOSE 8006
-CMD ["./driver"]
+COPY --from=builder /build/services/user/user .
+EXPOSE 8002
+CMD ["./user"]
