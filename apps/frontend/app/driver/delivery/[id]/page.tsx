@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { MapPin, Phone, MessageSquare, CheckCircle, Navigation } from 'lucide-react';
+import { Phone, MessageSquare, CheckCircle, Navigation } from 'lucide-react';
 import { deliveryAPI, ActiveDelivery } from '@/lib/services/delivery';
 
 export default function DeliveryDetailPage() {
@@ -19,7 +19,7 @@ export default function DeliveryDetailPage() {
       setToken(storedToken);
       loadDelivery(storedToken);
     }
-  }, []);
+  }, [deliveryId]);
 
   const loadDelivery = async (token: string) => {
     try {
@@ -172,12 +172,12 @@ export default function DeliveryDetailPage() {
               </button>
             )}
 
-            <a
-              href="/driver/delivery"
-              className="w-full bg-slate-600 text-white py-3 rounded-lg font-semibold hover:bg-slate-500 transition-colors text-center block"
+            <button
+              onClick={() => window.location.href = '/driver/delivery'}
+              className="w-full bg-slate-600 text-white py-3 rounded-lg font-semibold hover:bg-slate-500 transition-colors text-center"
             >
               Back to Dashboard
-            </a>
+            </button>
           </div>
         </div>
 

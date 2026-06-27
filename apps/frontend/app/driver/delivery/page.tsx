@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Clock, MapPin, DollarSign, Phone, Navigation } from 'lucide-react';
+import { Clock, MapPin, Phone, Navigation } from 'lucide-react';
 import { deliveryAPI, DeliveryOffer, ActiveDelivery } from '@/lib/services/delivery';
 
 export default function DeliveryPage() {
@@ -87,7 +87,7 @@ export default function DeliveryPage() {
           {/* Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-emerald-600 rounded-lg p-4">
-              <p className="text-emerald-100 text-sm">Today's Earnings</p>
+              <p className="text-emerald-100 text-sm">Today&apos;s Earnings</p>
               <h3 className="text-2xl font-bold text-white">KES {todayEarnings.toLocaleString()}</h3>
             </div>
             <div className="bg-blue-600 rounded-lg p-4">
