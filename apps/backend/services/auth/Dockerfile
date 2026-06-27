@@ -15,8 +15,8 @@ COPY services/messaging ./services/messaging
 COPY services/notification ./services/notification
 COPY services/payment ./services/payment
 
-# Build the service
-RUN cd services/auth && go build -o auth ./cmd/main.go
+# Build the service (use -C to preserve go.work context)
+RUN go build -C ./services/auth -o auth ./cmd/main.go
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates curl

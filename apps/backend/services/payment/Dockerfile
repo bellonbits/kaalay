@@ -15,7 +15,7 @@ COPY services/notification ./services/notification
 COPY services/payment ./services/payment
 COPY services/gateway ./services/gateway
 
-RUN cd services/payment && go build -o payment ./cmd/main.go
+RUN go build -C ./services/payment -o payment ./cmd/main.go
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates curl
