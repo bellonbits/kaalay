@@ -26,10 +26,10 @@ type VerifyOTPRequest struct {
 
 // AuthResponse is the response body after login/signup.
 type AuthResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	AccessToken  string `json:"accessToken"`
+	RefreshToken string `json:"refreshToken"`
 	User         UserDTO `json:"user"`
-	IsNewUser    bool   `json:"is_new_user"`
+	IsNewUser    bool   `json:"isNewUser"`
 }
 
 // UserDTO is the user data transfer object.
