@@ -14,6 +14,7 @@ COPY services/tracking ./services/tracking
 COPY services/messaging ./services/messaging
 COPY services/notification ./services/notification
 COPY services/payment ./services/payment
+COPY services/gateway ./services/gateway
 
 # Build the service (use -C to preserve go.work context)
 RUN go build -C ./services/auth -o auth ./cmd/main.go
