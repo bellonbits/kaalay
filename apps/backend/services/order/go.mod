@@ -13,6 +13,7 @@ require (
 	github.com/suqafuran/express/shared v0.0.1
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.0
+	github.com/swaggo/swag v1.8.12
 	google.golang.org/grpc v1.68.0
 	google.golang.org/protobuf v1.35.0
 )
