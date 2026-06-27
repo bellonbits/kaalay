@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
@@ -75,6 +77,9 @@ func main() {
 	// Health checks
 	r.GET("/health", authHandler.HealthHandler)
 	r.GET("/ready", authHandler.ReadyHandler)
+
+	// Swagger UI
+	r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// Auth routes
 	auth := r.Group("/v1/auth")

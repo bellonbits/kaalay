@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/suqafuran/express/services/gateway/config"
@@ -36,6 +38,9 @@ func main() {
 	// Health checks
 	r.GET("/health", gw.HealthHandler)
 	r.GET("/ready", gw.ReadyHandler)
+
+	// Swagger UI
+	r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// All API routes through strangler fig proxy
 	r.Any("/api/*path", gw.ProxyHandler)
