@@ -32,7 +32,7 @@ func main() {
 	log.Info().
 		Int("port", cfg.Port).
 		Str("database", cfg.DBConnStr).
-		Str("nats", cfg.NatsAddr).
+		Str("nats", cfg.NatsURL).
 		Msg("Starting Payment Service")
 
 	// Database connection pool
@@ -58,7 +58,7 @@ func main() {
 
 	// Redis connection
 	redisClient := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddr,
+		Addr:     cfg.RedisURL,
 		PoolSize: 10,
 	})
 	if err := redisClient.Ping(context.Background()).Err(); err != nil {
@@ -67,7 +67,7 @@ func main() {
 	log.Info().Msg("Redis connected")
 
 	// NATS connection
-	nc, err := nats.Connect(cfg.NatsAddr)
+	nc, err := nats.Connect(cfg.NatsURL)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to NATS")
 	}

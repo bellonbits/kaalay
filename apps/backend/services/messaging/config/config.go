@@ -6,17 +6,17 @@ import (
 )
 
 type Config struct {
-	Port       int
-	DBConnStr  string
-	RedisAddr  string
-	JWTSecret  string
+	Port      int
+	DBConnStr string
+	RedisURL  string
+	JWTSecret string
 }
 
 func Load() *Config {
 	return &Config{
 		Port:      getEnvInt("PORT", 8008),
 		DBConnStr: getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5437/suqafuran_messaging?sslmode=disable"),
-		RedisAddr: getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisURL:  getEnv("REDIS_URL", "localhost:6379"),
 		JWTSecret: getEnv("JWT_SECRET", "dev-secret-key-change-in-production"),
 	}
 }

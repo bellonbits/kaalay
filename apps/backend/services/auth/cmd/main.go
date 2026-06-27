@@ -56,7 +56,7 @@ func main() {
 
 	// Redis connection
 	redisClient := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddr,
+		Addr:     cfg.RedisURL,
 		PoolSize: 10,
 	})
 	if err := redisClient.Ping(context.Background()).Err(); err != nil {

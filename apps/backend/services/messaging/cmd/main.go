@@ -33,7 +33,7 @@ func main() {
 	log.Info().
 		Int("port", cfg.Port).
 		Str("database", cfg.DBConnStr).
-		Str("redis", cfg.RedisAddr).
+		Str("redis", cfg.RedisURL).
 		Msg("Starting Messaging Service")
 
 	// Database connection pool
@@ -59,7 +59,7 @@ func main() {
 
 	// Redis connection
 	redisClient := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddr,
+		Addr:     cfg.RedisURL,
 		PoolSize: 10,
 	})
 	if err := redisClient.Ping(context.Background()).Err(); err != nil {

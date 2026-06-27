@@ -6,27 +6,27 @@ import (
 )
 
 type Config struct {
-	Port                  int
-	DBConnStr             string
-	RedisAddr             string
-	NatsAddr              string
-	JWTSecret             string
-	MpesaConsumerKey      string
-	MpesaConsumerSecret   string
-	MpesaBizShortCode     string
-	MpesaBizPasskey       string
-	MpesaLipanaURL        string
-	MpesaCallbackURL      string
-	PlatformFeePercent    float64
-	EscrowReleaseFeeKES   float64
+	Port                 int
+	DBConnStr            string
+	RedisURL             string
+	NatsURL              string
+	JWTSecret            string
+	MpesaConsumerKey     string
+	MpesaConsumerSecret  string
+	MpesaBizShortCode    string
+	MpesaBizPasskey      string
+	MpesaLipanaURL       string
+	MpesaCallbackURL     string
+	PlatformFeePercent   float64
+	EscrowReleaseFeeKES  float64
 }
 
 func Load() *Config {
 	return &Config{
 		Port:                getEnvInt("PORT", 8010),
 		DBConnStr:          getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5437/suqafuran_payment?sslmode=disable"),
-		RedisAddr:          getEnv("REDIS_ADDR", "localhost:6379"),
-		NatsAddr:           getEnv("NATS_ADDR", "localhost:4222"),
+		RedisURL:           getEnv("REDIS_URL", "localhost:6379"),
+		NatsURL:            getEnv("NATS_URL", "nats://localhost:4222"),
 		JWTSecret:          getEnv("JWT_SECRET", "dev-secret-key-change-in-production"),
 		MpesaConsumerKey:   getEnv("MPESA_CONSUMER_KEY", ""),
 		MpesaConsumerSecret: getEnv("MPESA_CONSUMER_SECRET", ""),
