@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 	"github.com/suqafuran/express/services/gateway/config"
 	"github.com/suqafuran/express/shared/pkg"
 )
@@ -66,21 +67,26 @@ func NewGatewayRouter(cfg *config.Config) *GatewayRouter {
 // ProxyHandler routes requests based on Strangler Fig route table.
 func (g *GatewayRouter) ProxyHandler(c *gin.Context) {
 	path := c.Request.URL.Path
+	log.Debug().Str("path", path).Msg("ProxyHandler: incoming request")
 
 	for _, rule := range g.routes {
 		if strings.HasPrefix(path, rule.Prefix) {
+			log.Debug().Str("prefix", rule.Prefix).Bool("GoLive", rule.GoLive).Str("ServiceURL", rule.ServiceURL).Msg("ProxyHandler: route matched")
 			if rule.GoLive {
 				// Strip /api prefix before forwarding to Go service
 				c.Request.URL.Path = strings.TrimPrefix(path, "/api")
+				log.Info().Str("service_url", rule.ServiceURL).Str("forwarded_path", c.Request.URL.Path).Msg("ProxyHandler: forwarding to Go service")
 				rule.Proxy.ServeHTTP(c.Writer, c.Request)
 				return
 			}
 			// Not live yet — fall through to legacy
+			log.Debug().Msg("ProxyHandler: route matched but GoLive is false, falling through to legacy")
 			break
 		}
 	}
 
 	// Default: legacy FastAPI handles it (preserves full path /api/v1/...)
+	log.Info().Str("path", path).Msg("ProxyHandler: forwarding to legacy FastAPI")
 	g.legacyProxy.ServeHTTP(c.Writer, c.Request)
 }
 
