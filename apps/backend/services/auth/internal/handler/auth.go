@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -51,12 +52,15 @@ func (h *Handler) SendOTPHandler(c *gin.Context) {
 		return
 	}
 
+	// Normalize phone number (remove spaces, trim)
+	phone := strings.TrimSpace(req.Phone)
+
 	// Generate 6-digit OTP
 	code := fmt.Sprintf("%06d", rand.Intn(1000000))
 	codeHash := fmt.Sprintf("%x", sha256.Sum256([]byte(code)))
 
-	// Store in Redis with 5-minute TTL
-	err := h.redis.Set(c.Request.Context(), fmt.Sprintf("otp:%s", req.Phone), codeHash, 5*time.Minute).Err()
+	// Store in Redis with 15-minute TTL (increased from 5 min for better UX)
+	err := h.redis.Set(c.Request.Context(), fmt.Sprintf("otp:%s", phone), codeHash, 15*time.Minute).Err()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse("failed to generate OTP"))
 		return
@@ -79,10 +83,20 @@ func (h *Handler) VerifyOTPHandler(c *gin.Context) {
 		return
 	}
 
+	// Normalize phone number (remove spaces, trim)
+	phone := strings.TrimSpace(req.Phone)
+	code := strings.TrimSpace(req.Code)
+
 	// Verify OTP from Redis
-	expectedHash := fmt.Sprintf("%x", sha256.Sum256([]byte(req.Code)))
-	storedHash, err := h.redis.Get(c.Request.Context(), fmt.Sprintf("otp:%s", req.Phone)).Result()
-	if err != nil || storedHash != expectedHash {
+	expectedHash := fmt.Sprintf("%x", sha256.Sum256([]byte(code)))
+	storedHash, err := h.redis.Get(c.Request.Context(), fmt.Sprintf("otp:%s", phone)).Result()
+	if err != nil {
+		fmt.Printf("[DEBUG] OTP key not found for %s (expired or not generated)\n", phone)
+		c.JSON(http.StatusUnauthorized, pkg.ErrorResponse("invalid OTP"))
+		return
+	}
+	if storedHash != expectedHash {
+		fmt.Printf("[DEBUG] OTP mismatch for %s. Expected: %s, Got: %s\n", phone, storedHash[:8], expectedHash[:8])
 		c.JSON(http.StatusUnauthorized, pkg.ErrorResponse("invalid OTP"))
 		return
 	}
