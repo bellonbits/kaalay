@@ -7,7 +7,7 @@ export function homeRouteForRole(role?: string | null): string {
   if (role === "admin") return "/admin";
   if (role === "driver") return "/driver";
   if (role === "emergency_operator") return "/operator";
-  return "/navigate";
+  return "/home";
 }
 
 interface AuthState {

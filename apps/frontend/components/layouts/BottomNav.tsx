@@ -20,40 +20,31 @@ export function BottomNav() {
 
   return (
     <motion.nav
-      className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-0 py-2 md:hidden z-40"
+      className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3 md:hidden z-40"
       initial={{ y: 100 }}
       animate={{ y: 0 }}
       transition={{ duration: 0.3 }}
     >
-      <div className="flex justify-around max-w-screen-lg mx-auto">
+      <div className="flex justify-around max-w-screen-lg mx-auto gap-2">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive =
-            pathname === item.href || pathname?.startsWith(item.href + '/');
+          const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
 
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="flex flex-col items-center gap-1 py-2 px-3 rounded-lg transition-colors"
-            >
-              <motion.div
-                animate={{
-                  scale: isActive ? 1.1 : 1,
-                  color: isActive ? '#22C55E' : '#6B7280',
-                }}
-                transition={{ duration: 0.2 }}
-              >
-                <Icon size={24} />
-              </motion.div>
-              <span
+            <Link key={item.href} href={item.href}>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 className={cn(
-                  'text-xs font-medium transition-colors',
-                  isActive ? 'text-green-500' : 'text-gray-600'
+                  'flex items-center gap-2 px-4 py-2 rounded-full transition-all whitespace-nowrap',
+                  isActive
+                    ? 'bg-green-500 text-white shadow-md'
+                    : 'text-gray-600 hover:text-gray-900'
                 )}
               >
-                {item.label}
-              </span>
+                <Icon size={20} />
+                {isActive && <span className="text-sm font-semibold">{item.label}</span>}
+              </motion.button>
             </Link>
           );
         })}

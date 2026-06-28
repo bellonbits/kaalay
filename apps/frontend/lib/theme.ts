@@ -53,6 +53,7 @@ export const THEME = {
     md: '8px',
     lg: '12px',
     xl: '16px',
+    card: '24px',
     full: '9999px',
   },
 
