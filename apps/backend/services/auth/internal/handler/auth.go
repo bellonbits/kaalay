@@ -59,16 +59,24 @@ func (h *Handler) SendOTPHandler(c *gin.Context) {
 	code := fmt.Sprintf("%06d", rand.Intn(1000000))
 	codeHash := fmt.Sprintf("%x", sha256.Sum256([]byte(code)))
 
-	// Store in Redis with 15-minute TTL (increased from 5 min for better UX)
-	err := h.redis.Set(c.Request.Context(), fmt.Sprintf("otp:%s", phone), codeHash, 15*time.Minute).Err()
-	if err != nil {
+	// Store in Redis with 15-minute TTL
+	key := fmt.Sprintf("otp:%s", phone)
+	fmt.Printf("[DEBUG] Setting OTP key=%s ttl=15min\n", key)
+
+	result := h.redis.Set(c.Request.Context(), key, codeHash, 15*time.Minute)
+	if err := result.Err(); err != nil {
+		fmt.Printf("[ERROR] Redis Set failed: %v\n", err)
 		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse("failed to generate OTP"))
 		return
 	}
 
+	// Verify stored
+	stored := h.redis.Get(c.Request.Context(), key).Val()
+	fmt.Printf("[DEBUG] Verified in Redis: key=%s value_preview=%s\n", key, stored[:8])
+
 	// In production, send OTP via SMS (Africa's Talking, Twilio, etc.)
 	// For dev, just log it
-	fmt.Printf("[DEV] OTP for %s: %s\n", req.Phone, code)
+	fmt.Printf("[DEV] OTP for %s: %s\n", phone, code)
 
 	c.JSON(http.StatusOK, pkg.SuccessResponse(map[string]string{
 		"message": "OTP sent successfully",
