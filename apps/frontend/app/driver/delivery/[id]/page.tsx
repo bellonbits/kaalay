@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { Phone, MessageSquare, CheckCircle, Navigation } from 'lucide-react';
 import { deliveryAPI, ActiveDelivery } from '@/lib/services/delivery';
@@ -13,15 +13,7 @@ export default function DeliveryDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [nextStep, setNextStep] = useState<'pickup' | 'delivery' | 'proof'>('pickup');
 
-  useEffect(() => {
-    const storedToken = localStorage.getItem('token');
-    if (storedToken) {
-      setToken(storedToken);
-      loadDelivery(storedToken);
-    }
-  }, [deliveryId]);
-
-  const loadDelivery = async (token: string) => {
+  const loadDelivery = useCallback(async (token: string) => {
     try {
       setIsLoading(true);
       const data = await deliveryAPI.getDelivery(token, deliveryId);
@@ -42,7 +34,15 @@ export default function DeliveryDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [deliveryId]);
+
+  useEffect(() => {
+    const storedToken = localStorage.getItem('token');
+    if (storedToken) {
+      setToken(storedToken);
+      loadDelivery(storedToken);
+    }
+  }, [loadDelivery]);
 
   const handleUpdateStatus = async (status: 'picked_up' | 'in_transit' | 'delivered') => {
     if (!token || !delivery) return;

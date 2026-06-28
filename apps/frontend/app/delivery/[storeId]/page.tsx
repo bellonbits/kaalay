@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Heart, Share2, Flame, Clock } from 'lucide-react';
+import { ArrowLeft, Heart, Share2 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { BottomNav } from '@/components/layouts/BottomNav';
@@ -70,7 +70,7 @@ const PRODUCTS = [
 export default function StorePage() {
   const params = useParams();
   const storeId = params.storeId as string;
-  const store = STORE_DATA[storeId as keyof typeof STORE_DATA];
+  const store = STORE_DATA[storeId as unknown as keyof typeof STORE_DATA];
   const [selectedCategory, setSelectedCategory] = useState('all');
 
   const categories = ['Pizza', 'Burgers', 'Sushi'];

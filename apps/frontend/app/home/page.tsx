@@ -77,7 +77,7 @@ export default function HomePage() {
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <p className="text-sm text-gray-600">Hello 👋</p>
-            <h1 className="text-lg font-bold text-gray-900">{user?.full_name || 'Delisas Agency'}</h1>
+            <h1 className="text-lg font-bold text-gray-900">{user?.fullName || 'Delisas Agency'}</h1>
           </div>
           <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
             <Search className="w-5 h-5 text-gray-600" />

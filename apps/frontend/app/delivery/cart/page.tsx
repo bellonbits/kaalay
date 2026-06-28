@@ -51,10 +51,6 @@ export default function CartPage() {
     );
   };
 
-  const handleRemove = (id: number) => {
-    setItems(items.filter((item) => item.id !== id));
-  };
-
   const handleApplyPromo = () => {
     if (promoCode === 'SAVE10') {
       setDiscount(subtotal * 0.1);

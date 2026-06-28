@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Phone, MessageCircle, MapPin, DollarSign, TrendingUp, CheckCircle } from 'lucide-react';
+// lucide imports removed - not used in this component
 import { cn } from '@/lib/utils/cn';
 
 // Driver Status Toggle
@@ -73,10 +73,10 @@ export function EarningsCard({
     >
       <div className="grid grid-cols-3 gap-4">
         <div>
-          <p className="text-sm text-green-100 mb-1">Today's Earnings</p>
+          <p className="text-sm text-green-100 mb-1">Today&apos;s Earnings</p>
           <motion.p
             animate={{ scale: 1.05 }}
-            transition={{ yoyo: Infinity, duration: 2 }}
+            transition={{ repeat: Infinity, repeatType: 'reverse', duration: 2 }}
             className="text-2xl font-bold"
           >
             KES {todayEarnings}

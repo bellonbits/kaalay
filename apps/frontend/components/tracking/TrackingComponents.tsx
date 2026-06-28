@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Phone, MessageCircle, MapPin, Clock, CheckCircle } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Phone, MessageCircle, MapPin, CheckCircle } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 
 // Timeline Item
@@ -145,7 +145,7 @@ export function ETACard({ eta, distance, address }: ETACardProps) {
           <p className="text-sm text-green-100 mb-1">Estimated Time</p>
           <motion.p
             animate={{ scale: 1.1 }}
-            transition={{ yoyo: Infinity, duration: 2 }}
+            transition={{ repeat: Infinity, repeatType: 'reverse', duration: 2 }}
             className="text-2xl font-bold"
           >
             {eta}

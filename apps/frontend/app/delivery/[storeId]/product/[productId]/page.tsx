@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Heart, Share2, Minus, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Heart, Share2, Minus, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
@@ -31,7 +31,7 @@ const PRODUCT_DATA = {
 export default function ProductDetailPage() {
   const params = useParams();
   const productId = params.productId as string;
-  const product = PRODUCT_DATA[productId as keyof typeof PRODUCT_DATA];
+  const product = PRODUCT_DATA[productId as unknown as keyof typeof PRODUCT_DATA];
   const [selectedSize, setSelectedSize] = useState('medium');
   const [selectedIngredients, setSelectedIngredients] = useState<number[]>([1]);
   const [quantity, setQuantity] = useState(1);

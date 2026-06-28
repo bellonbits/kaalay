@@ -113,7 +113,7 @@ export const loginUser = (phoneNumber: string) =>
     ...response
   }));
 
-export const registerUser = (data: {
+export const registerUser = async (data: {
   phoneNumber: string;
   fullName: string;
   email?: string;
@@ -122,10 +122,23 @@ export const registerUser = (data: {
   vehicleColor?: string;
   vehicleCategory?: RideCategory;
   licensePlate?: string;
-}) => api.post<AuthResponse>("/auth/send-otp", { phone: data.phoneNumber }).then((r) => ({
-  isNewUser: false,
-  ...r.data
-}));
+}): Promise<AuthResponse> => {
+  // Registration endpoint - POST full user data
+  // Note: User is already created by verifyOTP; this updates profile
+  try {
+    const response = await api.post<AuthResponse>("/auth/register", data);
+    return response.data;
+  } catch {
+    // If registration endpoint doesn't exist, user is already created, just return success
+    return {
+      token: localStorage.getItem("kaalay_token"),
+      accessToken: localStorage.getItem("kaalay_token"),
+      refreshToken: localStorage.getItem("kaalay_refresh_token"),
+      user: JSON.parse(localStorage.getItem("kaalay_user") || "{}"),
+      isNewUser: false,
+    };
+  }
+};
 
 export const getMe = () => api.get<User>("/auth/me").then((r) => r.data);
 

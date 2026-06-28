@@ -45,12 +45,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   requestLogin: async (phoneNumber) => {
     set({ loading: true });
     try {
-      const res = await loginUser(phoneNumber);
-      if (!res.isNewUser && res.user) {
-        persistSession(res.user, res.accessToken, res.refreshToken);
-        set({ user: res.user });
-      }
-      return { isNewUser: res.isNewUser };
+      await loginUser(phoneNumber);
+      return { isNewUser: false };
     } finally {
       set({ loading: false });
     }

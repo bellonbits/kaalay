@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { Search, MapPin, Clock, Star, ChevronRight, Zap } from 'lucide-react';
+import { Search, Clock, Star, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 
 // Hero Section

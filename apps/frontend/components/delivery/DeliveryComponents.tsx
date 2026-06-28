@@ -14,7 +14,7 @@ interface CategoryCardProps {
   href: string;
 }
 
-export function CategoryCard({ id, name, icon, href }: CategoryCardProps) {
+export function CategoryCard({ name, icon, href }: CategoryCardProps) {
   return (
     <motion.div
       whileHover={{ scale: 1.05 }}
@@ -165,6 +165,7 @@ export function StoreHero({
   return (
     <div className="relative h-64 bg-gray-200 mb-6">
       {image && (
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={image}
           alt={name}
@@ -251,6 +252,7 @@ export function ProductCard({
     >
       <div className="relative h-40 bg-gray-200">
         {image && (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={image}
             alt={name}
